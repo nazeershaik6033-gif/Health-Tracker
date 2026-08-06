@@ -34,16 +34,24 @@ export const DEFAULT_SETTINGS: Settings = {
  * Seeds the food table on first run and back-fills on upgrade. Existing rows
  * are left alone so a user's edits and useCounts survive; only genuinely new
  * seed rows are added.
+ *
+ * Writes use `put`, not `add`, because this can legitimately run twice
+ * concurrently — React StrictMode double-invokes the init effect in dev, and
+ * two tabs can open at once. With `add`, both callers compute the same
+ * "missing" list and the loser throws a BulkError, which previously left the
+ * app stuck on its loading skeleton. `put` is idempotent, so the race is
+ * harmless; the rows involved are freshly generated seeds either way, so
+ * there is no user data to clobber.
  */
 export async function ensureSeeded(): Promise<void> {
   const seeds = seedFoods();
   const ids = seeds.map((s) => s.id);
   const existing = await db.foods.bulkGet(ids);
   const missing = seeds.filter((_, i) => !existing[i]);
-  if (missing.length) await db.foods.bulkAdd(missing);
+  if (missing.length) await db.foods.bulkPut(missing);
 
   if (!(await db.settings.get('app'))) {
-    await db.settings.add(DEFAULT_SETTINGS);
+    await db.settings.put(DEFAULT_SETTINGS);
   }
 }
 
