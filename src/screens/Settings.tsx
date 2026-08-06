@@ -4,6 +4,7 @@ import { useApp } from '@/stores/useApp';
 import { clearAllData, saveProfile } from '@/db/repo';
 import { downloadBundle, exportData, importData } from '@/db/export';
 import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
+import { keyShapeWarning } from '@/ai/types';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
 import { buildLabel, checkForUpdate, forceReload } from '@/lib/appUpdate';
 import { computeTargets, macroTargets } from '@/lib/nutrition';
@@ -79,6 +80,11 @@ export default function Settings() {
   const provider = settings.provider;
   const meta = PROVIDER_META[provider];
   const savedKey = settings.apiKeys[provider] ?? '';
+
+  // Warn about whatever the user is looking at: the draft while typing, the
+  // saved key otherwise. A key saved before this check existed still gets flagged.
+  const savedKeyWarning = keyShapeWarning(provider, savedKey);
+  const keyWarning = keyDraft.trim() ? keyShapeWarning(provider, keyDraft) : savedKeyWarning;
 
   async function switchProvider(next: ProviderId) {
     await setSettings({ provider: next });
@@ -208,9 +214,21 @@ export default function Settings() {
           </div>
 
           {savedKey ? (
-            <div className="flex items-center gap-2 rounded-xl bg-brand-50 p-3">
-              <IconCheck width={16} height={16} className="shrink-0 text-brand-600" />
-              <span className="tabular flex-1 truncate text-[12.5px] font-medium text-brand-800">
+            <div
+              className={`flex items-center gap-2 rounded-xl p-3 ${
+                savedKeyWarning ? 'bg-amber-50' : 'bg-brand-50'
+              }`}
+            >
+              {savedKeyWarning ? (
+                <IconWarning width={16} height={16} className="shrink-0 text-amber-600" />
+              ) : (
+                <IconCheck width={16} height={16} className="shrink-0 text-brand-600" />
+              )}
+              <span
+                className={`tabular flex-1 truncate text-[12.5px] font-medium ${
+                  savedKeyWarning ? 'text-amber-900' : 'text-brand-800'
+                }`}
+              >
                 {savedKey.slice(0, 6)}
                 {'•'.repeat(12)}
                 {savedKey.slice(-4)}
@@ -237,6 +255,27 @@ export default function Settings() {
               <Button onClick={saveKey} disabled={!keyDraft.trim()} className="mb-1">
                 Save
               </Button>
+            </div>
+          )}
+
+          {/* Caught before a request is ever sent: a key of the wrong shape
+              would only come back as a bare 401, which says nothing about the
+              key being incomplete or from the wrong provider's page. */}
+          {keyWarning && (
+            <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[12px] leading-relaxed text-amber-900">
+              <IconWarning width={14} height={14} className="mt-0.5 shrink-0" />
+              <p>
+                {keyWarning}{' '}
+                <a
+                  href={meta.keyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline"
+                >
+                  Get a key from {meta.label}
+                </a>
+                .
+              </p>
             </div>
           )}
 
@@ -629,6 +668,18 @@ function FatSecretCard() {
         estimates are unaffected.
       </p>
 
+      {/* Outside the enabled block on purpose: you need to register with
+          FatSecret *before* you have anything to type in, so hiding the link
+          behind the toggle put it exactly where it was no use. */}
+      <a
+        href="https://platform.fatsecret.com/platform-api"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block text-[12.5px] font-semibold text-brand-600"
+      >
+        Register for free FatSecret API credentials →
+      </a>
+
       {fs.enabled && (
         <>
           <Field
@@ -707,12 +758,12 @@ function FatSecretCard() {
               {testing ? 'Testing…' : 'Test connection'}
             </Button>
             <a
-              href="https://platform.fatsecret.com/platform-api"
+              href="https://platform.fatsecret.com/docs/guides/authentication/oauth2"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[12.5px] font-semibold text-brand-600"
             >
-              Get credentials →
+              Where to find these →
             </a>
           </div>
 
