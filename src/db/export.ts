@@ -1,6 +1,6 @@
 import { db } from './schema';
 import { blobToBase64 } from '@/lib/image';
-import type { Snap } from '@/types';
+import { DEFAULT_FATSECRET, type Snap } from '@/types';
 
 /**
  * JSON export/import — the only backup path in a local-first app with no
@@ -78,9 +78,14 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     }),
   );
 
-  // API keys are deliberately stripped: an export is a file that gets emailed
-  // to yourself and left in a downloads folder.
-  const safeSettings = settings.map((s) => ({ ...s, apiKeys: {} }));
+  // Credentials are deliberately stripped: an export is a file that gets
+  // emailed to yourself and left in a downloads folder. FatSecret is blanked
+  // and switched off rather than left enabled-but-broken on the next device.
+  const safeSettings = settings.map((s) => ({
+    ...s,
+    apiKeys: {},
+    fatsecret: { ...DEFAULT_FATSECRET, region: s.fatsecret?.region ?? DEFAULT_FATSECRET.region },
+  }));
 
   return {
     version: EXPORT_VERSION,
@@ -168,7 +173,10 @@ export async function importData(bundle: unknown): Promise<ImportSummary> {
       ...(current ?? {}),
       ...incoming,
       id: 'app',
+      // Credentials already on this device win: a backup never carries them,
+      // so taking the incoming blanks would log the user out of their own key.
       apiKeys: current?.apiKeys ?? {},
+      fatsecret: current?.fatsecret ?? DEFAULT_FATSECRET,
     } as never);
     imported.settings = 1;
   }

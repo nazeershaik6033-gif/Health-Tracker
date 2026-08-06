@@ -7,8 +7,14 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
     />
-    <meta name="theme-color" content="#14A06A" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0B1210" media="(prefers-color-scheme: dark)" />
+    <!--
+      One tag, no `media`, because the app owns this: with five themes the OS
+      preference is only the answer for "System". A browser uses the first
+      theme-color whose media matches, so media-scoped tags here would always
+      win and the chosen theme would never reach the status bar. `useTheme`
+      rewrites the content on every theme change.
+    -->
+    <meta name="theme-color" content="#14A06A" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Healthify" />

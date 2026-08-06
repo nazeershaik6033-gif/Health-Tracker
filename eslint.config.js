@@ -7,6 +7,24 @@ export default [
   { ignores: ['dist', 'dev-dist', 'node_modules', 'scripts'] },
   js.configs.recommended,
   {
+    // The FatSecret proxy runs on Cloudflare Workers, not in the app bundle,
+    // so it gets the worker runtime's globals rather than the browser set.
+    files: ['proxy/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        fetch: 'readonly',
+        btoa: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        console: 'readonly',
+      },
+    },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsparser,

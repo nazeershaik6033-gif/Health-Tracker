@@ -90,6 +90,71 @@ AI-only surfaces explain what a key would add instead of silently disappearing:
 
 ---
 
+## FatSecret (optional food database)
+
+Healthify can add [FatSecret](https://platform.fatsecret.com/platform-api)'s
+branded and restaurant foods to barcode scans and name search. It is off by
+default and entirely optional — the bundled database, Open Food Facts and AI
+estimates are unaffected either way.
+
+**FatSecret cannot be called from a browser.** Unlike the AI providers, this
+is not a matter of setting a header:
+
+1. `oauth.fatsecret.com/connect/token` returns no `Access-Control-Allow-Origin`
+   header, so the browser refuses to let JavaScript read the response.
+2. FatSecret pins credentials to **whitelisted IP addresses**. A phone moving
+   between wifi and mobile data has no stable IP to whitelist.
+
+FatSecret's own guidance is to request tokens through a proxy, so that is the
+supported path here.
+
+### Setting it up
+
+Deploy [`proxy/fatsecret-worker.js`](proxy/fatsecret-worker.js) — a ~150-line
+Cloudflare Worker that holds your Client Secret, mints and caches tokens, and
+exposes one CORS-enabled endpoint:
+
+```bash
+npm install -g wrangler
+wrangler init fatsecret-proxy          # paste the worker into src/index.js
+wrangler secret put FATSECRET_CLIENT_ID
+wrangler secret put FATSECRET_CLIENT_SECRET
+wrangler deploy
+```
+
+Set `ALLOWED_ORIGIN` to your app's origin, whitelist the worker's egress IP in
+the FatSecret dashboard (`GET /whoami` on the deployed worker reports it), then
+paste the worker URL into **Settings → Food database → Proxy URL** and switch
+FatSecret on. **Test connection** tells you exactly which step failed if one
+did — wrong origin, unwhitelisted IP, missing scope or bad credentials each get
+their own message.
+
+The worker only relays three methods (`foods.search.v3`, `food.get.v4`,
+`food.find_id_for_barcode`) and rejects other origins, so a leaked URL can't be
+turned into an open relay against your quota.
+
+### Without a proxy
+
+You can paste a Client ID and Secret directly into Settings. The app will try
+the direct call and, when the browser blocks it, say so and point at the proxy
+rather than failing silently. Note that a Client Secret in browser storage is a
+long-lived credential for your whole FatSecret account — a stronger reason to
+use the proxy than for an AI key. Backups never include either.
+
+### How lookups are ordered
+
+| Tier | Source | Needs a key? |
+|---|---|---|
+| 1 | Foods you've already saved (instant, offline) | no |
+| 2 | FatSecret, when configured | yes |
+| 3 | Open Food Facts | no |
+| 4 | AI estimate ("Generate this food") | AI key |
+
+A tier that fails never blocks the next one — a FatSecret outage shows as a
+note on an Open Food Facts result, not an error screen.
+
+---
+
 ## Share-to-track (instead of gallery auto-detect)
 
 The app this is modelled on watches your camera roll in the background and logs
@@ -153,7 +218,7 @@ node scripts/gen-icons.mjs
 
 - All health data is stored locally in IndexedDB; there is no server
 - API keys are stored locally and sent only to your chosen provider
-- Exports never include your API key
+- Exports never include your API key or FatSecret credentials
 - Clearing site data erases everything — **export first** (Settings → Backup)
 
 Photos in an export are base64-encoded and make the file much larger, so
@@ -165,6 +230,8 @@ export-with-photos is a separate button.
 
 - No background gallery scanning — share-to-track instead (see above)
 - No automatic step counting — manual entry
+- FatSecret needs a proxy you deploy yourself; there is no browser-direct path
+  (CORS and IP whitelisting, see above)
 - AI portion estimates from a photo are estimates; check them before saving
 - On-device OCR is a fallback and is noticeably worse than AI vision on
   curved or glare-affected packaging

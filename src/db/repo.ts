@@ -2,6 +2,7 @@ import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
 import { today } from '@/lib/date';
 import { computeTargets } from '@/lib/nutrition';
+import { DEFAULT_FATSECRET } from '@/types';
 import type {
   ChatMessage,
   Food,
@@ -25,10 +26,27 @@ export const DEFAULT_SETTINGS: Settings = {
   provider: 'anthropic',
   apiKeys: {},
   models: {},
+  fatsecret: DEFAULT_FATSECRET,
   autoTrack: false,
   theme: 'system',
   onboardingDone: false,
 };
+
+/**
+ * Fills in fields added after a row was written. Settings rows persist across
+ * upgrades, so a stored row from before FatSecret existed has no `fatsecret`
+ * key at all — reading `settings.fatsecret.enabled` off it would throw on
+ * every screen that checks whether the food database is configured.
+ */
+function withDefaults(stored: Settings): Settings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    apiKeys: stored.apiKeys ?? {},
+    models: stored.models ?? {},
+    fatsecret: { ...DEFAULT_FATSECRET, ...(stored.fatsecret ?? {}) },
+  };
+}
 
 /**
  * Seeds the food table on first run and back-fills on upgrade. Existing rows
@@ -58,7 +76,8 @@ export async function ensureSeeded(): Promise<void> {
 /* -------------------------------- settings ------------------------------- */
 
 export async function getSettings(): Promise<Settings> {
-  return (await db.settings.get('app')) ?? DEFAULT_SETTINGS;
+  const stored = await db.settings.get('app');
+  return stored ? withDefaults(stored) : DEFAULT_SETTINGS;
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {

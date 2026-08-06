@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { clearAllData, saveProfile } from '@/db/repo';
 import { downloadBundle, exportData, importData } from '@/db/export';
 import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
+import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
 import { computeTargets, macroTargets } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
@@ -16,7 +17,7 @@ import {
   IconUpload,
   IconWarning,
 } from '@/components/icons';
-import type { ProviderId, Settings as SettingsType } from '@/types';
+import { THEMES, type FatSecretConfig, type ProviderId, type Settings as SettingsType } from '@/types';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -31,6 +32,17 @@ export default function Settings() {
   const [busy, setBusy] = useState<'export' | 'import' | 'reset' | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Only so the System swatch can say which way it currently resolves.
+  const [prefersDark, setPrefersDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setPrefersDark(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   const provider = settings.provider;
   const meta = PROVIDER_META[provider];
@@ -267,6 +279,9 @@ export default function Settings() {
           </div>
         </Card>
 
+        {/* ------------------------- Food database ---------------------- */}
+        <FatSecretCard />
+
         {/* --------------------------- Targets -------------------------- */}
         <Card className="space-y-3">
           <SectionTitle
@@ -314,22 +329,60 @@ export default function Settings() {
         </Card>
 
         {/* -------------------------- Appearance ------------------------ */}
-        <Card>
-          <SectionTitle>Appearance</SectionTitle>
-          <div className="surface-sunken flex gap-1 rounded-xl p-1">
-            {(['system', 'light', 'dark'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setSettings({ theme: t })}
-                className={`flex-1 rounded-lg py-2 text-[12.5px] font-semibold capitalize transition-colors ${
-                  settings.theme === t ? 'bg-[var(--surface-card)] shadow-sm' : 'text-secondary'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+        <Card className="space-y-3">
+          <SectionTitle>Theme</SectionTitle>
+          <div className="flex gap-1">
+            {THEMES.map(({ id, label }) => {
+              const selected = settings.theme === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSettings({ theme: id })}
+                  aria-pressed={selected}
+                  aria-label={`${label} theme`}
+                  className="flex flex-1 flex-col items-center gap-1.5"
+                >
+                  {/* Outer ring is a border on a padded wrapper rather than a
+                      ring utility, so the gap reads correctly on any card
+                      colour without tracking a ring-offset variable. */}
+                  <span
+                    className={`rounded-full border-2 p-0.5 transition-colors ${
+                      selected ? 'border-brand-500' : 'border-transparent'
+                    }`}
+                  >
+                    <span
+                      className="hairline flex h-12 w-12 items-center justify-center rounded-full border"
+                      style={{ background: `var(--swatch-${id})` }}
+                    >
+                      <span
+                        className="text-[18px] leading-none"
+                        style={{
+                          color: `var(--swatch-${id}-fg)`,
+                          fontFamily: 'Georgia, "Times New Roman", serif',
+                        }}
+                        aria-hidden="true"
+                      >
+                        A
+                      </span>
+                    </span>
+                  </span>
+                  <span
+                    className={`text-[11.5px] ${
+                      selected ? 'font-bold' : 'font-medium text-muted'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
+          {settings.theme === 'system' && (
+            <p className="text-[11.5px] text-muted">
+              Following your device — currently {prefersDark ? 'dark' : 'light'}.
+            </p>
+          )}
         </Card>
 
         {/* ------------------------ Backup / restore -------------------- */}
@@ -420,6 +473,201 @@ export default function Settings() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * FatSecret Platform API.
+ *
+ * Deliberately not folded into the AI provider card: it is a food database,
+ * not a model, and its credentials work differently enough that mixing them
+ * would mislead. The proxy field is first because it is the only arrangement
+ * that reliably works — see the note rendered under it.
+ */
+function FatSecretCard() {
+  const { settings, setSettings, showToast } = useApp();
+  const fs = settings.fatsecret;
+
+  const [proxyDraft, setProxyDraft] = useState(fs.proxyUrl);
+  const [idDraft, setIdDraft] = useState(fs.clientId);
+  const [secretDraft, setSecretDraft] = useState('');
+  const [scopeDraft, setScopeDraft] = useState(fs.scope);
+  const [regionDraft, setRegionDraft] = useState(fs.region);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  const usingProxy = proxyDraft.trim().length > 0;
+
+  /** The config as currently typed, so Test works before Save. */
+  const draft: FatSecretConfig = {
+    enabled: true,
+    proxyUrl: proxyDraft.trim(),
+    clientId: idDraft.trim(),
+    clientSecret: secretDraft.trim() || fs.clientSecret,
+    scope: scopeDraft.trim() || 'basic',
+    region: regionDraft.trim().toUpperCase(),
+  };
+
+  async function patch(next: Partial<FatSecretConfig>) {
+    await setSettings({ fatsecret: { ...fs, ...next } });
+    // Any credential change invalidates a token minted with the old ones.
+    clearFatSecretToken();
+    setResult(null);
+  }
+
+  async function save() {
+    await patch({ ...draft, enabled: fs.enabled });
+    setSecretDraft('');
+    showToast({ message: 'FatSecret settings saved' });
+  }
+
+  async function runTest() {
+    setTesting(true);
+    setResult(null);
+    setResult(await testFatSecret(draft));
+    setTesting(false);
+  }
+
+  return (
+    <Card className="space-y-3">
+      <SectionTitle
+        action={
+          <button
+            type="button"
+            role="switch"
+            aria-checked={fs.enabled}
+            aria-label="Use FatSecret"
+            onClick={() => patch({ enabled: !fs.enabled })}
+            className={`relative h-6 w-10 rounded-full transition-colors ${
+              fs.enabled ? 'bg-brand-500' : 'bg-[var(--surface-border)]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                fs.enabled ? 'left-[18px]' : 'left-0.5'
+              }`}
+            />
+          </button>
+        }
+      >
+        Food database — FatSecret
+      </SectionTitle>
+
+      <p className="text-[12.5px] leading-relaxed text-secondary">
+        Adds FatSecret&apos;s branded and restaurant foods to barcode scans and name search.
+        Everything already works without it: the built-in database, Open Food Facts and AI
+        estimates are unaffected.
+      </p>
+
+      {fs.enabled && (
+        <>
+          <Field
+            label="Proxy URL"
+            value={proxyDraft}
+            onChange={(e) => setProxyDraft(e.target.value)}
+            placeholder="https://your-worker.workers.dev"
+            autoComplete="off"
+            inputMode="url"
+            hint="Recommended. Deploy proxy/fatsecret-worker.js from this repo and paste its URL."
+          />
+
+          <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+            <IconWarning width={14} height={14} className="mt-0.5 shrink-0" />
+            <p>
+              FatSecret cannot be called from a browser without one. Their token endpoint sends
+              no CORS headers, and keys are locked to whitelisted IP addresses — which a phone
+              moving between wifi and mobile data never has. Without a proxy the calls will be
+              blocked; the app tells you so rather than failing silently.
+            </p>
+          </div>
+
+          <Field
+            label={`Client ID${usingProxy ? ' (not needed with a proxy)' : ''}`}
+            value={idDraft}
+            onChange={(e) => setIdDraft(e.target.value)}
+            placeholder="1a2b3c…"
+            autoComplete="off"
+          />
+          <Field
+            label={`Client Secret${usingProxy ? ' (not needed with a proxy)' : ''}`}
+            type="password"
+            value={secretDraft}
+            onChange={(e) => setSecretDraft(e.target.value)}
+            placeholder={fs.clientSecret ? '•'.repeat(16) + ' — saved' : 'Your FatSecret secret'}
+            autoComplete="off"
+            hint={
+              usingProxy
+                ? 'Leave both blank when using a proxy — the worker holds the secret instead.'
+                : undefined
+            }
+          />
+
+          <div className="flex gap-2">
+            <Field
+              label="Region"
+              value={regionDraft}
+              onChange={(e) => setRegionDraft(e.target.value.replace(/[^a-zA-Z]/g, '').slice(0, 2))}
+              placeholder="IN"
+              className="w-24"
+              hint="Biases results to local brands."
+            />
+            <Field
+              label="Scope"
+              value={scopeDraft}
+              onChange={(e) => setScopeDraft(e.target.value)}
+              placeholder="basic"
+              className="flex-1"
+              hint="Free keys get `basic`. Premier keys can add `barcode` for barcode lookups."
+            />
+          </div>
+
+          {/* Named explicitly: this page now has two Save and two Test
+              buttons, and "Save" alone tells a screen reader nothing. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={save} aria-label="Save FatSecret settings">
+              Save
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={runTest}
+              aria-label="Test FatSecret connection"
+              disabled={testing || !fatSecretReady(draft)}
+            >
+              <IconRefresh width={15} height={15} className={testing ? 'animate-spin' : ''} />
+              {testing ? 'Testing…' : 'Test connection'}
+            </Button>
+            <a
+              href="https://platform.fatsecret.com/platform-api"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12.5px] font-semibold text-brand-600"
+            >
+              Get credentials →
+            </a>
+          </div>
+
+          {result && (
+            <p
+              className={`text-[12.5px] leading-relaxed ${result.ok ? 'text-brand-700' : 'text-red-600'}`}
+              role="status"
+            >
+              {result.ok ? '✓ ' : '✗ '}
+              {result.detail}
+            </p>
+          )}
+
+          <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+            <IconLock width={14} height={14} className="mt-0.5 shrink-0" />
+            <p>
+              A Client Secret entered here is stored in this browser and readable by anyone with
+              the device or its developer tools — and unlike an AI key it is a long-lived
+              credential for your whole FatSecret account. Prefer the proxy, which keeps the
+              secret off the device entirely. Backups never include either.
+            </p>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 
