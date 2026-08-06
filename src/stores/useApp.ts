@@ -32,6 +32,8 @@ interface AppState {
 
 let toastSeq = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shared across concurrent init() calls so startup work runs exactly once. */
+let initPromise: Promise<void> | undefined;
 
 export const useApp = create<AppState>((set, get) => ({
   ready: false,
@@ -39,9 +41,33 @@ export const useApp = create<AppState>((set, get) => ({
   selectedDate: today(),
 
   async init() {
-    await ensureSeeded();
-    const [profile, settings] = await Promise.all([getProfile(), getSettings()]);
-    set({ profile, settings, ready: true });
+    // StrictMode invokes the init effect twice in dev, and a user can open two
+    // tabs at once. Share one in-flight promise so the work happens once.
+    if (initPromise) return initPromise;
+
+    initPromise = (async () => {
+      try {
+        await ensureSeeded();
+      } catch (err) {
+        // Seeding is best-effort. A failure here must not strand the app on
+        // its loading skeleton — the bundled food list may be incomplete, but
+        // everything else still works.
+        console.error('Food database seeding failed:', err);
+      }
+
+      try {
+        const [profile, settings] = await Promise.all([getProfile(), getSettings()]);
+        set({ profile, settings, ready: true });
+      } catch (err) {
+        // IndexedDB can be unavailable outright (private browsing in some
+        // browsers, storage disabled). Come up with defaults rather than
+        // rendering nothing at all.
+        console.error('Could not read local data:', err);
+        set({ settings: DEFAULT_SETTINGS, ready: true });
+      }
+    })();
+
+    return initPromise;
   },
 
   async refreshProfile() {
