@@ -30,6 +30,12 @@ function spaFallback() {
 
 export default defineConfig({
   base,
+  // Stamped into the bundle so Settings can show which build is running.
+  // GITHUB_SHA is set by Actions; a local build just gets the timestamp.
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __BUILD_SHA__: JSON.stringify((process.env.GITHUB_SHA ?? '').slice(0, 7)),
+  },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

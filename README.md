@@ -177,6 +177,27 @@ across from your health app once a day.
 
 ---
 
+## Getting the latest version
+
+The service worker precaches the app shell so it works offline, which is also
+why a freshly deployed version doesn't always appear on the next visit — the
+page loads from cache before the worker notices there's anything newer.
+
+**Settings → App version** shows the running build (short commit SHA and build
+time in CI) and offers two escape hatches:
+
+- **Check for updates** — asks the worker to re-fetch its script and reloads if
+  a new build exists. The right button almost always.
+- **Force reload** — deletes every Cache API entry, unregisters the workers and
+  reloads past the HTTP cache. For when a cache is genuinely wedged.
+
+Neither touches IndexedDB: the Cache API holds the app's own files, IndexedDB
+holds your meals, photos and tracker entries. They are separate stores, so no
+logged data is at risk either way — but a force reload does need a connection
+to load again.
+
+---
+
 ## Architecture
 
 ```
