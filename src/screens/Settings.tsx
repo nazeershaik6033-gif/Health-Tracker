@@ -585,6 +585,10 @@ export default function Settings() {
   );
 }
 
+/** Step-by-step proxy setup — the only route to a working FatSecret. */
+const PROXY_GUIDE_URL =
+  'https://github.com/nazeershaik6033-gif/Health-Tracker/blob/main/proxy/README.md';
+
 /**
  * FatSecret Platform API.
  *
@@ -689,16 +693,24 @@ function FatSecretCard() {
             placeholder="https://your-worker.workers.dev"
             autoComplete="off"
             inputMode="url"
-            hint="Recommended. Deploy proxy/fatsecret-worker.js from this repo and paste its URL."
+            hint="Required — FatSecret can't be reached from a browser without one."
           />
 
           <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
             <IconWarning width={14} height={14} className="mt-0.5 shrink-0" />
             <p>
-              FatSecret cannot be called from a browser without one. Their token endpoint sends
-              no CORS headers, and keys are locked to whitelisted IP addresses — which a phone
-              moving between wifi and mobile data never has. Without a proxy the calls will be
-              blocked; the app tells you so rather than failing silently.
+              Their token endpoint sends no CORS headers, and keys are locked to whitelisted IP
+              addresses — which a phone moving between wifi and mobile data never has. A Client
+              ID and Secret alone will not work here.{' '}
+              <a
+                href={PROXY_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold underline"
+              >
+                Set up the proxy
+              </a>{' '}
+              — four commands, free tier.
             </p>
           </div>
 
@@ -774,6 +786,21 @@ function FatSecretCard() {
             >
               {result.ok ? '✓ ' : '✗ '}
               {result.detail}
+              {/* The blocked case is the one nobody can fix by re-reading the
+                  message, so it gets the setup guide attached directly. */}
+              {!result.ok && /cannot call FatSecret directly/i.test(result.detail) && (
+                <>
+                  {' '}
+                  <a
+                    href={PROXY_GUIDE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold underline"
+                  >
+                    Setup guide →
+                  </a>
+                </>
+              )}
             </p>
           )}
 
