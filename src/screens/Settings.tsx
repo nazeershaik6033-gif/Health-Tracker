@@ -5,6 +5,7 @@ import { clearAllData, saveProfile } from '@/db/repo';
 import { downloadBundle, exportData, importData } from '@/db/export';
 import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
+import { buildLabel, checkForUpdate, forceReload } from '@/lib/appUpdate';
 import { computeTargets, macroTargets } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
@@ -32,6 +33,37 @@ export default function Settings() {
   const [busy, setBusy] = useState<'export' | 'import' | 'reset' | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState('');
+
+  const [updating, setUpdating] = useState<'check' | 'force' | null>(null);
+  const [updateMessage, setUpdateMessage] = useState('');
+
+  async function runUpdateCheck() {
+    setUpdating('check');
+    setUpdateMessage('');
+    try {
+      const result = await checkForUpdate();
+      setUpdateMessage(result.detail);
+      if (result.status === 'updated') {
+        // Long enough to read "Reloading…", short enough not to feel stuck.
+        setTimeout(() => window.location.reload(), 900);
+        return; // leave the buttons disabled through the reload
+      }
+    } catch (err) {
+      setUpdateMessage(err instanceof Error ? err.message : 'Could not check for updates.');
+    }
+    setUpdating(null);
+  }
+
+  async function runForceReload() {
+    setUpdating('force');
+    setUpdateMessage('Clearing the offline cache…');
+    try {
+      await forceReload();
+    } catch (err) {
+      setUpdateMessage(err instanceof Error ? err.message : 'Could not clear the cache.');
+      setUpdating(null);
+    }
+  }
 
   // Only so the System swatch can say which way it currently resolves.
   const [prefersDark, setPrefersDark] = useState(
@@ -437,6 +469,44 @@ export default function Settings() {
           >
             Edit your details and goal →
           </button>
+        </Card>
+
+        {/* --------------------------- Version -------------------------- */}
+        <Card className="space-y-2.5">
+          <SectionTitle>App version</SectionTitle>
+          <p data-testid="build-stamp" className="tabular text-[12.5px] font-medium text-secondary">
+            {buildLabel()}
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Healthify caches itself so it works offline, which is also why a new version can
+            take a reload to show up. This fetches the latest and reloads if there is one.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={runUpdateCheck} disabled={updating !== null}>
+              <IconRefresh
+                width={15}
+                height={15}
+                className={updating === 'check' ? 'animate-spin' : ''}
+              />
+              {updating === 'check' ? 'Checking…' : 'Check for updates'}
+            </Button>
+            <Button variant="secondary" onClick={runForceReload} disabled={updating !== null}>
+              {updating === 'force' ? 'Clearing…' : 'Force reload'}
+            </Button>
+          </div>
+
+          {updateMessage && (
+            <p className="text-[12.5px] leading-relaxed text-brand-700" role="status">
+              {updateMessage}
+            </p>
+          )}
+
+          <p className="text-[11.5px] leading-relaxed text-muted">
+            Force reload clears the offline cache and re-downloads the app. Your meals, photos
+            and tracker entries are stored separately and are not touched — but you will need a
+            connection to load again.
+          </p>
         </Card>
 
         {/* ---------------------------- Danger -------------------------- */}
