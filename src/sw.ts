@@ -1,11 +1,23 @@
 /// <reference lib="webworker" />
-import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import {
+  cleanupOutdatedCaches,
+  createHandlerBoundToURL,
+  precacheAndRoute,
+} from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
 
 declare const self: ServiceWorkerGlobalScope;
 
 const SHARE_CACHE = 'healthify-shared-v1';
+
+/**
+ * The app is served from `/` locally but from `/<repo>/` on a GitHub Pages
+ * project site. The worker's own URL tells us which, so every path below is
+ * built from this rather than hardcoded to the root.
+ */
+const BASE = new URL(self.registration.scope).pathname;
+const path = (p: string) => `${BASE}${p}`;
 
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
@@ -40,7 +52,7 @@ async function handleShare(request: Request): Promise<Response> {
       if (!file.type.startsWith('image/') || file.size === 0) continue;
       const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       await cache.put(
-        new Request(`/__shared/${id}`),
+        new Request(path(`__shared/${id}`)),
         new Response(file, {
           headers: {
             'content-type': file.type,
@@ -53,24 +65,24 @@ async function handleShare(request: Request): Promise<Response> {
 
     if (!ids.length) {
       // Nothing usable was shared (text-only share, or an unsupported type).
-      return Response.redirect('/snap?shared=empty', 303);
+      return Response.redirect(path('snap?shared=empty'), 303);
     }
-    return Response.redirect(`/snap?shared=${ids.join(',')}`, 303);
+    return Response.redirect(path(`snap?shared=${ids.join(',')}`), 303);
   } catch {
-    return Response.redirect('/snap?shared=error', 303);
+    return Response.redirect(path('snap?shared=error'), 303);
   }
 }
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method === 'POST' && url.pathname === '/share-target') {
+  if (event.request.method === 'POST' && url.pathname === path('share-target')) {
     event.respondWith(handleShare(event.request));
   }
 });
 
 // Serve the stashed share blobs straight from the cache.
 registerRoute(
-  ({ url }) => url.pathname.startsWith('/__shared/'),
+  ({ url }) => url.pathname.startsWith(path('__shared/')),
   new CacheFirst({ cacheName: SHARE_CACHE }),
 );
 
@@ -103,13 +115,9 @@ registerRoute(
 // SPA navigations fall back to the precached shell so deep links work offline.
 // Anything the SW must see itself (share target, cached blobs) is excluded.
 registerRoute(
-  new NavigationRoute(
-    async ({ request }) => {
-      const cached = await caches.match('/index.html', { ignoreSearch: true });
-      return cached ?? fetch(request);
-    },
-    { denylist: [/^\/share-target/, /^\/__shared\//] },
-  ),
+  new NavigationRoute(createHandlerBoundToURL(path('index.html')), {
+    denylist: [/share-target/, /__shared\//],
+  }),
 );
 
 // AI provider calls must never be cached or intercepted — they carry the

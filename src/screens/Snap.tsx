@@ -116,8 +116,11 @@ export default function Snap() {
       const ids = shared.split(',').filter(Boolean);
       const cache = await caches.open('healthify-shared-v1');
       for (const id of ids) {
-        const res = await cache.match(`/__shared/${id}`);
-        await cache.delete(`/__shared/${id}`);
+        // The worker keyed these under the app's base, which is not the
+        // domain root on a Pages project site.
+        const key = `${import.meta.env.BASE_URL}__shared/${id}`;
+        const res = await cache.match(key);
+        await cache.delete(key);
         if (!res) continue;
         const blob = await res.blob();
         await ingest(blob, settings.autoTrack);

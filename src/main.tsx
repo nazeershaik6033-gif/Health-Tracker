@@ -9,7 +9,9 @@ registerSW({ immediate: true });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    {/* basename keeps routing correct when served from a sub-path, e.g. a
+        GitHub Pages project site at /<repo>/. Vite injects BASE_URL. */}
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <App />
     </BrowserRouter>
   </StrictMode>,
