@@ -1,0 +1,24 @@
+# Ready-to-deploy config for the FatSecret proxy.
+#
+#   cd proxy
+#   npx wrangler login
+#   npx wrangler secret put FATSECRET_CLIENT_ID
+#   npx wrangler secret put FATSECRET_CLIENT_SECRET
+#   npx wrangler deploy
+#
+# The two credentials are set as *secrets*, not vars — they are never written
+# into this file, so it stays safe to commit.
+
+name = "healthify-fatsecret-proxy"
+main = "fatsecret-worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# The origin allowed to call this proxy. Anything else gets a 403, so a leaked
+# worker URL can't be pointed at your FatSecret quota from another site.
+# Change this if you serve the app from somewhere other than GitHub Pages.
+ALLOWED_ORIGIN = "https://nazeershaik6033-gif.github.io"
+
+# Free FatSecret keys only get "basic". Premier keys can use "basic barcode",
+# which is what enables barcode lookups.
+FATSECRET_SCOPE = "basic"

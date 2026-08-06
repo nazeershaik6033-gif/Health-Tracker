@@ -110,24 +110,27 @@ supported path here.
 
 ### Setting it up
 
-Deploy [`proxy/fatsecret-worker.js`](proxy/fatsecret-worker.js) — a ~150-line
-Cloudflare Worker that holds your Client Secret, mints and caches tokens, and
-exposes one CORS-enabled endpoint:
+[`proxy/`](proxy/) holds a ready-to-deploy Cloudflare Worker that keeps your
+Client Secret off your device, mints and caches tokens, and exposes one
+CORS-enabled endpoint. Four commands:
 
 ```bash
-npm install -g wrangler
-wrangler init fatsecret-proxy          # paste the worker into src/index.js
-wrangler secret put FATSECRET_CLIENT_ID
-wrangler secret put FATSECRET_CLIENT_SECRET
-wrangler deploy
+cd proxy
+npx wrangler login
+npx wrangler secret put FATSECRET_CLIENT_ID
+npx wrangler secret put FATSECRET_CLIENT_SECRET
+npx wrangler deploy
 ```
 
-Set `ALLOWED_ORIGIN` to your app's origin, whitelist the worker's egress IP in
-the FatSecret dashboard (`GET /whoami` on the deployed worker reports it), then
-paste the worker URL into **Settings → Food database → Proxy URL** and switch
-FatSecret on. **Test connection** tells you exactly which step failed if one
-did — wrong origin, unwhitelisted IP, missing scope or bad credentials each get
-their own message.
+Then whitelist the worker's egress IP in the FatSecret dashboard (open
+`<worker-url>/whoami` — it reports the address), paste the worker URL into
+**Settings → Food database → Proxy URL**, and switch FatSecret on. Leave Client
+ID and Secret blank; the worker holds them.
+
+**Test connection** says exactly which step failed if one did — wrong origin,
+unwhitelisted IP, missing scope and bad credentials each get their own message.
+[`proxy/README.md`](proxy/README.md) has the full walkthrough and a table
+mapping each message to its fix.
 
 The worker only relays three methods (`foods.search.v3`, `food.get.v4`,
 `food.find_id_for_barcode`) and rejects other origins, so a leaked URL can't be
