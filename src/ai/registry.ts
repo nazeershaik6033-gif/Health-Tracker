@@ -1,5 +1,5 @@
 import type { ProviderId, Settings } from '@/types';
-import { AIError, PROVIDER_META, type ProviderAdapter } from './types';
+import { AIError, PROVIDER_META, keyShapeWarning, type ProviderAdapter } from './types';
 import { createAnthropic } from './anthropic';
 import { createGemini } from './gemini';
 import { createOpenRouter } from './openrouter';
@@ -38,6 +38,12 @@ export function getAdapter(settings: Settings): ProviderAdapter {
 
 /** Cheap round-trip used by Settings to verify a pasted key actually works. */
 export async function testKey(settings: Settings): Promise<{ ok: boolean; detail: string }> {
+  // A key of obviously the wrong shape gets diagnosed here rather than sent:
+  // the provider would only answer 401, and "rejected" doesn't tell the user
+  // that what they pasted was never a key for this provider in the first place.
+  const shape = keyShapeWarning(settings.provider, settings.apiKeys[settings.provider] ?? '');
+  if (shape) return { ok: false, detail: shape };
+
   try {
     const adapter = getAdapter(settings);
     const reply = await adapter.extract('Reply with exactly: OK', {
