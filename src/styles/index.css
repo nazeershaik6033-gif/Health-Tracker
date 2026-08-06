@@ -1,0 +1,220 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens
+   Sampled from the reference app: emerald primary, orange on food actions,
+   warm off-white canvas, white cards, pastel tracker rings.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-brand-50: #e9f8f1;
+  --color-brand-100: #cdefe0;
+  --color-brand-200: #9fe0c4;
+  --color-brand-300: #66cca3;
+  --color-brand-400: #33b985;
+  --color-brand-500: #14a06a;
+  --color-brand-600: #0f8557;
+  --color-brand-700: #0e6b4f;
+  --color-brand-800: #0b5340;
+  --color-brand-900: #093f32;
+
+  --color-accent-50: #fff3ea;
+  --color-accent-100: #ffe1cb;
+  --color-accent-300: #ffb27a;
+  --color-accent-500: #ff7a2f;
+  --color-accent-600: #ea5f12;
+
+  /* Tracker ring hues — deliberately distinct at a glance, all AA on white */
+  --color-ring-weight: #14a06a;
+  --color-ring-workout: #e8467c;
+  --color-ring-walk: #7c5cf0;
+  --color-ring-sleep: #0e9aa7;
+  --color-ring-water: #4f7df3;
+  --color-ring-calorie: #ff7a2f;
+
+  /* Macro bars */
+  --color-macro-protein: #f0b429;
+  --color-macro-fat: #e8467c;
+  --color-macro-carb: #7c5cf0;
+  --color-macro-fibre: #14a06a;
+
+  --radius-card: 1.25rem;
+  --radius-sheet: 1.75rem;
+}
+
+/* Semantic surface variables, flipped by the dark class. Kept as CSS vars
+   rather than Tailwind `dark:` variants so every component reads one name. */
+:root {
+  --surface-canvas: #f7f7f5;
+  --surface-card: #ffffff;
+  --surface-sunken: #f1f2f0;
+  --surface-border: #e8e9e6;
+  --text-primary: #101413;
+  --text-secondary: #5c6360;
+  --text-muted: #8b918e;
+  color-scheme: light;
+}
+
+.dark {
+  --surface-canvas: #0b1210;
+  --surface-card: #151d1a;
+  --surface-sunken: #1d2724;
+  --surface-border: #26302c;
+  --text-primary: #eef2f0;
+  --text-secondary: #a3aeaa;
+  --text-muted: #7b8683;
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    /* Prevent iOS rubber-band revealing the page background behind the app */
+    background: var(--surface-canvas);
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-canvas);
+    color: var(--text-primary);
+    font-family:
+      'Inter var', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Helvetica Neue', system-ui, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+
+  /* Numeric readouts (calories, macros, weights) line up in columns */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  button,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  /* Respect users who ask for less motion — rings and sheets both animate */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .surface-card {
+    background: var(--surface-card);
+    border-radius: var(--radius-card);
+    box-shadow:
+      0 1px 2px rgb(16 20 19 / 0.04),
+      0 6px 16px -8px rgb(16 20 19 / 0.1);
+  }
+
+  .surface-sunken {
+    background: var(--surface-sunken);
+  }
+
+  .hairline {
+    border-color: var(--surface-border);
+  }
+
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  /* Safe-area helpers for the bottom nav and sheets on notched devices */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
+}
+
+/* Hide scrollbars on the horizontal chip/date rails without losing scroll */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-sheet-up {
+  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+.animate-toast-in {
+  animation: toast-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Skeleton shimmer for AI calls that take a beat */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.35),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}
+.dark .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+}

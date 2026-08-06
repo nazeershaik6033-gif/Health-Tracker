@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npx vite build
+
+      - name: Check the service worker and manifest were emitted
+        run: |
+          test -f dist/sw.js || { echo "service worker missing from build"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "manifest missing from build"; exit 1; }
