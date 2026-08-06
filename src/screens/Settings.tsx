@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { clearAllData, saveProfile } from '@/db/repo';
@@ -17,7 +17,7 @@ import {
   IconUpload,
   IconWarning,
 } from '@/components/icons';
-import type { FatSecretConfig, ProviderId, Settings as SettingsType } from '@/types';
+import { THEMES, type FatSecretConfig, type ProviderId, type Settings as SettingsType } from '@/types';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -32,6 +32,17 @@ export default function Settings() {
   const [busy, setBusy] = useState<'export' | 'import' | 'reset' | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Only so the System swatch can say which way it currently resolves.
+  const [prefersDark, setPrefersDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setPrefersDark(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   const provider = settings.provider;
   const meta = PROVIDER_META[provider];
@@ -318,22 +329,60 @@ export default function Settings() {
         </Card>
 
         {/* -------------------------- Appearance ------------------------ */}
-        <Card>
-          <SectionTitle>Appearance</SectionTitle>
-          <div className="surface-sunken flex gap-1 rounded-xl p-1">
-            {(['system', 'light', 'dark'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setSettings({ theme: t })}
-                className={`flex-1 rounded-lg py-2 text-[12.5px] font-semibold capitalize transition-colors ${
-                  settings.theme === t ? 'bg-[var(--surface-card)] shadow-sm' : 'text-secondary'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+        <Card className="space-y-3">
+          <SectionTitle>Theme</SectionTitle>
+          <div className="flex gap-1">
+            {THEMES.map(({ id, label }) => {
+              const selected = settings.theme === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSettings({ theme: id })}
+                  aria-pressed={selected}
+                  aria-label={`${label} theme`}
+                  className="flex flex-1 flex-col items-center gap-1.5"
+                >
+                  {/* Outer ring is a border on a padded wrapper rather than a
+                      ring utility, so the gap reads correctly on any card
+                      colour without tracking a ring-offset variable. */}
+                  <span
+                    className={`rounded-full border-2 p-0.5 transition-colors ${
+                      selected ? 'border-brand-500' : 'border-transparent'
+                    }`}
+                  >
+                    <span
+                      className="hairline flex h-12 w-12 items-center justify-center rounded-full border"
+                      style={{ background: `var(--swatch-${id})` }}
+                    >
+                      <span
+                        className="text-[18px] leading-none"
+                        style={{
+                          color: `var(--swatch-${id}-fg)`,
+                          fontFamily: 'Georgia, "Times New Roman", serif',
+                        }}
+                        aria-hidden="true"
+                      >
+                        A
+                      </span>
+                    </span>
+                  </span>
+                  <span
+                    className={`text-[11.5px] ${
+                      selected ? 'font-bold' : 'font-medium text-muted'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
+          {settings.theme === 'system' && (
+            <p className="text-[11.5px] text-muted">
+              Following your device — currently {prefersDark ? 'dark' : 'light'}.
+            </p>
+          )}
         </Card>
 
         {/* ------------------------ Backup / restore -------------------- */}

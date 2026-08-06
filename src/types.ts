@@ -222,6 +222,24 @@ export interface Profile {
   createdAt: number;
 }
 
+/**
+ * `system` follows the OS and resolves to light or dark; the other four are
+ * explicit. Sepia is a warm light theme for reading, black is true #000 for
+ * OLED screens — on those it genuinely saves power, which "dark" does not.
+ */
+export type ThemeId = 'system' | 'light' | 'sepia' | 'dark' | 'black';
+
+/** Resolved themes — what actually gets painted, so never `system`. */
+export type ResolvedTheme = Exclude<ThemeId, 'system'>;
+
+export const THEMES: { id: ThemeId; label: string }[] = [
+  { id: 'system', label: 'System' },
+  { id: 'light', label: 'Light' },
+  { id: 'sepia', label: 'Sepia' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'black', label: 'Black' },
+];
+
 export type ProviderId = 'anthropic' | 'gemini' | 'openrouter';
 
 /**
@@ -262,7 +280,7 @@ export interface Settings {
   models: Partial<Record<ProviderId, string>>;
   fatsecret: FatSecretConfig;
   autoTrack: boolean;
-  theme: 'system' | 'light' | 'dark';
+  theme: ThemeId;
   onboardingDone: boolean;
   lastInsightDate?: string;
 }

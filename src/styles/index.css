@@ -41,9 +41,13 @@
   --radius-sheet: 1.75rem;
 }
 
-/* Semantic surface variables, flipped by the dark class. Kept as CSS vars
-   rather than Tailwind `dark:` variants so every component reads one name. */
-:root {
+/* Semantic surface variables, selected by [data-theme] on <html>. Kept as CSS
+   vars rather than Tailwind `dark:` variants so every component reads one name.
+   Order matters: these all have the same specificity, so the block that wins is
+   the last one matching. `.dark` is set alongside data-theme for dark and black,
+   and carries only `color-scheme` and the shimmer overlay. */
+:root,
+[data-theme='light'] {
   --surface-canvas: #f7f7f5;
   --surface-card: #ffffff;
   --surface-sunken: #f1f2f0;
@@ -54,7 +58,21 @@
   color-scheme: light;
 }
 
-.dark {
+/* Warm paper. Aimed at long reading sessions, so the contrast is deliberately
+   softer than Light while staying above 4.5:1 for body text. */
+[data-theme='sepia'] {
+  --surface-canvas: #f4ecd8;
+  --surface-card: #fbf6e8;
+  --surface-sunken: #ebe0c8;
+  --surface-border: #ddd0b0;
+  --text-primary: #3a3229;
+  --text-secondary: #6a5d4c;
+  --text-muted: #8d8270;
+  color-scheme: light;
+}
+
+.dark,
+[data-theme='dark'] {
   --surface-canvas: #0b1210;
   --surface-card: #151d1a;
   --surface-sunken: #1d2724;
@@ -63,6 +81,39 @@
   --text-secondary: #a3aeaa;
   --text-muted: #7b8683;
   color-scheme: dark;
+}
+
+/* True black for OLED, where an unlit pixel actually draws no power — the
+   point Dark's near-black canvas misses. Cards stay slightly lifted so the
+   layout doesn't dissolve into one flat sheet. */
+[data-theme='black'] {
+  --surface-canvas: #000000;
+  --surface-card: #0c0c0c;
+  --surface-sunken: #161616;
+  --surface-border: #262626;
+  --text-primary: #f2f3f2;
+  --text-secondary: #a6a9a7;
+  --text-muted: #7c807e;
+  color-scheme: dark;
+}
+
+/* Swatch previews for the theme picker. These sit in their own :root block, so
+   they are the same whichever theme is active — a picker has to show all five
+   palettes at once, which the vars above can't do since only one is applied.
+   Keep them in step with the blocks above when a palette changes. */
+:root {
+  --swatch-light: #ffffff;
+  --swatch-light-fg: #101413;
+  --swatch-sepia: #f4ecd8;
+  --swatch-sepia-fg: #3a3229;
+  --swatch-dark: #151d1a;
+  --swatch-dark-fg: #eef2f0;
+  --swatch-black: #000000;
+  --swatch-black-fg: #f2f3f2;
+  /* System shows both halves; the letter sits on the seam, so it needs a grey
+     that clears 4.5:1 against white and near-black alike. */
+  --swatch-system: linear-gradient(90deg, #ffffff 50%, #0b1210 50%);
+  --swatch-system-fg: #767b79;
 }
 
 @layer base {
