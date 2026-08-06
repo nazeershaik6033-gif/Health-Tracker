@@ -249,7 +249,31 @@ export default function Snap() {
               autoPlay
               className="h-full w-full object-cover"
             />
-            {camera.status !== 'live' && (
+            {/* Without a key the camera is deliberately not started, since a
+                photo could not be read. Saying so beats "Camera not started",
+                which reads as a broken camera rather than a missing key. */}
+            {!keyed && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center text-white/80">
+                <IconSparkle width={30} height={30} className="text-accent-500" />
+                <p className="text-[15px] font-bold text-white">Snap needs an AI key</p>
+                <p className="max-w-xs text-[13px] leading-relaxed">
+                  Reading calories from a photo is the one thing here that can&apos;t run
+                  on-device. Everything else — searching foods, barcodes, and every tracker —
+                  works without one.
+                </p>
+                <div className="flex flex-col gap-2 pt-1">
+                  <Button onClick={() => navigate('/settings')}>Add a key in Settings</Button>
+                  <Button variant="secondary" onClick={() => navigate('/search')}>
+                    Search the food database instead
+                  </Button>
+                  <Button variant="ghost" onClick={() => navigate('/scan')}>
+                    Scan a barcode
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {keyed && camera.status !== 'live' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center text-white/80">
                 <IconCamera width={34} height={34} />
                 <p className="text-[13.5px]">
@@ -275,7 +299,9 @@ export default function Snap() {
 
           <div className="bg-black px-6 pt-5 pb-safe">
             <p className="mb-4 text-center text-[12.5px] text-white/60">
-              Fit the whole plate in frame. Good light gives a much better estimate.
+              {keyed
+                ? 'Fit the whole plate in frame. Good light gives a much better estimate.'
+                : 'Photo tracking is the only feature that needs a key.'}
             </p>
             <div className="flex items-center justify-around pb-4">
               <button
