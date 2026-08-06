@@ -5,6 +5,8 @@ import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood, removeMealItem } from '@/db/repo';
 import { searchFoods, frequentFoods } from '@/lib/foodSearch';
+import { searchRemote } from '@/lib/foodLookup';
+import { fatSecretReady, type FoodDraft } from '@/lib/fatsecret';
 import { STARTER_FREQUENT } from '@/data/foods.seed';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
 import { draftToFood, generateFood } from '@/ai/service';
@@ -21,6 +23,9 @@ import {
 } from '@/components/icons';
 import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
 
+/** Marks a row that lives only in the current search result, not IndexedDB. */
+const REMOTE_PREFIX = 'fatsecret:';
+
 export default function Search() {
   const navigate = useNavigate();
   const { selectedDate, pendingSlot, setPendingSlot, showToast } = useApp();
@@ -33,6 +38,9 @@ export default function Search() {
   const [addedIds, setAddedIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState('');
+  const [remote, setRemote] = useState<FoodDraft[]>([]);
+  const [remoteWarning, setRemoteWarning] = useState('');
+  const [remoteBusy, setRemoteBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const foods = useLiveQuery(async () => db.foods.toArray(), []);
@@ -44,8 +52,68 @@ export default function Search() {
 
   useEffect(() => () => setPendingSlot(undefined), [setPendingSlot]);
 
+  /* ------------------------- FatSecret name search ----------------------- */
+
+  const fatsecret = settings.fatsecret;
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!fatSecretReady(fatsecret) || q.length < 2) {
+      setRemote([]);
+      setRemoteWarning('');
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    // Debounced so typing a dish name is one request, not one per keystroke.
+    const timer = setTimeout(async () => {
+      setRemoteBusy(true);
+      try {
+        const res = await searchRemote(fatsecret, q, controller.signal);
+        if (cancelled) return;
+        setRemote(res.foods);
+        setRemoteWarning(res.warning ?? '');
+      } catch {
+        /* superseded by a newer query */
+      } finally {
+        if (!cancelled) setRemoteBusy(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, fatsecret]);
+
+  /**
+   * FatSecret rows are not in IndexedDB yet, so they get display-only ids and
+   * are written for real the moment the user acts on one. Saving every search
+   * result instead would fill the local database with foods nobody picked.
+   */
+  const remoteFoods = useMemo<Food[]>(
+    () =>
+      remote.map((draft, i) => ({
+        ...draft,
+        id: `${REMOTE_PREFIX}${i}`,
+        useCount: 0,
+        createdAt: 0,
+      })),
+    [remote],
+  );
+
+  async function materialise(food: Food): Promise<Food> {
+    if (!food.id.startsWith(REMOTE_PREFIX)) return food;
+    const { id: _id, useCount: _useCount, createdAt: _createdAt, ...draft } = food;
+    return createFood(draft);
+  }
+
   async function add(food: Food, qty = 1, servingLabel?: string) {
-    const item = buildMealItem(food, servingLabel ?? food.servings[0]?.label ?? '100 g', qty);
+    // A FatSecret row only becomes a real local food once it is actually used.
+    const real = await materialise(food);
+    const item = buildMealItem(real, servingLabel ?? real.servings[0]?.label ?? '100 g', qty);
     const meal = await addMealItems(selectedDate, slot, [item]);
     setAddedIds((prev) => [...prev, food.id]);
     setDetail(null);
@@ -170,6 +238,40 @@ export default function Search() {
           />
         ) : (
           <EmptyState title="Nothing here yet" body="Search for a food to get started." />
+        )}
+
+        {/* ---------------------- FatSecret results --------------------- */}
+        {query.trim().length >= 2 && fatSecretReady(fatsecret) && (
+          <div className="mt-5">
+            <h2 className="mb-1 flex items-center gap-1.5 text-[13px] font-bold text-secondary">
+              From FatSecret
+              {remoteBusy && (
+                <span className="text-[11px] font-medium text-muted">searching…</span>
+              )}
+            </h2>
+
+            {remoteFoods.length > 0 ? (
+              remoteFoods.map((food) => (
+                <FoodRow
+                  key={food.id}
+                  food={food}
+                  added={addedIds.includes(food.id)}
+                  onAdd={() => add(food)}
+                  onOpen={() => setDetail(food)}
+                />
+              ))
+            ) : remoteWarning ? (
+              <p className="rounded-xl bg-amber-50 p-3 text-[12px] leading-relaxed text-amber-900">
+                {remoteWarning}
+              </p>
+            ) : (
+              !remoteBusy && (
+                <p className="py-2 text-[12.5px] text-muted">
+                  Nothing in FatSecret for &quot;{query.trim()}&quot;.
+                </p>
+              )
+            )}
+          </div>
         )}
 
         {genError && <p className="mt-3 text-center text-[12.5px] text-red-600">{genError}</p>}

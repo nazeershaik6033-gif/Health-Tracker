@@ -45,7 +45,7 @@ export interface Serving {
   defaultQty?: number;
 }
 
-export type FoodSource = 'seed' | 'openfoodfacts' | 'ai' | 'custom' | 'snap';
+export type FoodSource = 'seed' | 'openfoodfacts' | 'fatsecret' | 'ai' | 'custom' | 'snap';
 
 export interface Food {
   id: string;
@@ -224,11 +224,43 @@ export interface Profile {
 
 export type ProviderId = 'anthropic' | 'gemini' | 'openrouter';
 
+/**
+ * FatSecret Platform API credentials.
+ *
+ * Unlike the AI providers, FatSecret cannot be called straight from a browser:
+ * their token endpoint sends no CORS headers, and credentials are pinned to
+ * whitelisted IP addresses. `proxyUrl` points at a small worker that holds the
+ * secret and does the token exchange — see `proxy/fatsecret-worker.js`. The
+ * direct path is still attempted when no proxy is set, because a diagnosis
+ * beats a silent missing feature.
+ */
+export interface FatSecretConfig {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+  /** When set, every call goes here instead of to FatSecret directly. */
+  proxyUrl: string;
+  /** OAuth scopes. `basic` is all a free key gets; Premier adds `barcode`. */
+  scope: string;
+  /** ISO country code biasing results to local brands, e.g. "IN". */
+  region: string;
+}
+
+export const DEFAULT_FATSECRET: FatSecretConfig = {
+  enabled: false,
+  clientId: '',
+  clientSecret: '',
+  proxyUrl: '',
+  scope: 'basic',
+  region: 'IN',
+};
+
 export interface Settings {
   id: 'app';
   provider: ProviderId;
   apiKeys: Partial<Record<ProviderId, string>>;
   models: Partial<Record<ProviderId, string>>;
+  fatsecret: FatSecretConfig;
   autoTrack: boolean;
   theme: 'system' | 'light' | 'dark';
   onboardingDone: boolean;

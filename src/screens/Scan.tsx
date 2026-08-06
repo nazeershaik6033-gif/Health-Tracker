@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood, findFoodByBarcode, upsertFood } from '@/db/repo';
-import { lookupBarcode } from '@/lib/openfoodfacts';
+import { lookupBarcodeTiered } from '@/lib/foodLookup';
 import { ConsensusBuffer, createDecoder, isValidEAN, type Decoder } from '@/lib/scanner/barcode';
 import { useCamera } from '@/lib/camera';
 import { captureFrame } from '@/lib/image';
@@ -68,43 +68,31 @@ export default function Scan() {
           return;
         }
 
-        const result = await lookupBarcode(value);
-        if (result.found && result.food && !result.partial) {
-          const saved = await upsertFood({ ...result.food, id: uid('off_') });
+        const result = await lookupBarcodeTiered(settings, value);
+        if (result.found && result.food) {
+          const prefix = result.food.source === 'fatsecret' ? 'fs_' : 'off_';
+          const saved = await upsertFood({ ...result.food, id: uid(prefix) });
           setFood(saved);
           setServingLabel(saved.servings[0]?.label ?? '100 g');
-          setNote(
-            [
-              'Open Food Facts',
-              result.nutriscore ? `Nutri-Score ${result.nutriscore}` : '',
-              result.novaGroup ? `NOVA ${result.novaGroup}` : '',
-            ]
-              .filter(Boolean)
-              .join(' · '),
-          );
+          setNote(result.note ?? '');
+          // A tier that failed while another succeeded is worth showing, but
+          // quietly — the user has their product.
+          setError(result.warning ?? '');
           setPhase('found');
           return;
         }
 
-        // Product exists but has no usable nutrition, or isn't in OFF at all.
-        setNote(
-          result.found
-            ? `"${result.food?.name ?? 'That product'}" is in Open Food Facts but has no nutrition data.`
-            : '',
-        );
+        setNote(result.note ?? '');
+        setError(result.warning ?? '');
         setPhase('not-found');
       } catch (err) {
-        setError(
-          err instanceof Error && err.name === 'TypeError'
-            ? "Couldn't reach Open Food Facts — you may be offline."
-            : describeError(err),
-        );
+        setError(describeError(err));
         setPhase('not-found');
       } finally {
         busyRef.current = false;
       }
     },
-    [camera],
+    [camera, settings],
   );
 
   /* ------------------------------ scan loop ---------------------------- */
@@ -311,6 +299,11 @@ export default function Scan() {
                 </p>
               )}
               <p className="tabular mt-1 text-[11px] text-muted">{code}</p>
+              {error && (
+                <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-900">
+                  {error}
+                </p>
+              )}
             </div>
 
             <div>
