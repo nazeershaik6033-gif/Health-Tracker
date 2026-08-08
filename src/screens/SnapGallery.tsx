@@ -142,7 +142,15 @@ function SnapTile({ snap }: { snap: Snap }) {
           type="button"
           onClick={() => (confirm ? deleteSnap(snap.id) : setConfirm(true))}
           onBlur={() => setConfirm(false)}
-          aria-label={confirm ? 'Confirm delete' : 'Delete snap'}
+          aria-label={
+            confirm
+              ? snap.mealId
+                ? 'Confirm delete photo and logged meal'
+                : 'Confirm delete'
+              : snap.mealId
+                ? 'Delete photo and logged meal'
+                : 'Delete snap'
+          }
           className={`shrink-0 rounded p-1 ${confirm ? 'bg-red-50 text-red-600' : 'text-muted'}`}
         >
           <IconTrash width={13} height={13} />

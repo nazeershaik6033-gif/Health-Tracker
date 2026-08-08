@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/stores/useApp';
 import {
   dayBundle,
+  deleteMeal,
   deleteWorkout,
   removeMealItem,
   replaceMealItem,
@@ -55,6 +56,7 @@ export default function CalendarScreen() {
     const d = fromISODate(selectedDate);
     return { year: d.getFullYear(), month: d.getMonth() };
   });
+  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
     index: number;
@@ -261,7 +263,35 @@ export default function CalendarScreen() {
               if (!meal || meal.items.length === 0) return null;
               return (
                 <Card key={slot} className="space-y-1">
-                  <SectionTitle>{MEAL_SLOT_LABEL[slot]}</SectionTitle>
+                  <SectionTitle
+                    action={
+                      <button
+                        type="button"
+                        aria-label={
+                          confirmMeal === meal.id
+                            ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
+                            : `Remove ${MEAL_SLOT_LABEL[slot]}`
+                        }
+                        onClick={async () => {
+                          if (confirmMeal !== meal.id) {
+                            setConfirmMeal(meal.id);
+                            return;
+                          }
+                          await deleteMeal(meal.id);
+                          setConfirmMeal(null);
+                          showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
+                        }}
+                        onBlur={() => setConfirmMeal(null)}
+                        className={`rounded-lg p-1.5 text-[11px] font-semibold ${
+                          confirmMeal === meal.id ? 'bg-red-50 text-red-600' : 'text-muted'
+                        }`}
+                      >
+                        {confirmMeal === meal.id ? 'Tap to confirm' : <IconTrash width={14} height={14} />}
+                      </button>
+                    }
+                  >
+                    {MEAL_SLOT_LABEL[slot]}
+                  </SectionTitle>
                   {meal.items.map((item, i) => (
                     <button
                       key={`${meal.id}-${i}`}

@@ -304,8 +304,21 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
   return map;
 }
 
+/**
+ * Deletes a meal and repairs the snap that produced it, if any.
+ *
+ * The photo is kept: it is a record of what was eaten and the user may want to
+ * re-log it. But the snap must stop claiming it is logged, or the gallery
+ * shows a "Logged" badge pointing at a meal that no longer exists.
+ */
 export async function deleteMeal(id: string): Promise<void> {
+  const meal = await db.meals.get(id);
   await db.meals.delete(id);
+  if (!meal?.snapId) return;
+  const snap = await db.snaps.get(meal.snapId);
+  if (snap?.mealId === id) {
+    await db.snaps.put({ ...snap, mealId: undefined, status: 'ready', autoTracked: false });
+  }
 }
 
 /* --------------------------------- snaps --------------------------------- */
@@ -325,8 +338,20 @@ export async function getSnap(id: string): Promise<Snap | undefined> {
   return db.snaps.get(id);
 }
 
-export async function deleteSnap(id: string): Promise<void> {
+/**
+ * Deletes a snap, and by default the meal it was logged as.
+ *
+ * Deleting the photo used to leave the calories behind, so a meal you thought
+ * you had removed still counted against the day with nothing left on screen
+ * pointing at it. The photo and the log entry are one act to the user, so they
+ * are removed together unless the caller says otherwise.
+ */
+export async function deleteSnap(id: string, keepMeal = false): Promise<void> {
+  const snap = await db.snaps.get(id);
   await db.snaps.delete(id);
+  if (keepMeal || !snap?.mealId) return;
+  // Delete directly: deleteMeal would try to repair a snap that is now gone.
+  await db.meals.delete(snap.mealId);
 }
 
 export async function recentSnaps(limit = 60): Promise<Snap[]> {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
-import { getFood, removeMealItem, replaceMealItem } from '@/db/repo';
+import { deleteMeal, getFood, removeMealItem, replaceMealItem } from '@/db/repo';
 import {
   buildMealItem,
   formatPortion,
@@ -31,6 +31,7 @@ export default function Diet() {
   const { profile, selectedDate, setSelectedDate, setPendingSlot, showToast } = useApp();
   const day = useDay();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
     index: number;
@@ -164,6 +165,32 @@ export default function Diet() {
                 <span className="tabular text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
+                {/* Clearing a whole slot used to mean deleting every item. */}
+                {meal && meal.items.length > 0 && (
+                  <button
+                    type="button"
+                    aria-label={
+                      confirmMeal === meal.id
+                        ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
+                        : `Remove ${MEAL_SLOT_LABEL[slot]}`
+                    }
+                    onClick={async () => {
+                      if (confirmMeal !== meal.id) {
+                        setConfirmMeal(meal.id);
+                        return;
+                      }
+                      await deleteMeal(meal.id);
+                      setConfirmMeal(null);
+                      showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
+                    }}
+                    onBlur={() => setConfirmMeal(null)}
+                    className={`rounded-lg p-1.5 ${
+                      confirmMeal === meal.id ? 'bg-red-50 text-red-600' : 'text-muted'
+                    }`}
+                  >
+                    <IconTrash width={14} height={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => openSlot(slot)}
