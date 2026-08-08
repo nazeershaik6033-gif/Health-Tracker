@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
-import { addMealItems, createFood } from '@/db/repo';
+import { addMealItems, createFood, getFood, upsertFood } from '@/db/repo';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { IconPlus, IconTrash } from '@/components/icons';
-import { MEAL_SLOT_LABEL, type MealSlot, type Serving } from '@/types';
+import { MEAL_SLOT_LABEL, type Food, type MealSlot, type Serving } from '@/types';
 
 /**
  * Create a food by hand.
@@ -21,7 +21,11 @@ import { MEAL_SLOT_LABEL, type MealSlot, type Serving } from '@/types';
 export default function FoodEditor() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { id } = useParams<{ id: string }>();
   const { selectedDate, showToast } = useApp();
+  const editing = Boolean(id);
+  const [loaded, setLoaded] = useState(!editing);
+  const [source, setSource] = useState<Food['source']>('custom');
 
   const [name, setName] = useState(params.get('name') ?? '');
   const [brand, setBrand] = useState('');
@@ -37,6 +41,37 @@ export default function FoodEditor() {
   const [extraGrams, setExtraGrams] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Editing loads the stored food back into per-serving figures, since that is
+  // how it was entered — showing raw per-100g numbers would be a different food
+  // to the one the user typed.
+  useEffect(() => {
+    if (!id) return;
+    void (async () => {
+      const food = await getFood(id);
+      if (!food) {
+        showToast({ message: 'That food no longer exists' });
+        navigate('/search', { replace: true });
+        return;
+      }
+      const first = food.servings[0] ?? { label: '1 serving', grams: 100 };
+      const factor = first.grams / 100;
+      setName(food.name);
+      setBrand(food.brand ?? '');
+      setServingLabel(first.label);
+      setServingGrams(String(first.grams));
+      setKcal(String(Math.round(food.per100g.kcal * factor)));
+      setProtein(String(Math.round(food.per100g.protein * factor * 10) / 10));
+      setFat(String(Math.round(food.per100g.fat * factor * 10) / 10));
+      setCarbs(String(Math.round(food.per100g.carbs * factor * 10) / 10));
+      setFibre(String(Math.round(food.per100g.fibre * factor * 10) / 10));
+      // Everything after the first serving, minus the 100 g row the editor adds.
+      setExtra(food.servings.slice(1).filter((sv) => sv.grams !== 100));
+      setSource(food.source);
+      setLoaded(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const num = (v: string) => {
     const n = Number(v);
@@ -68,15 +103,18 @@ export default function FoodEditor() {
     if (!valid || saving) return;
     setSaving(true);
     try {
-      const food = await createFood({
+      const draft = {
         name: trimmedName,
         brand: brand.trim() || undefined,
         per100g,
         servings,
-        source: 'custom',
+        // Keep a built-in food's provenance when it is edited; only genuinely
+        // new rows are marked custom.
+        source: editing ? source : ('custom' as const),
         tags: ['custom'],
         verified: true,
-      });
+      };
+      const food = id ? await upsertFood({ ...draft, id }) : await createFood(draft);
 
       if (logTo) {
         await addMealItems(selectedDate, logTo, [
@@ -85,7 +123,9 @@ export default function FoodEditor() {
         showToast({ message: `${food.name} added to ${MEAL_SLOT_LABEL[logTo]}` });
         navigate('/diet');
       } else {
-        showToast({ message: `${food.name} saved to your foods` });
+        showToast({
+          message: editing ? `${food.name} updated` : `${food.name} saved to your foods`,
+        });
         navigate(-1);
       }
     } finally {
@@ -95,9 +135,24 @@ export default function FoodEditor() {
 
   const preview = scaleNutrients(per100g, grams / 100);
 
+  if (!loaded) {
+    return (
+      <div className="min-h-dvh">
+        <PageHeader title="Edit food" back={() => navigate(-1)} />
+      </div>
+    );
+  }
+
   return (
     <div className="pb-32">
-      <PageHeader title="Create a food" back={() => navigate(-1)} />
+      <PageHeader title={editing ? 'Edit food' : 'Create a food'} back={() => navigate(-1)} />
+
+      {editing && (
+        <p className="mx-4 mt-3 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+          Meals you have already logged keep the numbers they were logged with — changing this
+          food only affects what you add from now on.
+        </p>
+      )}
 
       <div className="space-y-3 px-4 pt-3">
         <Card className="space-y-3">
@@ -264,10 +319,10 @@ export default function FoodEditor() {
 
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-lg gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
         <Button variant="secondary" disabled={!valid || saving} onClick={() => save()}>
-          Save only
+          {editing ? 'Save' : 'Save only'}
         </Button>
         <Button size="lg" full disabled={!valid || saving} onClick={() => setPickerOpen(true)}>
-          Save &amp; log
+          {editing ? 'Save & log' : 'Save & log'}
         </Button>
       </div>
 

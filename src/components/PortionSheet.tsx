@@ -31,6 +31,8 @@ export interface PortionSheetProps {
   onConfirm: (qty: number, servingLabel: string, grams?: number) => void;
   /** Shown only when editing something already logged. */
   onDelete?: () => void;
+  /** Opens the food's own editor. Absent when there is no food row behind it. */
+  onEditFood?: () => void;
 }
 
 export function PortionSheet({
@@ -44,6 +46,7 @@ export function PortionSheet({
   onClose,
   onConfirm,
   onDelete,
+  onEditFood,
 }: PortionSheetProps) {
   const fallback: Serving = servings[0] ?? { label: "100 g", grams: 100 };
   const [servingLabel, setServingLabel] = useState(
@@ -106,7 +109,20 @@ export function PortionSheet({
       }
     >
       <div className="space-y-4 pb-2">
-        {brand && <p className="-mt-2 text-[13px] text-secondary">{brand}</p>}
+        <div className="-mt-2 flex items-center gap-2">
+          {brand && (
+            <p className="flex-1 text-[13px] text-secondary">{brand}</p>
+          )}
+          {onEditFood && (
+            <button
+              type="button"
+              onClick={onEditFood}
+              className="ml-auto text-[12.5px] font-semibold text-brand-600"
+            >
+              Edit food
+            </button>
+          )}
+        </div>
 
         <div className="surface-sunken flex gap-1 rounded-xl p-1">
           {(["serving", "grams"] as const).map((m) => (
