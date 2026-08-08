@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { addDays, relativeDayLabel, today, weekdayShort, fromISODate } from '@/lib/date';
-import { IconChevronDown, IconSettings, IconStreak, IconUser } from './icons';
+import { IconCalendar, IconChevronDown, IconSettings, IconStreak, IconUser } from './icons';
 
 /**
  * Avatar · streak pill · date selector. The date selector expands into a
@@ -57,6 +57,14 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
             className={`transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </button>
+
+        <Link
+          to="/calendar"
+          aria-label="Calendar"
+          className="surface-card flex h-9 w-9 items-center justify-center rounded-full text-secondary"
+        >
+          <IconCalendar width={17} height={17} />
+        </Link>
 
         <Link
           to="/settings"

@@ -131,6 +131,20 @@ export default function Snap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
+  /* ------------------------- upload from gallery ----------------------- */
+
+  // Arriving with ?pick=1 (from the Snap Gallery's Upload button) opens the
+  // file picker straight away, so "upload a photo" is one tap rather than a
+  // hunt for the small gallery icon on the camera screen.
+  useEffect(() => {
+    if (params.get('pick') !== '1') return;
+    const next = new URLSearchParams(params);
+    next.delete('pick');
+    setParams(next, { replace: true });
+    fileRef.current?.click();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /* ---------------------------- existing snap -------------------------- */
 
   useEffect(() => {
