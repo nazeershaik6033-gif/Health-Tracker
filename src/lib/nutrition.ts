@@ -276,3 +276,22 @@ export function rescaleMealItem(item: MealItem, qty: number, servingLabel: strin
     nutrients: roundNutrients(scaleNutrients(item.nutrients, factor)),
   };
 }
+
+/**
+ * Builds a logged item from an exact weight rather than a serving multiple.
+ *
+ * Stored as qty 1 with the weight in the serving label ("170 g") so that
+ * `formatPortion` renders it correctly and a later edit can recover the
+ * grams — a label of "g" with qty 170 would read as "170 × g".
+ */
+export function buildMealItemFromGrams(food: Food, grams: number): MealItem {
+  const safe = Math.max(0, grams);
+  return {
+    foodId: food.id,
+    name: food.name,
+    qty: 1,
+    servingLabel: `${Math.round(safe * 10) / 10} g`,
+    grams: safe,
+    nutrients: roundNutrients(scaleNutrients(food.per100g, safe / 100)),
+  };
+}

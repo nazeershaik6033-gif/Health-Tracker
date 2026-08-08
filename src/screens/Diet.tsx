@@ -5,6 +5,7 @@ import { useDay } from '@/stores/useDay';
 import { deleteMeal, getFood, removeMealItem, replaceMealItem } from '@/db/repo';
 import {
   buildMealItem,
+  buildMealItemFromGrams,
   formatPortion,
   mealNutrients,
   per100gFromItem,
@@ -48,12 +49,15 @@ export default function Diet() {
     setEditing({ mealId, index, item, food });
   }
 
-  async function saveEdit(qty: number, servingLabel: string) {
+  async function saveEdit(qty: number, servingLabel: string, grams?: number) {
     if (!editing) return;
     const { mealId, index, item, food } = editing;
-    const next = food
-      ? buildMealItem(food, servingLabel, qty)
-      : rescaleMealItem(item, qty, servingLabel);
+    const next =
+      food && grams !== undefined
+        ? buildMealItemFromGrams(food, grams)
+        : food
+          ? buildMealItem(food, servingLabel, qty)
+          : rescaleMealItem(item, qty, servingLabel);
     await replaceMealItem(mealId, index, next);
     setEditing(null);
     showToast({ message: `${next.name} updated` });

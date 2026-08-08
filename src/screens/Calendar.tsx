@@ -21,6 +21,7 @@ import {
 } from '@/lib/date';
 import {
   buildMealItem,
+  buildMealItemFromGrams,
   formatPortion,
   per100gFromItem,
   rescaleMealItem,
@@ -111,14 +112,17 @@ export default function CalendarScreen() {
     setEditing({ mealId, index, item, food });
   }
 
-  async function saveEdit(qty: number, servingLabel: string) {
+  async function saveEdit(qty: number, servingLabel: string, grams?: number) {
     if (!editing) return;
     const { mealId, index, item, food } = editing;
 
-    const next: MealItem = food
-      ? buildMealItem(food, servingLabel, qty)
-      : // No food row (deleted, or an AI/snap item): scale what was logged.
-        rescaleMealItem(item, qty, servingLabel);
+    const next: MealItem =
+      food && grams !== undefined
+        ? buildMealItemFromGrams(food, grams)
+        : food
+          ? buildMealItem(food, servingLabel, qty)
+          : // No food row (deleted, or an AI/snap item): scale what was logged.
+            rescaleMealItem(item, qty, servingLabel);
 
     await replaceMealItem(mealId, index, next);
     setEditing(null);

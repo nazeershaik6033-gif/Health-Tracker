@@ -41,13 +41,20 @@ const SYNONYMS: Record<string, string[]> = {
   chips: ['crisps'],
 };
 
-function expand(tokens: string[]): string[] {
-  const out = new Set(tokens);
-  for (const t of tokens) for (const syn of SYNONYMS[t] ?? []) out.add(syn);
-  return [...out];
+/**
+ * Each typed word becomes a group: the word itself plus anything it can also
+ * be called. A group matches if ANY member matches.
+ *
+ * These used to be flattened into one list where every entry had to match,
+ * which inverted the intent — searching "rajma" required the food to also say
+ * "kidney bean", so a food actually named "Rajma" scored zero unless it
+ * happened to carry the synonym as a tag.
+ */
+function expand(tokens: string[]): string[][] {
+  return tokens.map((t) => [t, ...(SYNONYMS[t] ?? [])]);
 }
 
-function scoreFood(food: Food, query: string, tokens: string[]): number {
+function scoreFood(food: Food, query: string, groups: string[][]): number {
   const name = normalise(food.name);
   const haystack = `${name} ${food.brand ? normalise(food.brand) : ''} ${food.tags.join(' ')}`;
 
@@ -57,13 +64,20 @@ function scoreFood(food: Food, query: string, tokens: string[]): number {
   else if (name.startsWith(query)) score += 600;
   else if (name.includes(query)) score += 350;
 
-  for (const token of tokens) {
-    if (!token) continue;
-    if (name.startsWith(token)) score += 120;
-    else if (new RegExp(`\\b${token}`).test(name)) score += 90;
-    else if (name.includes(token)) score += 45;
-    else if (haystack.includes(token)) score += 18;
-    else return 0; // every token must land somewhere, or it isn't a match
+  for (const group of groups) {
+    // Best hit within the group; the word the user typed is first, so an exact
+    // term always outranks a synonym of it.
+    let best = 0;
+    for (const token of group) {
+      if (!token) continue;
+      if (name.startsWith(token)) best = Math.max(best, 120);
+      else if (new RegExp(`\\b${token}`).test(name)) best = Math.max(best, 90);
+      else if (name.includes(token)) best = Math.max(best, 45);
+      else if (haystack.includes(token)) best = Math.max(best, 18);
+    }
+    // Every word the user typed must land somewhere, or it isn't a match.
+    if (best === 0) return 0;
+    score += best;
   }
 
   // Shorter names win ties: "Rice (cooked)" should beat "Curd Rice" for "rice".
@@ -79,10 +93,10 @@ function scoreFood(food: Food, query: string, tokens: string[]): number {
 export function searchFoods(foods: Food[], rawQuery: string, limit = 40): Food[] {
   const query = normalise(rawQuery);
   if (!query) return [];
-  const tokens = expand(query.split(' ').filter(Boolean));
+  const groups = expand(query.split(' ').filter(Boolean));
 
   return foods
-    .map((food) => ({ food, score: scoreFood(food, query, tokens) }))
+    .map((food) => ({ food, score: scoreFood(food, query, groups) }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)

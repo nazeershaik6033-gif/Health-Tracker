@@ -20,6 +20,7 @@ const Settings = lazy(() => import('@/screens/Settings'));
 // Lazy: it pulls in RingProgress-per-cell and the day bundle, and it is a
 // deliberate navigation rather than part of the launch path.
 const CalendarScreen = lazy(() => import('@/screens/Calendar'));
+const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
 const Streaks = lazy(() => import('@/screens/Streaks'));
 const Plans = lazy(() => import('@/screens/Plans'));
 const Coach = lazy(() => import('@/screens/Coach'));
@@ -45,6 +46,9 @@ const FULLSCREEN = [
   '/onboarding',
   '/log',
   '/search',
+  // Has its own sticky action bar; the bottom nav would sit on top of it and
+  // swallow the taps on Save.
+  '/food/new',
 ];
 
 export default function App() {
@@ -82,6 +86,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/diet" element={<Diet />} />
             <Route path="/calendar" element={<CalendarScreen />} />
+            <Route path="/food/new" element={<FoodEditor />} />
             <Route path="/log" element={<LogSheet />} />
             <Route path="/search" element={<Search />} />
             <Route path="/snap" element={<Snap />} />
