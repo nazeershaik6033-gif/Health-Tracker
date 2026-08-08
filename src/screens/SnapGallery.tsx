@@ -81,14 +81,26 @@ export default function SnapGallery() {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => navigate('/snap')}
-        aria-label="Take a new snap"
-        className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-lg"
-      >
-        <IconCameraPlus width={24} height={24} />
-      </button>
+      {/* Two actions, because "upload a photo I already took" was previously
+          only reachable via a small icon inside the camera screen. */}
+      <div className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => navigate('/snap?pick=1')}
+          aria-label="Upload a photo"
+          className="surface-card flex h-12 w-14 items-center justify-center rounded-2xl text-secondary shadow-lg"
+        >
+          <IconGallery width={22} height={22} />
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/snap')}
+          aria-label="Take a new snap"
+          className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-lg"
+        >
+          <IconCameraPlus width={24} height={24} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -130,7 +142,15 @@ function SnapTile({ snap }: { snap: Snap }) {
           type="button"
           onClick={() => (confirm ? deleteSnap(snap.id) : setConfirm(true))}
           onBlur={() => setConfirm(false)}
-          aria-label={confirm ? 'Confirm delete' : 'Delete snap'}
+          aria-label={
+            confirm
+              ? snap.mealId
+                ? 'Confirm delete photo and logged meal'
+                : 'Confirm delete'
+              : snap.mealId
+                ? 'Delete photo and logged meal'
+                : 'Delete snap'
+          }
           className={`shrink-0 rounded p-1 ${confirm ? 'bg-red-50 text-red-600' : 'text-muted'}`}
         >
           <IconTrash width={13} height={13} />

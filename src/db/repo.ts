@@ -225,8 +225,100 @@ export async function removeMealItem(mealId: string, index: number): Promise<voi
   await updateMeal(mealId, { items });
 }
 
+/**
+ * Replaces one logged item in place — the "I ate two rotis, not one" fix.
+ * Editing rather than delete-and-re-add keeps the item's position in the meal
+ * and any AI score attached to it.
+ */
+export async function replaceMealItem(
+  mealId: string,
+  index: number,
+  item: MealItem,
+): Promise<void> {
+  const meal = await db.meals.get(mealId);
+  if (!meal || !meal.items[index]) return;
+  const items = meal.items.map((existing, i) =>
+    i === index ? { ...item, score: existing.score, note: existing.note } : existing,
+  );
+  await updateMeal(mealId, { items });
+}
+
+/**
+ * Which days in a range have anything logged, and how many calories each.
+ * One pass per table rather than a query per day: a month view would otherwise
+ * fire ~180 reads on every month change.
+ */
+export interface DaySummary {
+  date: string;
+  kcal: number;
+  meals: number;
+  water: boolean;
+  sleep: boolean;
+  weight: boolean;
+  workouts: boolean;
+  steps: boolean;
+}
+
+export async function summariseRange(from: string, to: string): Promise<Map<string, DaySummary>> {
+  const [meals, water, sleep, weight, steps, workouts] = await Promise.all([
+    db.meals.where('date').between(from, to, true, true).toArray(),
+    db.water.where('date').between(from, to, true, true).toArray(),
+    db.sleep.where('date').between(from, to, true, true).toArray(),
+    db.weight.where('date').between(from, to, true, true).toArray(),
+    db.steps.where('date').between(from, to, true, true).toArray(),
+    db.workouts.where('date').between(from, to, true, true).toArray(),
+  ]);
+
+  const map = new Map<string, DaySummary>();
+  const at = (date: string): DaySummary => {
+    let row = map.get(date);
+    if (!row) {
+      row = {
+        date,
+        kcal: 0,
+        meals: 0,
+        water: false,
+        sleep: false,
+        weight: false,
+        workouts: false,
+        steps: false,
+      };
+      map.set(date, row);
+    }
+    return row;
+  };
+
+  for (const meal of meals) {
+    const row = at(meal.date);
+    row.meals += 1;
+    for (const item of meal.items) row.kcal += item.nutrients.kcal;
+  }
+  // A zero-glass row is a goal that was set, not water that was drunk.
+  for (const w of water) if (w.glasses > 0) at(w.date).water = true;
+  for (const s of sleep) if (s.durationMin > 0) at(s.date).sleep = true;
+  for (const w of weight) at(w.date).weight = true;
+  for (const s of steps) if (s.count > 0) at(s.date).steps = true;
+  for (const w of workouts) at(w.date).workouts = true;
+
+  for (const row of map.values()) row.kcal = Math.round(row.kcal);
+  return map;
+}
+
+/**
+ * Deletes a meal and repairs the snap that produced it, if any.
+ *
+ * The photo is kept: it is a record of what was eaten and the user may want to
+ * re-log it. But the snap must stop claiming it is logged, or the gallery
+ * shows a "Logged" badge pointing at a meal that no longer exists.
+ */
 export async function deleteMeal(id: string): Promise<void> {
+  const meal = await db.meals.get(id);
   await db.meals.delete(id);
+  if (!meal?.snapId) return;
+  const snap = await db.snaps.get(meal.snapId);
+  if (snap?.mealId === id) {
+    await db.snaps.put({ ...snap, mealId: undefined, status: 'ready', autoTracked: false });
+  }
 }
 
 /* --------------------------------- snaps --------------------------------- */
@@ -246,8 +338,20 @@ export async function getSnap(id: string): Promise<Snap | undefined> {
   return db.snaps.get(id);
 }
 
-export async function deleteSnap(id: string): Promise<void> {
+/**
+ * Deletes a snap, and by default the meal it was logged as.
+ *
+ * Deleting the photo used to leave the calories behind, so a meal you thought
+ * you had removed still counted against the day with nothing left on screen
+ * pointing at it. The photo and the log entry are one act to the user, so they
+ * are removed together unless the caller says otherwise.
+ */
+export async function deleteSnap(id: string, keepMeal = false): Promise<void> {
+  const snap = await db.snaps.get(id);
   await db.snaps.delete(id);
+  if (keepMeal || !snap?.mealId) return;
+  // Delete directly: deleteMeal would try to repair a snap that is now gone.
+  await db.meals.delete(snap.mealId);
 }
 
 export async function recentSnaps(limit = 60): Promise<Snap[]> {

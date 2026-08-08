@@ -239,3 +239,59 @@ export function pctOf(value: number, target: number): number {
   if (!target) return 0;
   return Math.max(0, Math.min(999, Math.round((value / target) * 100)));
 }
+
+/* ---------------------------- editing logged items ------------------------ */
+
+/**
+ * Recovers a per-100g basis from an already-logged item.
+ *
+ * Needed when the source food row is gone — deleted, or it never existed
+ * because the item came from a photo analysis or voice parse. Without this the
+ * edit sheet would have no basis to preview against.
+ */
+export function per100gFromItem(item: MealItem): Nutrients {
+  const factor = 100 / (item.grams || 100);
+  return {
+    kcal: item.nutrients.kcal * factor,
+    protein: item.nutrients.protein * factor,
+    fat: item.nutrients.fat * factor,
+    carbs: item.nutrients.carbs * factor,
+    fibre: item.nutrients.fibre * factor,
+  };
+}
+
+/**
+ * Rescales a logged item to a new quantity when there is no food row to
+ * rebuild from. Scales on grams so switching serving keeps the numbers honest.
+ */
+export function rescaleMealItem(item: MealItem, qty: number, servingLabel: string): MealItem {
+  const perServing = item.grams / (item.qty || 1);
+  const grams = perServing * qty;
+  const factor = item.grams ? grams / item.grams : qty / (item.qty || 1);
+  return {
+    ...item,
+    qty,
+    servingLabel,
+    grams,
+    nutrients: roundNutrients(scaleNutrients(item.nutrients, factor)),
+  };
+}
+
+/**
+ * Builds a logged item from an exact weight rather than a serving multiple.
+ *
+ * Stored as qty 1 with the weight in the serving label ("170 g") so that
+ * `formatPortion` renders it correctly and a later edit can recover the
+ * grams — a label of "g" with qty 170 would read as "170 × g".
+ */
+export function buildMealItemFromGrams(food: Food, grams: number): MealItem {
+  const safe = Math.max(0, grams);
+  return {
+    foodId: food.id,
+    name: food.name,
+    qty: 1,
+    servingLabel: `${Math.round(safe * 10) / 10} g`,
+    grams: safe,
+    nutrients: roundNutrients(scaleNutrients(food.per100g, safe / 100)),
+  };
+}

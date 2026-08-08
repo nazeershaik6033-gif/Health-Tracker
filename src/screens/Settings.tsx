@@ -30,7 +30,6 @@ export default function Settings() {
   const [modelDraft, setModelDraft] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
-  const [kcalDraft, setKcalDraft] = useState(String(profile?.targets.kcal ?? ''));
   const [busy, setBusy] = useState<'export' | 'import' | 'reset' | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState('');
@@ -126,12 +125,59 @@ export default function Settings() {
     setTesting(false);
   }
 
-  async function saveKcal() {
-    const kcal = Number(kcalDraft);
-    if (!profile || !kcal || kcal < 800) return;
-    await saveProfile({ targets: macroTargets(kcal, profile.startWeightKg, profile.goal), targetsManual: true });
+  const [targetDraft, setTargetDraft] = useState(() => ({
+    kcal: String(profile?.targets.kcal ?? ''),
+    protein: String(profile?.targets.protein ?? ''),
+    fat: String(profile?.targets.fat ?? ''),
+    carbs: String(profile?.targets.carbs ?? ''),
+    fibre: String(profile?.targets.fibre ?? ''),
+  }));
+  const [targetsDirty, setTargetsDirty] = useState(false);
+
+  function patchTarget(key: keyof typeof targetDraft, value: string) {
+    setTargetDraft((d) => ({ ...d, [key]: value.replace(/\D/g, '') }));
+    setTargetsDirty(true);
+  }
+
+  /** Convenience: refill the macros from the calorie figure without saving. */
+  function fillFromCalories() {
+    if (!profile) return;
+    const kcal = Number(targetDraft.kcal) || 0;
+    if (kcal < 800) {
+      showToast({ message: 'Set at least 800 calories first' });
+      return;
+    }
+    const m = macroTargets(kcal, profile.startWeightKg, profile.goal);
+    setTargetDraft({
+      kcal: String(m.kcal),
+      protein: String(m.protein),
+      fat: String(m.fat),
+      carbs: String(m.carbs),
+      fibre: String(m.fibre),
+    });
+    setTargetsDirty(true);
+  }
+
+  async function saveTargets() {
+    const kcal = Number(targetDraft.kcal);
+    if (!profile || !kcal || kcal < 800) {
+      showToast({ message: 'Calories must be at least 800' });
+      return;
+    }
+    await saveProfile({
+      targets: {
+        kcal,
+        protein: Number(targetDraft.protein) || 0,
+        fat: Number(targetDraft.fat) || 0,
+        carbs: Number(targetDraft.carbs) || 0,
+        fibre: Number(targetDraft.fibre) || 0,
+      },
+      // Anything typed here is the user's, so the formula stops overwriting it.
+      targetsManual: true,
+    });
     await refreshProfile();
-    showToast({ message: 'Calorie target updated' });
+    setTargetsDirty(false);
+    showToast({ message: 'Targets updated' });
   }
 
   async function recalcTargets() {
@@ -146,7 +192,14 @@ export default function Settings() {
     });
     await saveProfile({ targets, targetsManual: false });
     await refreshProfile();
-    setKcalDraft(String(targets.kcal));
+    setTargetDraft({
+      kcal: String(targets.kcal),
+      protein: String(targets.protein),
+      fat: String(targets.fat),
+      carbs: String(targets.carbs),
+      fibre: String(targets.fibre),
+    });
+    setTargetsDirty(false);
     showToast({ message: 'Targets recalculated' });
   }
 
@@ -371,30 +424,61 @@ export default function Settings() {
 
           {profile && (
             <>
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <Stat label="Protein" value={`${profile.targets.protein}g`} />
-                <Stat label="Fat" value={`${profile.targets.fat}g`} />
-                <Stat label="Carbs" value={`${profile.targets.carbs}g`} />
-                <Stat label="Fibre" value={`${profile.targets.fibre}g`} />
-              </div>
-              <div className="flex items-end gap-2">
+              {/* Every value is editable. Macros used to be read-only, derived
+                  from calories by a fixed ratio and silently rewritten on every
+                  change — which is wrong for anyone following a specific split. */}
+              <Field
+                label="Calories"
+                value={targetDraft.kcal}
+                onChange={(e) => patchTarget('kcal', e.target.value)}
+                inputMode="numeric"
+                suffix="kcal"
+              />
+              <div className="grid grid-cols-2 gap-2">
                 <Field
-                  label="Calories"
-                  value={kcalDraft}
-                  onChange={(e) => setKcalDraft(e.target.value.replace(/\D/g, ''))}
+                  label="Protein"
+                  value={targetDraft.protein}
+                  onChange={(e) => patchTarget('protein', e.target.value)}
                   inputMode="numeric"
-                  suffix="kcal"
-                  className="flex-1"
-                  hint={
-                    profile.targetsManual
-                      ? 'Set by hand — recalculate to follow your weight again.'
-                      : 'Calculated from your profile and current weight.'
-                  }
+                  suffix="g"
                 />
-                <Button onClick={saveKcal} disabled={!kcalDraft} className="mb-5">
-                  Save
+                <Field
+                  label="Fat"
+                  value={targetDraft.fat}
+                  onChange={(e) => patchTarget('fat', e.target.value)}
+                  inputMode="numeric"
+                  suffix="g"
+                />
+                <Field
+                  label="Carbs"
+                  value={targetDraft.carbs}
+                  onChange={(e) => patchTarget('carbs', e.target.value)}
+                  inputMode="numeric"
+                  suffix="g"
+                />
+                <Field
+                  label="Fibre"
+                  value={targetDraft.fibre}
+                  onChange={(e) => patchTarget('fibre', e.target.value)}
+                  inputMode="numeric"
+                  suffix="g"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button onClick={saveTargets} disabled={!targetsDirty || !targetDraft.kcal}>
+                  Save targets
+                </Button>
+                <Button variant="secondary" onClick={fillFromCalories} disabled={!targetDraft.kcal}>
+                  Macros from calories
                 </Button>
               </div>
+
+              <p className="text-[11.5px] leading-relaxed text-muted">
+                {profile.targetsManual
+                  ? 'Set by hand. Recalculate follows your profile and weight again.'
+                  : 'Calculated from your profile and current weight. Editing any value makes them yours to keep.'}
+              </p>
             </>
           )}
         </Card>
@@ -819,11 +903,3 @@ function FatSecretCard() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="surface-sunken rounded-xl py-2.5">
-      <p className="tabular text-[14px] font-bold">{value}</p>
-      <p className="text-[10px] text-muted">{label}</p>
-    </div>
-  );
-}

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
+import { deleteMeal } from '@/db/repo';
+import { useApp } from '@/stores/useApp';
 import { RingProgress } from '@/components/RingProgress';
-import { Card, EmptyState, PageHeader, ScoreCircle } from '@/components/ui';
-import { IconChevronRight, IconDiet, IconSparkle } from '@/components/icons';
+import { Button, Card, EmptyState, PageHeader, ScoreCircle } from '@/components/ui';
+import { IconChevronRight, IconDiet, IconSparkle, IconTrash } from '@/components/icons';
 import { formatPortion, mealNutrients } from '@/lib/nutrition';
 import { MEAL_SLOT_LABEL } from '@/types';
 import { Link } from 'react-router-dom';
@@ -16,6 +18,8 @@ import { Link } from 'react-router-dom';
 export default function MealScore() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { showToast } = useApp();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const meal = useLiveQuery(async () => (id ? db.meals.get(id) : undefined), [id]);
   const snap = useLiveQuery(
@@ -139,6 +143,32 @@ export default function MealScore() {
           <p className="px-1 text-[12.5px] text-muted">
             This meal was logged by hand, so there are no per-item scores. Snap a photo or use
             voice logging to get them.
+          </p>
+        )}
+
+        {/* Removing the whole meal was previously impossible from here: the
+            only route was deleting each item on the Diet screen one by one. */}
+        <Button
+          variant={confirmDelete ? 'danger' : 'secondary'}
+          full
+          onClick={async () => {
+            if (!confirmDelete) {
+              setConfirmDelete(true);
+              return;
+            }
+            await deleteMeal(meal.id);
+            showToast({ message: 'Meal removed' });
+            navigate('/diet', { replace: true });
+          }}
+          onBlur={() => setConfirmDelete(false)}
+        >
+          <IconTrash width={15} height={15} />
+          {confirmDelete ? 'Tap again to remove this meal' : 'Remove this meal'}
+        </Button>
+
+        {meal.snapId && (
+          <p className="px-1 text-[11.5px] text-muted">
+            The photo stays in your Snap Gallery so you can log it again.
           </p>
         )}
 

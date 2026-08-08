@@ -8,16 +8,18 @@ import { searchFoods, frequentFoods } from '@/lib/foodSearch';
 import { searchRemote } from '@/lib/foodLookup';
 import { fatSecretReady, type FoodDraft } from '@/lib/fatsecret';
 import { STARTER_FREQUENT } from '@/data/foods.seed';
-import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
+import { buildMealItem, buildMealItemFromGrams } from '@/lib/nutrition';
 import { draftToFood, generateFood } from '@/ai/service';
 import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
 import { FoodRow } from '@/components/FoodRow';
 import { BottomSheet } from '@/components/BottomSheet';
-import { Button, EmptyState, Field, PageHeader } from '@/components/ui';
+import { PortionSheet } from '@/components/PortionSheet';
+import { Button, EmptyState, PageHeader } from '@/components/ui';
 import {
   IconCamera,
   IconChevronDown,
+  IconPlus,
   IconSearch,
   IconSparkle,
 } from '@/components/icons';
@@ -110,10 +112,13 @@ export default function Search() {
     return createFood(draft);
   }
 
-  async function add(food: Food, qty = 1, servingLabel?: string) {
+  async function add(food: Food, qty = 1, servingLabel?: string, grams?: number) {
     // A FatSecret row only becomes a real local food once it is actually used.
     const real = await materialise(food);
-    const item = buildMealItem(real, servingLabel ?? real.servings[0]?.label ?? '100 g', qty);
+    const item =
+      grams !== undefined
+        ? buildMealItemFromGrams(real, grams)
+        : buildMealItem(real, servingLabel ?? real.servings[0]?.label ?? '100 g', qty);
     const meal = await addMealItems(selectedDate, slot, [item]);
     setAddedIds((prev) => [...prev, food.id]);
     setDetail(null);
@@ -220,20 +225,29 @@ export default function Search() {
             title={`No match for "${query.trim()}"`}
             body={
               hasKey(settings)
-                ? 'Generate it with AI and it will be saved for next time.'
-                : 'Add an AI key in Settings to generate foods that are not in the database.'
+                ? 'Generate it with AI, or enter it yourself — either way it is saved for next time.'
+                : 'Enter it yourself and it is saved for next time. An AI key would also let the app estimate it for you.'
             }
             action={
-              hasKey(settings) ? (
-                <Button onClick={generate} disabled={generating}>
-                  <IconSparkle width={16} height={16} />
-                  {generating ? 'Generating…' : 'Generate This Food with AI'}
+              <div className="flex flex-col gap-2">
+                {hasKey(settings) && (
+                  <Button onClick={generate} disabled={generating}>
+                    <IconSparkle width={16} height={16} />
+                    {generating ? 'Generating…' : 'Generate This Food with AI'}
+                  </Button>
+                )}
+                {/* The moment you learn the food is missing is the moment to
+                    offer creating it, with the name already filled in. */}
+                <Button
+                  variant={hasKey(settings) ? 'secondary' : 'primary'}
+                  onClick={() =>
+                    navigate(`/food/new?name=${encodeURIComponent(query.trim())}`)
+                  }
+                >
+                  <IconPlus width={15} height={15} />
+                  Create it yourself
                 </Button>
-              ) : (
-                <Button variant="secondary" onClick={() => navigate('/settings')}>
-                  Open Settings
-                </Button>
-              )
+              </div>
             }
           />
         ) : (
@@ -288,9 +302,14 @@ export default function Search() {
           </button>
         )}
 
-        <p className="mt-6 text-center text-[12px] text-muted">
-          Can&apos;t find what you&apos;re looking for? Use the search bar above.
-        </p>
+        <button
+          type="button"
+          onClick={() => navigate(`/food/new?name=${encodeURIComponent(query.trim())}`)}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--surface-border)] py-3 text-[13px] font-semibold text-brand-600"
+        >
+          <IconPlus width={15} height={15} />
+          Create a custom food
+        </button>
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
@@ -323,92 +342,14 @@ export default function Search() {
 
       {detail && (
         <PortionSheet
-          food={detail}
+          title={detail.name}
+          brand={detail.brand}
+          per100g={detail.per100g}
+          servings={detail.servings}
           onClose={() => setDetail(null)}
-          onAdd={(qty, label) => add(detail, qty, label)}
+          onConfirm={(qty, label, grams) => add(detail, qty, label, grams)}
         />
       )}
-    </div>
-  );
-}
-
-/** Portion picker — serving choice plus quantity, with live nutrition. */
-function PortionSheet({
-  food,
-  onClose,
-  onAdd,
-}: {
-  food: Food;
-  onClose: () => void;
-  onAdd: (qty: number, servingLabel: string) => void;
-}) {
-  const [servingLabel, setServingLabel] = useState(food.servings[0]?.label ?? '100 g');
-  const [qty, setQty] = useState('1');
-
-  const serving = food.servings.find((s) => s.label === servingLabel) ?? food.servings[0];
-  const quantity = Math.max(0, Number(qty) || 0);
-  const grams = (serving?.grams ?? 100) * quantity;
-  const n = scaleNutrients(food.per100g, grams / 100);
-
-  return (
-    <BottomSheet
-      open
-      onClose={onClose}
-      title={food.name}
-      footer={
-        <Button size="lg" full disabled={quantity <= 0} onClick={() => onAdd(quantity, servingLabel)}>
-          Add {Math.round(n.kcal)} Cal
-        </Button>
-      }
-    >
-      <div className="space-y-4 pb-2">
-        {food.brand && <p className="-mt-2 text-[13px] text-secondary">{food.brand}</p>}
-
-        <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-secondary">Serving</span>
-          <div className="flex flex-wrap gap-2">
-            {food.servings.map((s) => (
-              <button
-                key={s.label}
-                type="button"
-                onClick={() => setServingLabel(s.label)}
-                className={`hairline rounded-full border px-3 py-1.5 text-[13px] font-medium ${
-                  s.label === servingLabel ? 'border-brand-500 bg-brand-50 text-brand-700' : ''
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Field
-          label="Quantity"
-          value={qty}
-          onChange={(e) => setQty(e.target.value)}
-          inputMode="decimal"
-          suffix={`× ${serving?.label ?? ''}`}
-        />
-
-        <div className="surface-sunken grid grid-cols-5 gap-1 rounded-xl p-3 text-center">
-          <Stat label="Cal" value={Math.round(n.kcal)} />
-          <Stat label="Protein" value={`${Math.round(n.protein)}g`} />
-          <Stat label="Fat" value={`${Math.round(n.fat)}g`} />
-          <Stat label="Carbs" value={`${Math.round(n.carbs)}g`} />
-          <Stat label="Fibre" value={`${Math.round(n.fibre)}g`} />
-        </div>
-
-        <p className="text-center text-[11.5px] text-muted">{Math.round(grams)} g total</p>
-      </div>
-    </BottomSheet>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <p className="tabular text-[14px] font-bold">{value}</p>
-      <p className="text-[10px] text-muted">{label}</p>
     </div>
   );
 }

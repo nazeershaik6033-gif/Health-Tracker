@@ -64,6 +64,16 @@ export default function LogSheet() {
       ai: false,
       tint: 'bg-blue-50 text-blue-600',
     },
+    {
+      // Last because it is the most effort, but present because it is the only
+      // route in for a home-cooked dish no database will ever carry.
+      to: '/food/new',
+      icon: <IconPlus width={21} height={21} />,
+      title: 'Create a food',
+      body: 'Enter a home-cooked dish yourself and reuse it after',
+      ai: false,
+      tint: 'surface-sunken text-secondary',
+    },
   ];
 
   return (

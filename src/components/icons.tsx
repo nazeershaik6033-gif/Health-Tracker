@@ -210,6 +210,13 @@ export const IconSettings = (p: P) => (
   </svg>
 );
 
+export const IconCalendar = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="5" width="18" height="16" rx="2.5" />
+    <path d="M3 10h18M8 3v4M16 3v4" />
+  </svg>
+);
+
 export const IconChat = (p: P) => (
   <svg {...base(p)}>
     <path d="M21 12a8 8 0 0 1-8 8H8l-4 2.5V17a8 8 0 0 1 5-15h.5A8 8 0 0 1 21 12Z" />

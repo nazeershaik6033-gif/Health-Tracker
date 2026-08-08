@@ -2,12 +2,21 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
-import { removeMealItem } from '@/db/repo';
-import { formatPortion, mealNutrients, slotTarget } from '@/lib/nutrition';
+import { deleteMeal, getFood, removeMealItem, replaceMealItem } from '@/db/repo';
+import {
+  buildMealItem,
+  buildMealItemFromGrams,
+  formatPortion,
+  mealNutrients,
+  per100gFromItem,
+  rescaleMealItem,
+  slotTarget,
+} from '@/lib/nutrition';
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { RingProgress } from '@/components/RingProgress';
 import { MacroBar } from '@/components/MacroBar';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
+import { PortionSheet } from '@/components/PortionSheet';
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -16,13 +25,43 @@ import {
   IconSparkle,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type MealSlot } from '@/types';
+import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
 
 export default function Diet() {
   const navigate = useNavigate();
   const { profile, selectedDate, setSelectedDate, setPendingSlot, showToast } = useApp();
   const day = useDay();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{
+    mealId: string;
+    index: number;
+    item: MealItem;
+    food?: Food;
+  } | null>(null);
+
+  /**
+   * The logged item only remembers the one serving it used; the food row
+   * carries the full list, so it is fetched to allow switching units.
+   */
+  async function openEdit(mealId: string, index: number, item: MealItem) {
+    const food = item.foodId ? await getFood(item.foodId) : undefined;
+    setEditing({ mealId, index, item, food });
+  }
+
+  async function saveEdit(qty: number, servingLabel: string, grams?: number) {
+    if (!editing) return;
+    const { mealId, index, item, food } = editing;
+    const next =
+      food && grams !== undefined
+        ? buildMealItemFromGrams(food, grams)
+        : food
+          ? buildMealItem(food, servingLabel, qty)
+          : rescaleMealItem(item, qty, servingLabel);
+    await replaceMealItem(mealId, index, next);
+    setEditing(null);
+    showToast({ message: `${next.name} updated` });
+  }
 
   const openSlot = (slot: MealSlot) => {
     setPendingSlot(slot);
@@ -130,6 +169,32 @@ export default function Diet() {
                 <span className="tabular text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
+                {/* Clearing a whole slot used to mean deleting every item. */}
+                {meal && meal.items.length > 0 && (
+                  <button
+                    type="button"
+                    aria-label={
+                      confirmMeal === meal.id
+                        ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
+                        : `Remove ${MEAL_SLOT_LABEL[slot]}`
+                    }
+                    onClick={async () => {
+                      if (confirmMeal !== meal.id) {
+                        setConfirmMeal(meal.id);
+                        return;
+                      }
+                      await deleteMeal(meal.id);
+                      setConfirmMeal(null);
+                      showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
+                    }}
+                    onBlur={() => setConfirmMeal(null)}
+                    className={`rounded-lg p-1.5 ${
+                      confirmMeal === meal.id ? 'bg-red-50 text-red-600' : 'text-muted'
+                    }`}
+                  >
+                    <IconTrash width={14} height={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => openSlot(slot)}
@@ -150,15 +215,26 @@ export default function Diet() {
                         className="flex items-center gap-2.5 border-t border-[var(--surface-border)] px-1 py-2.5"
                       >
                         {item.score !== undefined && <ScoreCircle score={item.score} size={28} />}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[14px] font-medium">{item.name}</p>
-                          <p className="truncate text-[12px] text-secondary">
-                            {formatPortion(item.qty, item.servingLabel)}
-                          </p>
-                        </div>
-                        <span className="tabular shrink-0 text-[13px] font-semibold">
-                          {Math.round(item.nutrients.kcal)}
-                        </span>
+                        {/* Tapping the row edits the portion. Before this the
+                            only way to fix a quantity was delete and re-add. */}
+                        <button
+                          type="button"
+                          onClick={() => openEdit(meal.id, i, item)}
+                          aria-label={`Edit ${item.name}`}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[14px] font-medium">
+                              {item.name}
+                            </span>
+                            <span className="block truncate text-[12px] text-secondary">
+                              {formatPortion(item.qty, item.servingLabel)}
+                            </span>
+                          </span>
+                          <span className="tabular shrink-0 text-[13px] font-semibold">
+                            {Math.round(item.nutrients.kcal)}
+                          </span>
+                        </button>
                         <button
                           type="button"
                           onClick={() =>
@@ -220,6 +296,30 @@ export default function Diet() {
       )}
 
       <div className="h-4" />
+
+      {editing && (
+        <PortionSheet
+          title={editing.item.name}
+          per100g={editing.food?.per100g ?? per100gFromItem(editing.item)}
+          servings={
+            editing.food?.servings ?? [
+              {
+                label: editing.item.servingLabel,
+                grams: editing.item.grams / (editing.item.qty || 1),
+              },
+            ]
+          }
+          initialQty={editing.item.qty}
+          initialServingLabel={editing.item.servingLabel}
+          confirmLabel={(kcal) => `Save ${kcal} Cal`}
+          onClose={() => setEditing(null)}
+          onConfirm={saveEdit}
+          onDelete={async () => {
+            await removeItem(editing.mealId, editing.index, editing.item.name);
+            setEditing(null);
+          }}
+        />
+      )}
     </div>
   );
 }
