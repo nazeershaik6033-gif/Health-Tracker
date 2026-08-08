@@ -47,8 +47,9 @@ const FULLSCREEN = [
   '/log',
   '/search',
   // Has its own sticky action bar; the bottom nav would sit on top of it and
-  // swallow the taps on Save.
-  '/food/new',
+  // swallow the taps on Save. Prefix, so it covers /food/new and
+  // /food/:id/edit alike — the matcher appends the slash itself.
+  '/food',
 ];
 
 export default function App() {
@@ -87,6 +88,7 @@ export default function App() {
             <Route path="/diet" element={<Diet />} />
             <Route path="/calendar" element={<CalendarScreen />} />
             <Route path="/food/new" element={<FoodEditor />} />
+            <Route path="/food/:id/edit" element={<FoodEditor />} />
             <Route path="/log" element={<LogSheet />} />
             <Route path="/search" element={<Search />} />
             <Route path="/snap" element={<Snap />} />

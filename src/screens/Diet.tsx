@@ -312,6 +312,9 @@ export default function Diet() {
           initialQty={editing.item.qty}
           initialServingLabel={editing.item.servingLabel}
           confirmLabel={(kcal) => `Save ${kcal} Cal`}
+          onEditFood={
+            editing.food ? () => navigate(`/food/${editing.food!.id}/edit`) : undefined
+          }
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
           onDelete={async () => {

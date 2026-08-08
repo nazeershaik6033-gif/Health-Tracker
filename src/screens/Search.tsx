@@ -348,6 +348,12 @@ export default function Search() {
           servings={detail.servings}
           onClose={() => setDetail(null)}
           onConfirm={(qty, label, grams) => add(detail, qty, label, grams)}
+          onEditFood={
+            // A FatSecret stub has no row to edit until it is used.
+            detail.id.startsWith(REMOTE_PREFIX)
+              ? undefined
+              : () => navigate(`/food/${detail.id}/edit`)
+          }
         />
       )}
     </div>

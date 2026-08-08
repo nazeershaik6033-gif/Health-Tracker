@@ -7,8 +7,16 @@ import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
 import { useCamera } from '@/lib/camera';
 import { blobToImagePart, canvasToBlob, captureFrame, prepareImage } from '@/lib/image';
-import { formatPortion } from '@/lib/nutrition';
+import {
+  formatPortion,
+  per100gFromItem,
+  rescaleMealItem,
+  roundNutrients,
+  scaleNutrients,
+  sumNutrients,
+} from '@/lib/nutrition';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
+import { PortionSheet } from '@/components/PortionSheet';
 import { Button, Card, PageHeader, ScoreCircle, Skeleton } from '@/components/ui';
 import {
   IconCamera,
@@ -17,9 +25,10 @@ import {
   IconRefresh,
   IconSparkle,
   IconTorch,
+  IconTrash,
   IconWarning,
 } from '@/components/icons';
-import { MEAL_SLOT_LABEL, type MealSlot, type Snap as SnapRow, type SnapAnalysis } from '@/types';
+import { MEAL_SLOT_LABEL, type MealItem, type MealSlot, type Snap as SnapRow, type SnapAnalysis } from '@/types';
 
 type Phase = 'capture' | 'analysing' | 'result' | 'error';
 
@@ -36,6 +45,7 @@ export default function Snap() {
   const [analysis, setAnalysis] = useState<SnapAnalysis | null>(null);
   const [error, setError] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
 
   const keyed = hasKey(settings);
   const camera = useCamera({ autoStart: phase === 'capture' && keyed });
@@ -181,6 +191,25 @@ export default function Snap() {
     if (!video || camera.status !== 'live') return;
     const blob = await canvasToBlob(captureFrame(video), 0.9);
     await ingest(blob);
+  }
+
+  /**
+   * The estimate was accept-or-discard: a wrong portion meant throwing the
+   * whole reading away and logging by hand. Items can now be corrected or
+   * dropped before saving, with the totals recomputed from what is left.
+   *
+   * Only the snap's draft analysis changes here — nothing is logged until
+   * Save, so the day's numbers are untouched.
+   */
+  function reviseItems(items: MealItem[]) {
+    if (!analysis) return;
+    const next: SnapAnalysis = {
+      ...analysis,
+      items,
+      totals: sumNutrients(items.map((i) => i.nutrients)),
+    };
+    setAnalysis(next);
+    if (snap) void updateSnap(snap.id, { analysis: next });
   }
 
   async function save(slot: MealSlot) {
@@ -413,6 +442,9 @@ export default function Snap() {
           <h3 className="mt-4 mb-1 px-1 text-[13px] font-bold text-secondary">
             What&apos;s on the plate
           </h3>
+          <p className="mb-1 px-1 text-[11.5px] text-muted">
+            Tap anything to fix the portion, or remove it. Nothing is logged until you save.
+          </p>
           <Card className="py-1">
             <ul>
               {analysis.items.map((item, i) => (
@@ -421,15 +453,32 @@ export default function Snap() {
                   className="flex items-center gap-2.5 border-b border-[var(--surface-border)] py-2.5 last:border-0"
                 >
                   {item.score !== undefined && <ScoreCircle score={item.score} size={28} />}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-semibold">{item.name}</p>
-                    <p className="text-[12px] text-secondary">
-                      {formatPortion(item.qty, item.servingLabel)} · {Math.round(item.grams)} g
-                    </p>
-                  </div>
-                  <span className="tabular text-[13px] font-bold">
-                    {Math.round(item.nutrients.kcal)}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditIndex(i)}
+                    aria-label={`Edit ${item.name}`}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-semibold">{item.name}</span>
+                      <span className="block text-[12px] text-secondary">
+                        {formatPortion(item.qty, item.servingLabel)} · {Math.round(item.grams)} g
+                      </span>
+                    </span>
+                    <span className="tabular text-[13px] font-bold">
+                      {Math.round(item.nutrients.kcal)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.name}`}
+                    onClick={() =>
+                      reviseItems(analysis.items.filter((_, j) => j !== i))
+                    }
+                    className="shrink-0 rounded-lg p-1.5 text-muted"
+                  >
+                    <IconTrash width={15} height={15} />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -476,6 +525,45 @@ export default function Snap() {
             </Button>
           </div>
         </div>
+      )}
+
+      {editIndex !== null && analysis?.items[editIndex] && (
+        <PortionSheet
+          title={analysis.items[editIndex].name}
+          per100g={per100gFromItem(analysis.items[editIndex])}
+          servings={[
+            {
+              label: analysis.items[editIndex].servingLabel,
+              grams:
+                analysis.items[editIndex].grams / (analysis.items[editIndex].qty || 1),
+            },
+          ]}
+          initialQty={analysis.items[editIndex].qty}
+          initialServingLabel={analysis.items[editIndex].servingLabel}
+          confirmLabel={(kcal) => `Set to ${kcal} Cal`}
+          onClose={() => setEditIndex(null)}
+          onConfirm={(qty, label, grams) => {
+            const current = analysis.items[editIndex];
+            const revised =
+              grams !== undefined
+                ? {
+                    ...current,
+                    qty: 1,
+                    servingLabel: label,
+                    grams,
+                    nutrients: roundNutrients(
+                      scaleNutrients(per100gFromItem(current), grams / 100),
+                    ),
+                  }
+                : rescaleMealItem(current, qty, label);
+            reviseItems(analysis.items.map((it, j) => (j === editIndex ? revised : it)));
+            setEditIndex(null);
+          }}
+          onDelete={() => {
+            reviseItems(analysis.items.filter((_, j) => j !== editIndex));
+            setEditIndex(null);
+          }}
+        />
       )}
 
       <MealPickerSheet
