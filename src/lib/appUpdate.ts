@@ -12,8 +12,8 @@
  *   exists it activates and the caller reloads. Cheap, and the right button
  *   99% of the time.
  *
- *   forceReload() — deletes every Cache API entry, unregisters the workers and
- *   reloads past the HTTP cache. The nuclear option for when a cache is wedged.
+ *   forceReload() — rebuilds the offline copy of the app shell. For when the
+ *   precache is wedged and checkForUpdate() isn't enough.
  *
  * Neither touches IndexedDB, so no meal, photo or tracker entry is at risk.
  * The two stores are entirely separate: Cache API holds the app's own files,
@@ -29,6 +29,31 @@ export interface UpdateResult {
 
 /** Query param used to defeat the HTTP cache on a forced reload. */
 export const RELOAD_PARAM = '__reload';
+
+/**
+ * Is this cache the app's own shell, as opposed to something the user would
+ * miss?
+ *
+ * Workbox names its precache with a `workbox-` prefix; every cache this app
+ * creates itself is named `healthify-*` (the share-target bucket, the scanner
+ * and OCR binaries, scanned-barcode lookups, images). Only the former is ever
+ * the thing that is wedged, so only the former is cleared.
+ */
+export const isAppShellCache = (name: string): boolean => name.startsWith('workbox-');
+
+/** Stages reported while the shell is rebuilt, so the UI is never silent. */
+export type ReloadStage = 'checking' | 'clearing' | 'downloading' | 'reloading';
+
+const STAGE_DETAIL: Record<ReloadStage, string> = {
+  checking: 'Checking the app can be re-downloaded…',
+  clearing: 'Clearing the offline copy…',
+  downloading: 'Re-downloading the app…',
+  reloading: 'Reloading…',
+};
+
+export function describeStage(stage: ReloadStage): string {
+  return STAGE_DETAIL[stage];
+}
 
 export async function checkForUpdate(): Promise<UpdateResult> {
   if (!('serviceWorker' in navigator)) {
@@ -92,8 +117,29 @@ export async function checkForUpdate(): Promise<UpdateResult> {
 }
 
 /**
- * Clears the offline cache and reloads. Resolves only if the navigation
- * somehow fails to start — normally the page is gone before that.
+ * Rebuilds the offline copy of the app shell, then reloads. Resolves only if
+ * the navigation somehow fails to start — normally the page is gone before
+ * that.
+ *
+ * Deliberately narrow. An earlier version deleted every Cache API entry, which
+ * took the scanner and OCR binaries, saved barcode lookups and any photo
+ * shared but not yet processed with it, and then navigated with nothing warm
+ * to serve the app — a blank screen for as long as the cold download took.
+ * Neither is needed to replace a wedged shell:
+ *
+ *   - only the workbox precache is cleared; the `healthify-*` caches are the
+ *     user's, not the app's, and are never what's wedged
+ *   - the shell is fetched back *before* navigating, so the reload comes off a
+ *     warm HTTP cache rather than a cold network
+ *
+ * The worker is still unregistered, and that part is load-bearing rather than
+ * incidental: `registration.update()` only reinstalls when the worker *script*
+ * changed, so on an unchanged build it would leave the precache deleted and
+ * never refilled — the app would work online and silently stop working
+ * offline. A fresh registration always installs, and installing is what
+ * repopulates the precache. `registerSW({ immediate: true })` in main.tsx
+ * re-registers on the next load, so offline is back a second or two after the
+ * app is usable again.
  *
  * Throws without changing anything when the app cannot be re-fetched. This is
  * not hypothetical: the precache can be the only working copy — a host that
@@ -101,7 +147,10 @@ export async function checkForUpdate(): Promise<UpdateResult> {
  * cache. Clearing it then is irreversible from inside the app, because the
  * next load has nowhere to come from. Checking first costs one request.
  */
-export async function forceReload(): Promise<void> {
+export async function forceReload(onProgress?: (stage: ReloadStage) => void): Promise<void> {
+  const report = (stage: ReloadStage) => onProgress?.(stage);
+
+  report('checking');
   const reachable = await appIsReachable();
   if (!reachable.ok) {
     throw new Error(
@@ -110,27 +159,24 @@ export async function forceReload(): Promise<void> {
     );
   }
 
+  report('clearing');
   if ('caches' in window) {
     try {
       const keys = await caches.keys();
-      // Includes the share-target cache, so a photo shared but not yet
-      // processed is dropped. Acceptable: this is a deliberate reset, and the
-      // alternative is leaving the wedged cache the user is trying to clear.
-      await Promise.all(keys.map((key) => caches.delete(key)));
+      await Promise.all(keys.filter(isAppShellCache).map((key) => caches.delete(key)));
     } catch {
       /* a cache we can't delete shouldn't stop the reload */
     }
   }
 
-  if ('serviceWorker' in navigator) {
-    try {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(registrations.map((registration) => registration.unregister()));
-    } catch {
-      /* likewise */
-    }
-  }
+  report('downloading');
+  // Warm first, unregister second. Doing it this way means the navigation
+  // below is answered from the HTTP cache even though no worker is installed
+  // at that moment, which is what removes the blank screen.
+  await warmShell();
+  await unregisterWorkers();
 
+  report('reloading');
   // A plain reload can still be answered from the HTTP cache, which on GitHub
   // Pages means the old index.html and therefore the old asset hashes. A
   // one-shot query param guarantees a fresh document; main.tsx strips it back
@@ -138,6 +184,60 @@ export async function forceReload(): Promise<void> {
   const url = new URL(window.location.href);
   url.searchParams.set(RELOAD_PARAM, Date.now().toString(36));
   window.location.replace(url.toString());
+}
+
+/**
+ * Drops the workers so the next load installs a fresh one.
+ *
+ * `update()` is not a substitute: it is a no-op when the script is unchanged,
+ * which is exactly the case this button exists for, and the precache would
+ * stay empty.
+ */
+async function unregisterWorkers(): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  } catch {
+    /* a browser that won't list its workers still gets a warm reload */
+  }
+}
+
+/** How long the shell warm-up may take before we reload anyway. */
+const WARM_TIMEOUT_MS = 10_000;
+
+/**
+ * Re-fetches the documents and assets this page is already running, so the
+ * reload is served warm.
+ *
+ * The asset URLs come from the performance timeline rather than a hardcoded
+ * list, which keeps this correct across content-hashed filenames without
+ * needing the build manifest. Failures are ignored: a warm cache is an
+ * optimisation, and the reload has to happen either way.
+ */
+async function warmShell(): Promise<void> {
+  const base = new URL(import.meta.env.BASE_URL, window.location.href);
+  const urls = new Set<string>([base.toString()]);
+
+  try {
+    for (const entry of performance.getEntriesByType('resource')) {
+      const { name, initiatorType } = entry as PerformanceResourceTiming;
+      if (initiatorType !== 'script' && initiatorType !== 'link' && initiatorType !== 'css') {
+        continue;
+      }
+      if (new URL(name, window.location.href).origin === window.location.origin) {
+        urls.add(name);
+      }
+    }
+  } catch {
+    /* no performance timeline: the base document alone is still worth warming */
+  }
+
+  const warm = Promise.all(
+    [...urls].map((url) => fetch(url, { cache: 'reload' }).catch(() => undefined)),
+  );
+  // Don't let one stalled asset hold the reload hostage.
+  await Promise.race([warm, new Promise((resolve) => setTimeout(resolve, WARM_TIMEOUT_MS))]);
 }
 
 /**
