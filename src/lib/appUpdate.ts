@@ -132,14 +132,9 @@ export async function checkForUpdate(): Promise<UpdateResult> {
  *   - the shell is fetched back *before* navigating, so the reload comes off a
  *     warm HTTP cache rather than a cold network
  *
- * The worker is still unregistered, and that part is load-bearing rather than
- * incidental: `registration.update()` only reinstalls when the worker *script*
- * changed, so on an unchanged build it would leave the precache deleted and
- * never refilled — the app would work online and silently stop working
- * offline. A fresh registration always installs, and installing is what
- * repopulates the precache. `registerSW({ immediate: true })` in main.tsx
- * re-registers on the next load, so offline is back a second or two after the
- * app is usable again.
+ * The worker is left registered throughout and asked to refill its own
+ * precache — see `rebuildPrecache()` for why nothing the page can do on its
+ * own works here.
  *
  * Throws without changing anything when the app cannot be re-fetched. This is
  * not hypothetical: the precache can be the only working copy — a host that
@@ -169,37 +164,126 @@ export async function forceReload(onProgress?: (stage: ReloadStage) => void): Pr
     }
   }
 
+  // Work out where we're going *before* warming, so the exact URL that gets
+  // navigated to is the one that ends up in the HTTP cache. Warming the bare
+  // base URL while navigating to `/settings?__reload=…` warmed nothing usable:
+  // caches key on the full URL, query string included.
+  //
+  // The target is the app root rather than the current route. Without a worker
+  // there is no SPA fallback in the page's own control, and the root is the one
+  // path guaranteed to be a real file on every host we deploy to.
+  const target = new URL(import.meta.env.BASE_URL, window.location.href);
+  target.searchParams.set(RELOAD_PARAM, Date.now().toString(36));
+
   report('downloading');
-  // Warm first, unregister second. Doing it this way means the navigation
-  // below is answered from the HTTP cache even though no worker is installed
-  // at that moment, which is what removes the blank screen.
-  await warmShell();
-  await unregisterWorkers();
+  await warmShell(target.toString());
+
+  // Ask the worker to refill its own precache, and only fall back to dropping
+  // it if that doesn't work. Rebuilding in place keeps a worker present the
+  // whole time, which matters most on an installed iOS PWA where a moment with
+  // neither worker nor offline copy can leave nothing to load.
+  await rebuildPrecache();
 
   report('reloading');
-  // A plain reload can still be answered from the HTTP cache, which on GitHub
-  // Pages means the old index.html and therefore the old asset hashes. A
-  // one-shot query param guarantees a fresh document; main.tsx strips it back
-  // out so it never lingers in the address bar.
-  const url = new URL(window.location.href);
-  url.searchParams.set(RELOAD_PARAM, Date.now().toString(36));
-  window.location.replace(url.toString());
+  window.location.replace(target.toString());
+}
+
+/** How long to wait for the precache to come back before giving up on it. */
+const REBUILD_TIMEOUT_MS = 20_000;
+
+/** How long to wait for the worker to say it understood the request. */
+const ACK_TIMEOUT_MS = 2_000;
+
+/**
+ * Sends the rebuild request and reports whether the worker acknowledged it.
+ *
+ * A worker installed before the REPRECACHE handler existed — which is every
+ * worker already out there at the time this shipped — stays silent. Waiting
+ * out the full rebuild timeout to discover that would leave an upgrading user
+ * staring at "Re-downloading…" for twenty seconds before the fallback, so the
+ * ack is what keeps that case quick.
+ */
+function askWorkerToRebuild(worker: ServiceWorker): Promise<boolean> {
+  return new Promise((resolve) => {
+    const onMessage = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | undefined)?.type === 'REPRECACHE_ACK') {
+        settle(true);
+      }
+    };
+    const settle = (ok: boolean) => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => settle(false), ACK_TIMEOUT_MS);
+
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    worker.postMessage({ type: 'REPRECACHE' });
+  });
 }
 
 /**
- * Drops the workers so the next load installs a fresh one.
+ * Gets the offline copy back after it has been deleted.
  *
- * `update()` is not a substitute: it is a no-op when the script is unchanged,
- * which is exactly the case this button exists for, and the precache would
- * stay empty.
+ * The page cannot do this itself, which is the whole reason the worker grew a
+ * REPRECACHE handler. `update()` is a no-op when the worker script is
+ * unchanged — exactly this button's case — and unregister-then-register is no
+ * better: with the script byte-identical and the old worker still controlling
+ * this page, the browser hands the *running* worker straight back, no install
+ * event fires, and nothing is fetched. Measured directly:
+ * `registered. installing=false waiting=false active=true`, precache still
+ * empty. Only the worker re-running precaching refills it.
+ *
+ * Rebuilding in place also means a worker is present throughout, rather than
+ * there being a moment with neither worker nor offline copy — survivable in a
+ * browser tab, much less so in an installed iOS PWA.
+ *
+ * The fallback matters for anyone upgrading: their installed worker predates
+ * the REPRECACHE handler and will ignore the message. Dropping the
+ * registration lets the next load install a genuinely new worker, and the
+ * warmed HTTP cache carries that load.
  */
-async function unregisterWorkers(): Promise<void> {
+async function rebuildPrecache(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
+
   try {
+    const registration = await navigator.serviceWorker.ready;
+    const worker = registration.active;
+
+    if (worker && (await askWorkerToRebuild(worker))) {
+      // Acknowledged, so this worker understands the request. Now judge it by
+      // the cache reappearing rather than by the completion message — the
+      // outcome is what matters, and it holds whether or not that message
+      // survives the trip.
+      const rebuilt = await until(
+        async () => (await caches.keys()).some(isAppShellCache),
+        REBUILD_TIMEOUT_MS,
+      );
+      if (rebuilt) return;
+    }
+
     const registrations = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(registrations.map((registration) => registration.unregister()));
+    await Promise.all(registrations.map((r) => r.unregister()));
   } catch {
-    /* a browser that won't list its workers still gets a warm reload */
+    /* the warmed HTTP cache carries the reload; the next load re-registers */
+  }
+}
+
+/**
+ * Polls until `check` passes or the deadline expires. Resolves either way —
+ * the reload has to happen regardless, and the warmed HTTP cache carries it
+ * even if the precache is still filling.
+ */
+async function until(check: () => Promise<boolean>, timeoutMs = REBUILD_TIMEOUT_MS): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if (await check()) return true;
+    } catch {
+      return false;
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 200));
   }
 }
 
@@ -215,9 +299,10 @@ const WARM_TIMEOUT_MS = 10_000;
  * needing the build manifest. Failures are ignored: a warm cache is an
  * optimisation, and the reload has to happen either way.
  */
-async function warmShell(): Promise<void> {
-  const base = new URL(import.meta.env.BASE_URL, window.location.href);
-  const urls = new Set<string>([base.toString()]);
+async function warmShell(documentUrl: string): Promise<void> {
+  // The document URL must be the exact one we will navigate to, query string
+  // included — anything else warms a cache entry the navigation never reads.
+  const urls = new Set<string>([documentUrl]);
 
   try {
     for (const entry of performance.getEntriesByType('resource')) {

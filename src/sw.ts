@@ -1,8 +1,8 @@
 /// <reference lib="webworker" />
 import {
+  PrecacheController,
+  PrecacheRoute,
   cleanupOutdatedCaches,
-  createHandlerBoundToURL,
-  precacheAndRoute,
 } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
@@ -20,17 +20,65 @@ const BASE = new URL(self.registration.scope).pathname;
 const path = (p: string) => `${BASE}${p}`;
 
 cleanupOutdatedCaches();
-precacheAndRoute(self.__WB_MANIFEST);
 
-self.addEventListener('install', () => {
+/**
+ * An explicit controller rather than `precacheAndRoute`, so the precache can be
+ * rebuilt on demand — see the REPRECACHE message below. The singleton helper
+ * gives no handle to re-run installation with.
+ */
+const precache = new PrecacheController();
+precache.addToCacheList(self.__WB_MANIFEST);
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(precache.install(event));
   void self.skipWaiting();
 });
 self.addEventListener('activate', (event) => {
+  event.waitUntil(precache.activate(event));
   event.waitUntil(self.clients.claim());
 });
+
+registerRoute(new PrecacheRoute(precache));
+
 self.addEventListener('message', (event) => {
-  if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING') {
+  const type = (event.data as { type?: string } | undefined)?.type;
+
+  if (type === 'SKIP_WAITING') {
     void self.skipWaiting();
+    return;
+  }
+
+  /**
+   * Refill the precache without reinstalling.
+   *
+   * Settings' "Force reload" deletes the precache to replace a wedged one, and
+   * the page cannot rebuild it: unregister-then-register hands back the
+   * *running* worker when the script is byte-identical, so no install event
+   * fires and nothing is fetched. Asking the worker to re-run precaching is the
+   * only way to refill it without tearing the worker down — which matters most
+   * on an installed iOS PWA, where a moment with neither worker nor offline
+   * copy can leave nothing to load.
+   *
+   * `install()` fetches whatever is missing from the cache list, so after the
+   * delete that is everything.
+   */
+  if (type === 'REPRECACHE') {
+    const source = event.source as Client | null;
+    // Acknowledge before doing the work. A worker installed before this handler
+    // existed stays silent, which is how the page tells "still downloading"
+    // apart from "this worker can't do it" without waiting out a long timeout.
+    source?.postMessage({ type: 'REPRECACHE_ACK' });
+
+    event.waitUntil(
+      (async () => {
+        try {
+          await precache.install(event);
+          await precache.activate(event);
+        } finally {
+          source?.postMessage({ type: 'REPRECACHE_DONE' });
+        }
+      })(),
+    );
   }
 });
 
@@ -121,7 +169,7 @@ registerRoute(
 // when the user clears the offline copy from Settings and when the browser
 // evicts part of the precache under storage pressure. Falling back to the
 // network turns both into a normal load.
-const shellHandler = createHandlerBoundToURL(path('index.html'));
+const shellHandler = precache.createHandlerBoundToURL(path('index.html'));
 
 registerRoute(
   new NavigationRoute(
