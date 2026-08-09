@@ -151,7 +151,7 @@ function SnapTile({ snap }: { snap: Snap }) {
                 ? 'Delete photo and logged meal'
                 : 'Delete snap'
           }
-          className={`shrink-0 rounded p-1 ${confirm ? 'bg-red-50 text-red-600' : 'text-muted'}`}
+          className={`shrink-0 rounded p-1 ${confirm ? 'tint-soft tint-danger' : 'text-muted'}`}
         >
           <IconTrash width={13} height={13} />
         </button>
@@ -180,7 +180,7 @@ function ShareTargetNote({ autoTrack }: { autoTrack: boolean }) {
 
   return (
     <Card className="flex items-start gap-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg tint-soft tint-brand">
         <IconShare width={17} height={17} />
       </span>
       <div className="min-w-0 flex-1">

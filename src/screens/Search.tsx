@@ -190,7 +190,7 @@ export default function Search() {
         <button
           type="button"
           onClick={() => navigate('/snap')}
-          className="mt-3 flex w-full items-center gap-3 rounded-xl bg-brand-50 p-3 text-left"
+          className="mt-3 flex w-full items-center gap-3 accent-card p-3 text-left"
         >
           <div className="min-w-0 flex-1">
             <p className="text-[14px] font-bold text-brand-800">Track with Images</p>
@@ -275,7 +275,7 @@ export default function Search() {
                 />
               ))
             ) : remoteWarning ? (
-              <p className="rounded-xl bg-amber-50 p-3 text-[12px] leading-relaxed text-amber-900">
+              <p className="accent-card accent-amber p-3 text-[12px] leading-relaxed">
                 {remoteWarning}
               </p>
             ) : (

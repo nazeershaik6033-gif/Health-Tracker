@@ -142,6 +142,116 @@ export interface WeightEntry {
 
 export type WorkoutIntensity = 'light' | 'moderate' | 'vigorous';
 
+export type ExerciseKind = 'strength' | 'cardio' | 'flexibility' | 'sport';
+
+export type Equipment =
+  | 'barbell'
+  | 'dumbbell'
+  | 'machine'
+  | 'cable'
+  | 'kettlebell'
+  | 'bodyweight'
+  | 'band'
+  | 'other';
+
+export type MuscleGroup =
+  | 'chest'
+  | 'back'
+  | 'shoulders'
+  | 'biceps'
+  | 'triceps'
+  | 'quads'
+  | 'hamstrings'
+  | 'glutes'
+  | 'calves'
+  | 'core'
+  | 'fullbody';
+
+export const EQUIPMENT_LABEL: Record<Equipment, string> = {
+  barbell: 'Barbell',
+  dumbbell: 'Dumbbell',
+  machine: 'Machine',
+  cable: 'Cable',
+  kettlebell: 'Kettlebell',
+  bodyweight: 'Bodyweight',
+  band: 'Band',
+  other: 'Other',
+};
+
+export const MUSCLE_LABEL: Record<MuscleGroup, string> = {
+  chest: 'Chest',
+  back: 'Back',
+  shoulders: 'Shoulders',
+  biceps: 'Biceps',
+  triceps: 'Triceps',
+  quads: 'Quads',
+  hamstrings: 'Hamstrings',
+  glutes: 'Glutes',
+  calves: 'Calves',
+  core: 'Core',
+  fullbody: 'Full body',
+};
+
+/** A catalog entry. Mirrors `Food`: seeded, searchable, usage-ranked. */
+export interface Exercise {
+  id: string;
+  name: string;
+  kind: ExerciseKind;
+  /** Metabolic equivalent, from the Compendium of Physical Activities. */
+  met: number;
+  /** Primary muscle first. */
+  muscles: MuscleGroup[];
+  equipment: Equipment;
+  tags: string[];
+  defaultSets?: number;
+  defaultReps?: number;
+  defaultDurationMin?: number;
+  /** Planks and hangs are counted in seconds, not reps. */
+  repUnit?: 'reps' | 'sec';
+  source: 'seed' | 'custom' | 'ai';
+  useCount: number;
+  lastUsedAt?: number;
+}
+
+export interface ExerciseSet {
+  /** Repetitions, or seconds when the exercise's `repUnit` is 'sec'. */
+  reps: number;
+  weightKg?: number;
+  done?: boolean;
+}
+
+/**
+ * One exercise inside a session.
+ *
+ * `name`, `kind` and `met` are denormalised snapshots rather than lookups, so
+ * renaming or deleting a catalog entry never rewrites what you did last month.
+ */
+export interface LoggedExercise {
+  exerciseId: string;
+  name: string;
+  kind: ExerciseKind;
+  met: number;
+  /** Strength work. Absent for cardio, flexibility and sport. */
+  sets?: ExerciseSet[];
+  /**
+   * Minutes this took. Entered directly for cardio; derived from time under
+   * tension plus rest for strength, so a session's duration and its calorie
+   * estimate are always computed from the same number.
+   */
+  durationMin?: number;
+  intensity: WorkoutIntensity;
+  kcal: number;
+  note?: string;
+}
+
+/**
+ * A workout session.
+ *
+ * `type`, `durationMin` and `kcal` are roll-ups kept populated for the ten
+ * places that read a workout as a single figure (day totals, streak, calendar
+ * dots, AI context, export). `exercises` is absent on rows logged before
+ * sessions existed, and those still render and still count.
+ */
 export interface WorkoutEntry {
   id: string;
   date: string;
@@ -151,6 +261,8 @@ export interface WorkoutEntry {
   intensity: WorkoutIntensity;
   note?: string;
   createdAt: number;
+  exercises?: LoggedExercise[];
+  title?: string;
 }
 
 export interface StepsEntry {
@@ -283,4 +395,8 @@ export interface Settings {
   theme: ThemeId;
   onboardingDone: boolean;
   lastInsightDate?: string;
+  /** Set on every successful export, so the app can say how stale a backup is. */
+  lastBackupAt?: number;
+  /** Days before the overdue nudge appears. 0 disables it. */
+  backupRemindDays?: number;
 }

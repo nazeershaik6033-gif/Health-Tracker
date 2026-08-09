@@ -1,49 +1,104 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
 import { useDay, useHistory } from '@/stores/useDay';
-import { addWorkout, deleteWorkout, saveProfile } from '@/db/repo';
-import { WORKOUT_METS, estimateWorkoutKcal } from '@/lib/nutrition';
+import {
+  addWorkout,
+  deleteWorkout,
+  markExercisesUsed,
+  saveProfile,
+  updateWorkout,
+  workoutsForRange,
+} from '@/db/repo';
+import { setVolumeKg } from '@/lib/nutrition';
+import { recordsByExercise, summariseSession } from '@/lib/exerciseStats';
+import { addDays, today } from '@/lib/date';
+import { ExercisePicker } from '@/components/ExercisePicker';
+import { SetsSheet } from '@/components/SetsSheet';
 import { RingProgress } from '@/components/RingProgress';
 import { TrendChart } from '@/components/TrendChart';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
-import { IconFlame, IconTrash } from '@/components/icons';
-import type { WorkoutIntensity } from '@/types';
+import { IconChevronRight, IconDumbbell, IconPlus, IconTrash } from '@/components/icons';
+import type { Exercise, LoggedExercise, WorkoutEntry } from '@/types';
 
-const INTENSITIES: [WorkoutIntensity, string][] = [
-  ['light', 'Light'],
-  ['moderate', 'Moderate'],
-  ['vigorous', 'Vigorous'],
-];
-
+/**
+ * The workout tracker.
+ *
+ * A day holds one *session* row per logged group of exercises. The session's
+ * `type`, `durationMin` and `kcal` are roll-ups, so the Home tile, the streak,
+ * the calendar dots and the AI day context all keep reading a workout the way
+ * they always did. Rows logged before sessions existed have no `exercises`
+ * array and still render, via the fallback in `SessionCard`.
+ */
 export default function Workout() {
   const { profile, selectedDate, refreshProfile } = useApp();
   const day = useDay();
   const history = useHistory(14);
 
   const goal = profile?.workoutKcalGoal ?? 300;
-  const [type, setType] = useState('Walking');
-  const [minutes, setMinutes] = useState('30');
-  const [intensity, setIntensity] = useState<WorkoutIntensity>('moderate');
-  const [kcalOverride, setKcalOverride] = useState('');
   const [goalInput, setGoalInput] = useState(String(goal));
   const [editingGoal, setEditingGoal] = useState(false);
 
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pending, setPending] = useState<Exercise | null>(null);
+  const [editing, setEditing] = useState<{
+    workoutId: string;
+    index: number;
+    logged: LoggedExercise;
+  } | null>(null);
+
   const latestWeight = useLiveQuery(async () => db.weight.orderBy('date').reverse().first(), []);
-  const weightKg = latestWeight?.kg ?? profile?.startWeightKg ?? 70;
+  const bodyWeightKg = latestWeight?.kg ?? profile?.startWeightKg ?? 70;
 
-  const estimated = useMemo(
-    () => estimateWorkoutKcal(type, Number(minutes) || 0, weightKg, intensity),
-    [type, minutes, weightKg, intensity],
+  // Records span the last year, which is enough for a PR to mean something
+  // without reading the whole table on every render.
+  const pastYear = useLiveQuery(
+    () => workoutsForRange(addDays(today(), -365), today()),
+    [],
+    [] as WorkoutEntry[],
   );
-  const kcal = kcalOverride ? Number(kcalOverride) || 0 : estimated;
+  const records = useMemo(() => recordsByExercise(pastYear ?? []), [pastYear]);
 
-  async function log() {
-    const mins = Number(minutes) || 0;
-    if (mins <= 0) return;
-    await addWorkout({ date: selectedDate, type, durationMin: mins, kcal, intensity });
-    setKcalOverride('');
+  const sessions = day.workouts;
+  const exerciseCount = sessions.reduce((n, w) => n + (w.exercises?.length ?? 1), 0);
+
+  /** The day's session, or a new one — everything logs into a single row. */
+  async function addExercise(logged: LoggedExercise) {
+    const existing = sessions.find((w) => w.exercises);
+    const next = [...(existing?.exercises ?? []), logged];
+    const roll = summariseSession(next);
+
+    if (existing) {
+      await updateWorkout(existing.id, { ...roll, exercises: next });
+    } else {
+      await addWorkout({
+        date: selectedDate,
+        ...roll,
+        intensity: logged.intensity,
+        exercises: next,
+      });
+    }
+    await markExercisesUsed([logged.exerciseId]);
+    setPending(null);
+  }
+
+  async function replaceExercise(workoutId: string, index: number, logged: LoggedExercise) {
+    const workout = sessions.find((w) => w.id === workoutId);
+    if (!workout?.exercises) return;
+    const next = workout.exercises.map((e, i) => (i === index ? logged : e));
+    await updateWorkout(workoutId, { ...summariseSession(next), exercises: next });
+    setEditing(null);
+  }
+
+  async function removeExercise(workoutId: string, index: number) {
+    const workout = sessions.find((w) => w.id === workoutId);
+    if (!workout?.exercises) return;
+    const next = workout.exercises.filter((_, i) => i !== index);
+    // An emptied session is deleted rather than left as a stray heading.
+    if (next.length === 0) await deleteWorkout(workoutId);
+    else await updateWorkout(workoutId, { ...summariseSession(next), exercises: next });
   }
 
   async function saveGoal() {
@@ -71,109 +126,26 @@ export default function Workout() {
             </div>
           </RingProgress>
           <p className="text-[12.5px] text-secondary">
-            {day.workouts.length
-              ? `${day.workouts.length} workout${day.workouts.length === 1 ? '' : 's'} logged`
+            {exerciseCount
+              ? `${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'} logged`
               : 'Nothing logged for this day yet.'}
           </p>
         </Card>
 
-        {day.workouts.length > 0 && (
-          <Card className="py-2">
-            <ul>
-              {day.workouts.map((w) => (
-                <li
-                  key={w.id}
-                  className="flex items-center gap-3 border-b border-[var(--surface-border)] py-2.5 last:border-0"
-                >
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-ring-workout)]/12 text-[var(--color-ring-workout)]">
-                    <IconFlame width={17} height={17} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-semibold">{w.type}</p>
-                    <p className="text-[12px] text-secondary">
-                      {w.durationMin} min · {w.intensity}
-                    </p>
-                  </div>
-                  <span className="tabular text-[13px] font-bold">{w.kcal} cal</span>
-                  <button
-                    type="button"
-                    onClick={() => deleteWorkout(w.id)}
-                    aria-label={`Delete ${w.type}`}
-                    className="rounded-lg p-1.5 text-muted hover:text-red-600"
-                  >
-                    <IconTrash width={15} height={15} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-
-        <Card className="space-y-3">
-          <SectionTitle>Log a workout</SectionTitle>
-
-          <div>
-            <span className="mb-1.5 block text-[13px] font-medium text-secondary">Activity</span>
-            <div className="flex flex-wrap gap-1.5">
-              {Object.keys(WORKOUT_METS).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  className={`hairline rounded-full border px-3 py-1.5 text-[12.5px] font-medium ${
-                    t === type
-                      ? 'border-[var(--color-ring-workout)] bg-[var(--color-ring-workout)]/10 text-[var(--color-ring-workout)]'
-                      : ''
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Field
-            label="Duration"
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ''))}
-            inputMode="numeric"
-            suffix="min"
+        {sessions.map((workout) => (
+          <SessionCard
+            key={workout.id}
+            workout={workout}
+            onEdit={(index, logged) => setEditing({ workoutId: workout.id, index, logged })}
+            onRemove={(index) => removeExercise(workout.id, index)}
+            onDeleteLegacy={() => deleteWorkout(workout.id)}
           />
+        ))}
 
-          <div>
-            <span className="mb-1.5 block text-[13px] font-medium text-secondary">Intensity</span>
-            <div className="flex gap-1.5">
-              {INTENSITIES.map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setIntensity(value)}
-                  className={`hairline flex-1 rounded-lg border py-2 text-[12.5px] font-semibold ${
-                    intensity === value
-                      ? 'border-[var(--color-ring-workout)] bg-[var(--color-ring-workout)]/10 text-[var(--color-ring-workout)]'
-                      : ''
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Field
-            label="Calories burned"
-            value={kcalOverride}
-            onChange={(e) => setKcalOverride(e.target.value.replace(/\D/g, ''))}
-            inputMode="numeric"
-            placeholder={String(estimated)}
-            suffix="cal"
-            hint={`Estimated from MET values at ${weightKg.toFixed(0)} kg — override if your tracker says otherwise.`}
-          />
-
-          <Button full size="lg" onClick={log} disabled={!Number(minutes)}>
-            Log {kcal} cal
-          </Button>
-        </Card>
+        <Button full size="lg" onClick={() => setPickerOpen(true)}>
+          <IconPlus width={17} height={17} />
+          Add exercise
+        </Button>
 
         <Card>
           <SectionTitle
@@ -221,7 +193,191 @@ export default function Workout() {
             <div className="h-[180px]" />
           )}
         </Card>
+
+        <p className="px-1 text-[11.5px] leading-relaxed text-muted">
+          Calories for resistance work are estimated from sets, reps and time under tension. They
+          vary far more between people than steady-state cardio does — treat them as a guide, and
+          override any figure you can measure better.
+        </p>
       </div>
+
+      <ExercisePicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(exercise) => {
+          setPickerOpen(false);
+          setPending(exercise);
+        }}
+      />
+
+      <SetsSheet
+        open={Boolean(pending)}
+        exercise={pending}
+        bodyWeightKg={bodyWeightKg}
+        record={pending ? records.get(pending.id) : undefined}
+        onClose={() => setPending(null)}
+        onConfirm={addExercise}
+      />
+
+      <EditSheet
+        editing={editing}
+        bodyWeightKg={bodyWeightKg}
+        records={records}
+        onClose={() => setEditing(null)}
+        onConfirm={replaceExercise}
+      />
     </div>
+  );
+}
+
+/** Reopens `SetsSheet` against an already-logged entry. */
+function EditSheet({
+  editing,
+  bodyWeightKg,
+  records,
+  onClose,
+  onConfirm,
+}: {
+  editing: { workoutId: string; index: number; logged: LoggedExercise } | null;
+  bodyWeightKg: number;
+  records: ReturnType<typeof recordsByExercise>;
+  onClose: () => void;
+  onConfirm: (workoutId: string, index: number, logged: LoggedExercise) => void;
+}) {
+  const exercise = useLiveQuery(
+    () => (editing ? db.exercises.get(editing.logged.exerciseId) : undefined),
+    [editing?.logged.exerciseId],
+  );
+
+  if (!editing) return null;
+
+  // The catalog entry can be gone if the user deleted a custom exercise. Fall
+  // back to the snapshot on the log so the entry stays editable regardless.
+  const target: Exercise = exercise ?? {
+    id: editing.logged.exerciseId,
+    name: editing.logged.name,
+    kind: editing.logged.kind,
+    met: editing.logged.met,
+    muscles: [],
+    equipment: 'other',
+    tags: [],
+    source: 'custom',
+    useCount: 0,
+  };
+
+  return (
+    <SetsSheet
+      open
+      exercise={target}
+      initial={editing.logged}
+      bodyWeightKg={bodyWeightKg}
+      record={records.get(editing.logged.exerciseId)}
+      onClose={onClose}
+      onConfirm={(logged) => onConfirm(editing.workoutId, editing.index, logged)}
+    />
+  );
+}
+
+function describeSets(logged: LoggedExercise): string {
+  const sets = logged.sets ?? [];
+  // Strength is described by its sets; everything else by its duration. Both
+  // now carry `durationMin`, so the presence of sets is what distinguishes them.
+  if (!sets.length) {
+    return logged.durationMin
+      ? `${Math.round(logged.durationMin)} min · ${logged.intensity}`
+      : logged.intensity;
+  }
+
+  const volume = setVolumeKg(sets);
+  const reps = sets.map((s) => s.reps);
+  const uniform = reps.every((r) => r === reps[0]);
+  const shape = uniform ? `${sets.length} × ${reps[0]}` : reps.join(', ');
+  return volume > 0 ? `${shape} · ${volume.toLocaleString()} kg` : shape;
+}
+
+function SessionCard({
+  workout,
+  onEdit,
+  onRemove,
+  onDeleteLegacy,
+}: {
+  workout: WorkoutEntry;
+  onEdit: (index: number, logged: LoggedExercise) => void;
+  onRemove: (index: number) => void;
+  onDeleteLegacy: () => void;
+}) {
+  // Pre-session rows have no exercise breakdown. They stay exactly as they
+  // were logged rather than being migrated into a shape they never had.
+  if (!workout.exercises?.length) {
+    return (
+      <Card className="flex items-center gap-3 py-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-ring-workout)]/12 text-[var(--color-ring-workout)]">
+          <IconDumbbell width={17} height={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14px] font-semibold">{workout.type}</p>
+          <p className="text-[12px] text-secondary">
+            {workout.durationMin} min · {workout.intensity}
+          </p>
+        </div>
+        <span className="tabular text-[13px] font-bold">{workout.kcal} cal</span>
+        <button
+          type="button"
+          onClick={onDeleteLegacy}
+          aria-label={`Delete ${workout.type}`}
+          className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+        >
+          <IconTrash width={15} height={15} />
+        </button>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="space-y-1 py-3">
+      <div className="flex items-baseline justify-between gap-2 pb-1">
+        <p className="text-[14px] font-bold tracking-tight">{workout.title ?? workout.type}</p>
+        <p className="tabular text-[12px] text-secondary">
+          {workout.durationMin} min · {workout.kcal} cal
+        </p>
+      </div>
+
+      <ul className="stagger">
+        {workout.exercises.map((logged, i) => (
+          <li
+            key={`${logged.exerciseId}-${i}`}
+            style={{ '--i': i } as React.CSSProperties}
+            className="hairline flex items-center gap-2 border-t py-2"
+          >
+            <button
+              type="button"
+              onClick={() => onEdit(i, logged)}
+              className="min-w-0 flex-1 text-left transition-transform active:scale-[0.99]"
+            >
+              <span className="block truncate text-[13.5px] font-semibold">{logged.name}</span>
+              <span className="tabular block truncate text-[12px] text-secondary">
+                {describeSets(logged)}
+              </span>
+            </button>
+            <Link
+              to={`/exercise/${encodeURIComponent(logged.exerciseId)}`}
+              aria-label={`${logged.name} history`}
+              className="rounded-lg p-1 text-muted transition-transform active:scale-90"
+            >
+              <IconChevronRight width={16} height={16} />
+            </Link>
+            <span className="tabular shrink-0 text-[12.5px] font-bold">{logged.kcal}</span>
+            <button
+              type="button"
+              onClick={() => onRemove(i)}
+              aria-label={`Remove ${logged.name}`}
+              className="shrink-0 rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+            >
+              <IconTrash width={14} height={14} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

@@ -160,6 +160,37 @@ export const WORKOUT_PLAN_SCHEMA = {
 } as const;
 
 /**
+ * A single loggable session.
+ *
+ * `exerciseId` is constrained to the catalog ids listed in the prompt, so what
+ * comes back maps onto real entries the user can log with one tap rather than
+ * prose they have to re-enter by hand.
+ */
+export const SESSION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'summary', 'exercises'],
+  properties: {
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    exercises: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['exerciseId', 'sets', 'reps', 'durationMin'],
+        properties: {
+          exerciseId: { type: 'string' },
+          sets: { type: 'number' },
+          reps: { type: 'number' },
+          durationMin: { type: 'number' },
+        },
+      },
+    },
+  },
+} as const;
+
+/**
  * Pulls JSON out of a model reply.
  *
  * Even in strict-schema mode a model occasionally wraps the object in a code

@@ -37,7 +37,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
         {streakDays !== undefined && streakDays > 0 && (
           <Link
             to="/streaks"
-            className="flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1.5 text-[12px] font-bold text-brand-700"
+            className="flex items-center gap-1 rounded-full tint-soft tint-brand px-2.5 py-1.5 text-[12px] font-bold"
           >
             <IconStreak width={14} height={14} />
             {streakDays} day{streakDays === 1 ? '' : 's'}

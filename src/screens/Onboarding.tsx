@@ -248,7 +248,7 @@ export default function Onboarding() {
               suffix="kcal"
               hint="Leave blank to keep the calculated target and let it follow your weight."
             />
-            <div className="flex items-start gap-2 rounded-xl bg-brand-50 p-3 text-[12.5px] text-brand-800">
+            <div className="flex items-start gap-2 accent-card p-3 text-[12.5px] text-brand-800">
               <IconSparkle width={16} height={16} className="mt-0.5 shrink-0" />
               <p>
                 Add an AI key in Settings to unlock photo calorie tracking, label scanning, voice
@@ -344,7 +344,7 @@ function Choice<T extends string>({
             type="button"
             onClick={() => onChange(val)}
             className={`hairline flex w-full items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left text-[14px] transition-colors ${
-              value === val ? 'border-brand-500 bg-brand-50 font-semibold text-brand-800' : ''
+              value === val ? 'border-brand-500 tint-soft tint-brand font-semibold' : ''
             }`}
           >
             <span

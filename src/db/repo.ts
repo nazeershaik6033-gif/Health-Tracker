@@ -1,10 +1,12 @@
 import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
+import { seedExercises } from '@/data/exercises.seed';
 import { today } from '@/lib/date';
 import { computeTargets } from '@/lib/nutrition';
 import { DEFAULT_FATSECRET } from '@/types';
 import type {
   ChatMessage,
+  Exercise,
   Food,
   Insight,
   Meal,
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoTrack: false,
   theme: 'system',
   onboardingDone: false,
+  backupRemindDays: 14,
 };
 
 /**
@@ -67,6 +70,14 @@ export async function ensureSeeded(): Promise<void> {
   const existing = await db.foods.bulkGet(ids);
   const missing = seeds.filter((_, i) => !existing[i]);
   if (missing.length) await db.foods.bulkPut(missing);
+
+  // Same shape for exercises. Only the rows that aren't already there are
+  // written, so a user's `useCount` on a seeded exercise survives every
+  // subsequent launch and every catalog addition.
+  const exSeeds = seedExercises();
+  const exExisting = await db.exercises.bulkGet(exSeeds.map((e) => e.id));
+  const exMissing = exSeeds.filter((_, i) => !exExisting[i]);
+  if (exMissing.length) await db.exercises.bulkPut(exMissing);
 
   if (!(await db.settings.get('app'))) {
     await db.settings.put(DEFAULT_SETTINGS);
@@ -430,6 +441,55 @@ export async function addWorkout(entry: Omit<WorkoutEntry, 'id' | 'createdAt'>):
 
 export async function deleteWorkout(id: string): Promise<void> {
   await db.workouts.delete(id);
+}
+
+/** Editing a session in place — adding, changing or removing an exercise. */
+export async function updateWorkout(
+  id: string,
+  patch: Partial<Omit<WorkoutEntry, 'id' | 'createdAt'>>,
+): Promise<void> {
+  await db.workouts.update(id, patch);
+}
+
+/* ------------------------------- exercises ------------------------------- */
+
+export async function allExercises(): Promise<Exercise[]> {
+  return db.exercises.toArray();
+}
+
+export async function getExercise(id: string): Promise<Exercise | undefined> {
+  return db.exercises.get(id);
+}
+
+export async function createExercise(
+  draft: Omit<Exercise, 'id' | 'useCount'> & { id?: string },
+): Promise<Exercise> {
+  const next: Exercise = { useCount: 0, ...draft, id: draft.id ?? uid('ex_') };
+  await db.exercises.put(next);
+  return next;
+}
+
+export async function updateExercise(id: string, patch: Partial<Exercise>): Promise<void> {
+  await db.exercises.update(id, patch);
+}
+
+export async function deleteExercise(id: string): Promise<void> {
+  await db.exercises.delete(id);
+}
+
+/**
+ * Bumps usage so the picker can lead with what this person actually trains.
+ * Mirrors `markFoodsUsed`.
+ */
+export async function markExercisesUsed(ids: string[]): Promise<void> {
+  const now = Date.now();
+  await Promise.all(
+    [...new Set(ids)].map(async (id) => {
+      const row = await db.exercises.get(id);
+      if (!row) return;
+      await db.exercises.update(id, { useCount: row.useCount + 1, lastUsedAt: now });
+    }),
+  );
 }
 
 /* ---------------------------------- chat --------------------------------- */

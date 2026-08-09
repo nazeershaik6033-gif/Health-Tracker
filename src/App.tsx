@@ -30,6 +30,7 @@ const Sleep = lazy(() => import('@/screens/trackers/Sleep'));
 const Weight = lazy(() => import('@/screens/trackers/Weight'));
 const Workout = lazy(() => import('@/screens/trackers/Workout'));
 const Steps = lazy(() => import('@/screens/trackers/Steps'));
+const ExerciseDetail = lazy(() => import('@/screens/ExerciseDetail'));
 const Snap = lazy(() => import('@/screens/Snap'));
 const SnapGallery = lazy(() => import('@/screens/SnapGallery'));
 const Scan = lazy(() => import('@/screens/Scan'));
@@ -67,6 +68,7 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+
   if (!ready) return <BootSkeleton />;
 
   const onboarded = Boolean(profile) && settings.onboardingDone;
@@ -81,7 +83,16 @@ export default function App() {
   return (
     <div className="mx-auto min-h-dvh w-full max-w-lg">
       <main className={fullscreen ? '' : 'pb-24'}>
+        {/*
+          Keyed on the path so each screen replays its entrance. React Router
+          already swaps the route component underneath; the key just gives the
+          wrapper a new identity so the CSS animation restarts. Chosen over the
+          View Transitions API because a transition has to wrap the DOM change
+          itself, and by the time an effect could call it React has committed —
+          and this way Safari and Firefox get the same motion as Chrome.
+        */}
         <Suspense fallback={<BootSkeleton />}>
+          <div key={location.pathname} className="animate-route-in">
           <Routes>
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/" element={<Home />} />
@@ -106,8 +117,10 @@ export default function App() {
             <Route path="/trackers/weight" element={<Weight />} />
             <Route path="/trackers/workout" element={<Workout />} />
             <Route path="/trackers/steps" element={<Steps />} />
+            <Route path="/exercise/:id" element={<ExerciseDetail />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </div>
         </Suspense>
       </main>
 

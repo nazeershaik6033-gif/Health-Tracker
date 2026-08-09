@@ -5,6 +5,7 @@ import { addMealItems, createFood, findFoodByBarcode, upsertFood } from '@/db/re
 import { lookupBarcodeTiered } from '@/lib/foodLookup';
 import { ConsensusBuffer, createDecoder, isValidEAN, type Decoder } from '@/lib/scanner/barcode';
 import { useCamera } from '@/lib/camera';
+import { HAPTIC, haptic } from '@/lib/motion';
 import { captureFrame } from '@/lib/image';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
 import { draftToFood, generateFood } from '@/ai/service';
@@ -142,7 +143,7 @@ export default function Scan() {
 
         const confirmed = bufferRef.current.push(hit.value);
         if (confirmed) {
-          if (navigator.vibrate) navigator.vibrate(40);
+          haptic(HAPTIC.success);
           await handleCode(confirmed);
         }
       } catch {
@@ -300,7 +301,7 @@ export default function Scan() {
               )}
               <p className="tabular mt-1 text-[11px] text-muted">{code}</p>
               {error && (
-                <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-900">
+                <p className="mt-2 accent-card accent-amber px-2.5 py-1.5 text-[11.5px]">
                   {error}
                 </p>
               )}
@@ -315,7 +316,7 @@ export default function Scan() {
                     type="button"
                     onClick={() => setServingLabel(s.label)}
                     className={`hairline rounded-full border px-3 py-1.5 text-[13px] font-medium ${
-                      s.label === servingLabel ? 'border-brand-500 bg-brand-50 text-brand-700' : ''
+                      s.label === servingLabel ? 'border-brand-500 tint-soft tint-brand' : ''
                     }`}
                   >
                     {s.label}

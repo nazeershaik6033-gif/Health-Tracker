@@ -190,6 +190,54 @@ export function estimateWorkoutKcal(
   return Math.round(((met * 3.5 * weightKg) / 200) * minutes);
 }
 
+/** The ACSM formula with a MET supplied directly, for catalog exercises. */
+export function kcalFromMet(
+  met: number,
+  minutes: number,
+  weightKg: number,
+  intensity: WorkoutIntensity,
+): number {
+  return Math.round(((met * INTENSITY_FACTOR[intensity] * 3.5 * weightKg) / 200) * minutes);
+}
+
+/** Seconds per rep — one concentric plus one eccentric at a standard tempo. */
+const SECONDS_PER_REP = 3;
+/** Default rest between sets, in seconds. */
+export const DEFAULT_REST_SEC = 60;
+
+/**
+ * Sets and reps carry no duration, but the ACSM formula needs minutes. This
+ * derives them from time-under-tension plus rest.
+ *
+ * Treat the result as an estimate and say so in the UI: resistance-training
+ * expenditure varies far more between people than steady-state cardio, and no
+ * formula built on sets and reps alone can close that gap.
+ */
+export function strengthDurationMin(
+  sets: { reps: number }[],
+  restSec = DEFAULT_REST_SEC,
+  secondsPerRep = SECONDS_PER_REP,
+): number {
+  if (!sets.length) return 0;
+  const work = sets.reduce((total, s) => total + Math.max(0, s.reps) * secondsPerRep, 0);
+  // Rest happens between sets, not after the last one.
+  const rest = Math.max(0, sets.length - 1) * restSec;
+  return (work + rest) / 60;
+}
+
+/** Total load moved — the honest strength signal, unlike the calorie estimate. */
+export function setVolumeKg(sets: { reps: number; weightKg?: number }[]): number {
+  return sets.reduce((total, s) => total + s.reps * (s.weightKg ?? 0), 0);
+}
+
+/** Epley one-rep-max estimate. Meaningless above ~12 reps, so it's capped. */
+export function estimate1RM(weightKg: number, reps: number): number {
+  if (weightKg <= 0 || reps <= 0) return 0;
+  if (reps === 1) return weightKg;
+  if (reps > 12) return 0;
+  return Math.round(weightKg * (1 + reps / 30) * 10) / 10;
+}
+
 /* ------------------------------- formatting ------------------------------ */
 
 export const KG_PER_LB = 0.45359237;

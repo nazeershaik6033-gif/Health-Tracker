@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { prefersReducedMotion } from '@/lib/motion';
 
 interface Props {
   open: boolean;
@@ -10,14 +11,48 @@ interface Props {
   maxHeight?: string;
 }
 
+/** Matches the sheet-down / fade-out durations in styles/index.css. */
+const EXIT_MS = 220;
+
 export function BottomSheet({ open, onClose, title, children, footer, maxHeight = '85vh' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // The sheet used to unmount the instant `open` went false, so it vanished
+  // with no exit. Rendering through a short closing phase gives it one.
+  const [closing, setClosing] = useState(false);
+  const [mounted, setMounted] = useState(open);
+  const exitTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (open) {
+      clearTimeout(exitTimer.current);
+      setMounted(true);
+      setClosing(false);
+      return;
+    }
+    if (!mounted) return;
+    if (prefersReducedMotion()) {
+      setMounted(false);
+      return;
+    }
+    setClosing(true);
+    exitTimer.current = setTimeout(() => {
+      setMounted(false);
+      setClosing(false);
+    }, EXIT_MS);
+    return () => clearTimeout(exitTimer.current);
+  }, [open, mounted]);
+
+  // Let the exit play before the parent tears the content down.
+  const requestClose = useCallback(() => {
+    if (closing) return;
+    onClose();
+  }, [closing, onClose]);
 
   useEffect(() => {
     if (!open) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
     };
     document.addEventListener('keydown', onKey);
 
@@ -33,15 +68,15 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
       document.body.style.overflow = prev;
       clearTimeout(focusTimer);
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div
-        className="animate-fade-in absolute inset-0 bg-black/40"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/40 ${closing ? 'animate-fade-out' : 'animate-fade-in'}`}
+        onClick={requestClose}
         aria-hidden="true"
       />
       <div
@@ -50,7 +85,9 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="animate-sheet-up relative flex w-full max-w-lg flex-col outline-none"
+        className={`relative flex w-full max-w-lg flex-col outline-none ${
+          closing ? 'animate-sheet-down' : 'animate-sheet-up'
+        }`}
         style={{
           maxHeight,
           background: 'var(--surface-card)',
@@ -62,9 +99,14 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
           <div className="surface-sunken h-1 w-10 rounded-full" />
         </div>
         {title && (
-          <h2 className="px-5 pt-2 pb-3 text-[17px] font-bold tracking-tight">{title}</h2>
+          <h2 className="px-5 pt-2 pb-2 text-[17px] font-bold tracking-tight">{title}</h2>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-2">{children}</div>
+        {/* pt-0.5 rather than 0: a child with a negative top margin would
+            otherwise sit above scrollTop 0, where it is unreachable and gets
+            clipped by the overflow. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-0.5 pb-2">
+          {children}
+        </div>
         {footer && (
           <div className="hairline border-t px-5 pt-3 pb-safe">{footer}</div>
         )}

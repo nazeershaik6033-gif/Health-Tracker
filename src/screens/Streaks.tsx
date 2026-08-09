@@ -132,7 +132,7 @@ export default function Streaks() {
                 <div
                   key={badge.days}
                   className={`flex min-w-[104px] flex-1 flex-col items-center gap-0.5 rounded-xl px-3 py-3 text-center ${
-                    has ? 'bg-brand-50 text-brand-800' : 'surface-sunken text-[var(--text-muted)]'
+                    has ? 'tint-soft tint-brand' : 'surface-sunken text-[var(--text-muted)]'
                   }`}
                 >
                   <IconFlame width={18} height={18} className={has ? 'text-accent-500' : ''} />

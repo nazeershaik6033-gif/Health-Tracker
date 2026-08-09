@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { HAPTIC, haptic } from '@/lib/motion';
 import { IconDiet, IconHome, IconPlans, IconPlus, IconStreak } from './icons';
 
 const ITEMS = [
@@ -26,7 +27,10 @@ export function BottomNav() {
         <div className="flex w-16 shrink-0 justify-center">
           <button
             type="button"
-            onClick={() => navigate('/log')}
+            onClick={() => {
+              haptic(HAPTIC.tap);
+              navigate('/log');
+            }}
             aria-label="Log food"
             className="-mt-5 flex h-13 w-13 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition-transform active:scale-95"
             style={{ height: '3.25rem', width: '3.25rem' }}
@@ -58,15 +62,29 @@ function NavItem({
     <NavLink
       to={to}
       end={end}
+      onClick={() => haptic(HAPTIC.tap)}
       className={({ isActive }) =>
-        `flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10.5px] font-semibold transition-colors ${
+        `relative flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10.5px] font-semibold transition-colors ${
           isActive ? 'text-brand-600' : 'text-[var(--text-muted)]'
         }`
       }
     >
       {({ isActive }) => (
         <>
-          <Icon width={22} height={22} strokeWidth={isActive ? 2.1 : 1.75} />
+          {/* A short rule above the active tab, scaled in rather than faded so
+              the movement reads as travel between tabs. */}
+          <span
+            aria-hidden="true"
+            className="absolute top-0 h-0.5 w-7 origin-center rounded-full bg-brand-500 transition-transform duration-250 ease-out"
+            style={{ transform: `scaleX(${isActive ? 1 : 0})` }}
+          />
+          <Icon
+            width={22}
+            height={22}
+            strokeWidth={isActive ? 2.1 : 1.75}
+            className="transition-transform duration-200 ease-out"
+            style={{ transform: `scale(${isActive ? 1.08 : 1})` }}
+          />
           {label}
         </>
       )}

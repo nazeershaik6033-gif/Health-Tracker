@@ -320,7 +320,7 @@ export default function Voice() {
             </Card>
 
             {analysis.take && (
-              <div className="mt-3 rounded-2xl bg-brand-50 p-3.5">
+              <div className="mt-3 accent-card p-3.5">
                 <p className="text-[13px] leading-relaxed text-brand-800/90">{analysis.take}</p>
               </div>
             )}

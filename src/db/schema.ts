@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   ChatMessage,
+  Exercise,
   Food,
   Insight,
   Meal,
@@ -29,6 +30,7 @@ export class HealthifyDB extends Dexie {
   chats!: Table<ChatMessage, string>;
   insights!: Table<Insight, string>;
   plans!: Table<Plan, string>;
+  exercises!: Table<Exercise, string>;
 
   constructor() {
     super('healthify');
@@ -48,6 +50,14 @@ export class HealthifyDB extends Dexie {
       chats: 'id, createdAt',
       insights: 'id, date, createdAt',
       plans: 'id, kind, createdAt',
+    });
+
+    // v2 adds the exercise catalog. Dexie carries every v1 store forward
+    // untouched, so only the new one is declared and no upgrade function is
+    // needed: the new WorkoutEntry fields (`exercises`, `title`) are not
+    // indexed, and IndexedDB does not care about unindexed shape changes.
+    this.version(2).stores({
+      exercises: 'id, name, kind, equipment, source, useCount, lastUsedAt',
     });
   }
 }
