@@ -214,13 +214,29 @@ so the app returns from a warm cache instead of a cold network; the earlier
 version cleared everything first and left you looking at a blank screen for the
 length of the download.
 
-It does still unregister the service worker, and that is load-bearing rather
-than leftover: `registration.update()` is a no-op when the worker script hasn't
-changed, which is exactly the case this button exists for, so relying on it
-would leave the precache deleted and never refilled — working online, silently
-broken offline. A fresh registration always installs, and installing is what
-repopulates the precache. Offline access is back a second or two after the app
-is usable again.
+Refilling the precache is the subtle part, and **the page cannot do it**. Two
+things that look like they should work do not:
+
+- `registration.update()` is a no-op when the worker script hasn't changed,
+  which is exactly the case this button exists for.
+- Unregister-then-register is no better. With the script byte-identical and the
+  old worker still controlling the page, the browser hands the *running* worker
+  straight back — no install event fires, so nothing is fetched. Measured
+  directly: `registered. installing=false waiting=false active=true`, precache
+  still empty.
+
+So the worker refills it itself, on a `REPRECACHE` message (`src/sw.ts`). That
+needs an explicit `PrecacheController` rather than `precacheAndRoute`, because
+the singleton helper gives no handle to re-run installation with. The worker
+acknowledges the message before starting, which is how the page distinguishes
+"still downloading" from "this worker is too old to understand" without waiting
+out a long timeout — and workers installed before this shipped are exactly that
+case. They fall back to being unregistered so the next load installs a fresh
+one.
+
+Keeping the worker registered throughout also means the app is never left with
+neither a worker nor an offline copy. A browser tab survives that window; an
+installed iOS PWA may not.
 
 Neither button touches IndexedDB: the Cache API holds the app's own files,
 IndexedDB holds your meals, photos and tracker entries. They are separate
