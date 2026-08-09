@@ -54,9 +54,20 @@ export default function Settings() {
     setUpdating(null);
   }
 
+  const [confirmForce, setConfirmForce] = useState(false);
+
   async function runForceReload() {
+    // Two taps, because this is the one control that can leave the app
+    // unopenable — it deletes the offline copy and depends on the server
+    // having one to replace it with.
+    if (!confirmForce) {
+      setConfirmForce(true);
+      setUpdateMessage('');
+      return;
+    }
+    setConfirmForce(false);
     setUpdating('force');
-    setUpdateMessage('Clearing the offline cache…');
+    setUpdateMessage('Checking the app can be re-downloaded…');
     try {
       await forceReload();
     } catch (err) {
@@ -614,8 +625,17 @@ export default function Settings() {
               />
               {updating === 'check' ? 'Checking…' : 'Check for updates'}
             </Button>
-            <Button variant="secondary" onClick={runForceReload} disabled={updating !== null}>
-              {updating === 'force' ? 'Clearing…' : 'Force reload'}
+            <Button
+              variant={confirmForce ? 'danger' : 'secondary'}
+              onClick={runForceReload}
+              onBlur={() => setConfirmForce(false)}
+              disabled={updating !== null}
+            >
+              {updating === 'force'
+                ? 'Checking…'
+                : confirmForce
+                  ? 'Tap again to clear and re-download'
+                  : 'Force reload'}
             </Button>
           </div>
 
@@ -627,8 +647,9 @@ export default function Settings() {
 
           <p className="text-[11.5px] leading-relaxed text-muted">
             Force reload clears the offline cache and re-downloads the app. Your meals, photos
-            and tracker entries are stored separately and are not touched — but you will need a
-            connection to load again.
+            and tracker entries are stored separately and are not touched. It checks the app can
+            actually be downloaded first, and refuses if it can&apos;t — otherwise clearing the
+            offline copy while the site is unreachable would leave nothing to load.
           </p>
         </Card>
 

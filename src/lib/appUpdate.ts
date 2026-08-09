@@ -94,8 +94,22 @@ export async function checkForUpdate(): Promise<UpdateResult> {
 /**
  * Clears the offline cache and reloads. Resolves only if the navigation
  * somehow fails to start — normally the page is gone before that.
+ *
+ * Throws without changing anything when the app cannot be re-fetched. This is
+ * not hypothetical: the precache can be the only working copy — a host that
+ * has stopped serving the site leaves the installed app running happily from
+ * cache. Clearing it then is irreversible from inside the app, because the
+ * next load has nowhere to come from. Checking first costs one request.
  */
 export async function forceReload(): Promise<void> {
+  const reachable = await appIsReachable();
+  if (!reachable.ok) {
+    throw new Error(
+      `Not clearing the cache — the app could not be re-downloaded (${reachable.detail}). ` +
+        'Your offline copy is still intact. Try again when you have a connection and the site is up.',
+    );
+  }
+
   if ('caches' in window) {
     try {
       const keys = await caches.keys();
@@ -124,6 +138,43 @@ export async function forceReload(): Promise<void> {
   const url = new URL(window.location.href);
   url.searchParams.set(RELOAD_PARAM, Date.now().toString(36));
   window.location.replace(url.toString());
+}
+
+/**
+ * Can the app actually be downloaded again right now?
+ *
+ * Deliberately bypasses both the service worker and the HTTP cache, since a
+ * cached 200 would answer the wrong question entirely — the point is whether
+ * the *origin* still has the app.
+ */
+export async function appIsReachable(): Promise<{ ok: boolean; detail: string }> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { ok: false, detail: 'you appear to be offline' };
+  }
+
+  const url = new URL(import.meta.env.BASE_URL, window.location.href);
+  url.searchParams.set('__probe', Date.now().toString(36));
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url.toString(), {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false, detail: `the server returned ${res.status}` };
+    // A 200 that isn't HTML means something is answering, but not with the app
+    // — a captive portal or a host's error page dressed as success.
+    const type = res.headers.get('content-type') ?? '';
+    if (!type.includes('text/html')) {
+      return { ok: false, detail: `the server returned ${type || 'an unknown type'}, not the app` };
+    }
+    return { ok: true, detail: 'reachable' };
+  } catch {
+    return { ok: false, detail: 'the request failed' };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Build stamp shown in Settings so "did it update?" has a checkable answer. */
