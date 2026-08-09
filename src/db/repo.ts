@@ -560,7 +560,7 @@ export type DayBundle = Awaited<ReturnType<typeof dayBundle>>;
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.profile, db.meals, db.snaps, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods],
+    [db.profile, db.meals, db.snaps, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises],
     async () => {
       await Promise.all([
         db.profile.clear(),
@@ -576,6 +576,9 @@ export async function clearAllData(): Promise<void> {
         db.plans.clear(),
         // Only user-created foods go; the seed list is re-added below.
         db.foods.where('source').notEqual('seed').delete(),
+        // Same for exercises: custom ones are the user's, the shipped catalog
+        // is the app's and `ensureSeeded()` restores it below.
+        db.exercises.where('source').notEqual('seed').delete(),
       ]);
     },
   );

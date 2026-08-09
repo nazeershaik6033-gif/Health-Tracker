@@ -203,13 +203,29 @@ time in CI) and offers two escape hatches:
 
 - **Check for updates** — asks the worker to re-fetch its script and reloads if
   a new build exists. The right button almost always.
-- **Force reload** — deletes every Cache API entry, unregisters the workers and
-  reloads past the HTTP cache. For when a cache is genuinely wedged.
+- **Force reload** — replaces the app's offline copy. For when a cache is
+  genuinely wedged.
 
-Neither touches IndexedDB: the Cache API holds the app's own files, IndexedDB
-holds your meals, photos and tracker entries. They are separate stores, so no
-logged data is at risk either way — but a force reload does need a connection
-to load again.
+Force reload is deliberately narrow. It clears only workbox's precache — the
+app's own files — and leaves the `healthify-*` caches alone, so saved barcode
+lookups, the lazily-downloaded scanner and OCR binaries, and any photo shared
+but not yet logged all survive. It downloads the shell back *before* reloading,
+so the app returns from a warm cache instead of a cold network; the earlier
+version cleared everything first and left you looking at a blank screen for the
+length of the download.
+
+It does still unregister the service worker, and that is load-bearing rather
+than leftover: `registration.update()` is a no-op when the worker script hasn't
+changed, which is exactly the case this button exists for, so relying on it
+would leave the precache deleted and never refilled — working online, silently
+broken offline. A fresh registration always installs, and installing is what
+repopulates the precache. Offline access is back a second or two after the app
+is usable again.
+
+Neither button touches IndexedDB: the Cache API holds the app's own files,
+IndexedDB holds your meals, photos and tracker entries. They are separate
+stores, so no logged data is at risk either way — but a force reload does need
+a connection, and refuses to run without one.
 
 ---
 

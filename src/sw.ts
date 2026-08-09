@@ -114,10 +114,26 @@ registerRoute(
 
 // SPA navigations fall back to the precached shell so deep links work offline.
 // Anything the SW must see itself (share target, cached blobs) is excluded.
+//
+// The precache handler is wrapped rather than used directly: if the shell entry
+// is missing it throws, and a throw inside respondWith gets the browser's own
+// error page — not a network fallback. That entry can genuinely be absent, both
+// when the user clears the offline copy from Settings and when the browser
+// evicts part of the precache under storage pressure. Falling back to the
+// network turns both into a normal load.
+const shellHandler = createHandlerBoundToURL(path('index.html'));
+
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL(path('index.html')), {
-    denylist: [/share-target/, /__shared\//],
-  }),
+  new NavigationRoute(
+    async (options) => {
+      try {
+        return await shellHandler(options);
+      } catch {
+        return fetch(options.request);
+      }
+    },
+    { denylist: [/share-target/, /__shared\//] },
+  ),
 );
 
 // AI provider calls must never be cached or intercepted — they carry the

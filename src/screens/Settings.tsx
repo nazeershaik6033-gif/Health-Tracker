@@ -12,7 +12,7 @@ import {
 import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
 import { keyShapeWarning } from '@/ai/types';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
-import { buildLabel, checkForUpdate, forceReload } from '@/lib/appUpdate';
+import { buildLabel, checkForUpdate, describeStage, forceReload } from '@/lib/appUpdate';
 import { computeTargets, macroTargets } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
 import { describeLastBackup } from '@/lib/backup';
@@ -76,9 +76,11 @@ export default function Settings() {
     }
     setConfirmForce(false);
     setUpdating('force');
-    setUpdateMessage('Checking the app can be re-downloaded…');
+    setUpdateMessage(describeStage('checking'));
     try {
-      await forceReload();
+      // Rebuilding the shell takes a few seconds on a slow connection. Naming
+      // the stage as it changes is what keeps that from reading as a hang.
+      await forceReload((stage) => setUpdateMessage(describeStage(stage)));
     } catch (err) {
       setUpdateMessage(err instanceof Error ? err.message : 'Could not clear the cache.');
       setUpdating(null);
@@ -702,9 +704,9 @@ export default function Settings() {
               disabled={updating !== null}
             >
               {updating === 'force'
-                ? 'Checking…'
+                ? 'Rebuilding…'
                 : confirmForce
-                  ? 'Tap again to clear and re-download'
+                  ? 'Tap again to rebuild the offline copy'
                   : 'Force reload'}
             </Button>
           </div>
@@ -716,10 +718,14 @@ export default function Settings() {
           )}
 
           <p className="text-[11.5px] leading-relaxed text-muted">
-            Force reload clears the offline cache and re-downloads the app. Your meals, photos
-            and tracker entries are stored separately and are not touched. It checks the app can
-            actually be downloaded first, and refuses if it can&apos;t — otherwise clearing the
-            offline copy while the site is unreachable would leave nothing to load.
+            Force reload replaces the app&apos;s offline copy. It downloads the new one before
+            reloading, so the app comes straight back instead of starting from a blank screen;
+            offline access finishes restoring itself a moment later. Your meals, photos and
+            tracker entries are stored separately and are not touched, and neither are your
+            saved barcode lookups, the scanner and label-reading downloads, or a photo you have
+            shared but not yet logged. It checks the app can actually be downloaded first, and
+            refuses if it can&apos;t — otherwise replacing the offline copy while the site is
+            unreachable would leave nothing to load.
           </p>
         </Card>
 
