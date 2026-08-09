@@ -29,7 +29,18 @@ function roundedRectSDF(x, y, w, h, r) {
 
 const circleSDF = (x, y, cx, cy, r) => Math.hypot(x - cx, y - cy) - r;
 
-function renderIcon(size, { maskable = false } = {}) {
+/**
+ * `opaque` fills the whole square with no alpha anywhere.
+ *
+ * Required for two cases that both silently degrade otherwise:
+ *  - maskable icons, where the platform crops to its own shape and expects
+ *    edge-to-edge coverage;
+ *  - Apple touch icons, where iOS does not support transparency at all and
+ *    composites whatever alpha it finds onto black, then applies its own
+ *    rounding on top.
+ */
+function renderIcon(size, { maskable = false, opaque = false } = {}) {
+  const fill = maskable || opaque;
   const px = Buffer.alloc(size * size * 4);
   // Maskable icons must keep their art inside the safe zone (inner 80%),
   // so the glyph shrinks while the background bleeds to the full canvas.
@@ -54,8 +65,11 @@ function renderIcon(size, { maskable = false } = {}) {
       const fx = x + 0.5;
       const fy = y + 0.5;
 
-      const bg = maskable ? 0 : roundedRectSDF(fx, fy, size, size, radius);
-      const bgA = cover(bg, aa);
+      // A fully-covered pixel, not a rounded-rect edge test. The previous
+      // `maskable ? 0 : …` fed a distance of exactly 0 into `cover`, which is
+      // the shape's *edge* — so it returned 0.5 and every pixel of the
+      // maskable icon came out half transparent.
+      const bgA = fill ? 1 : cover(roundedRectSDF(fx, fy, size, size, radius), aa);
       if (bgA <= 0) {
         px[p] = px[p + 1] = px[p + 2] = px[p + 3] = 0;
         continue;
@@ -136,7 +150,8 @@ const targets = [
   ['icon-192.png', 192, {}],
   ['icon-512.png', 512, {}],
   ['maskable-512.png', 512, { maskable: true }],
-  ['apple-touch-icon.png', 180, {}],
+  // Opaque: iOS composites any alpha onto black and rounds the corners itself.
+  ['apple-touch-icon.png', 180, { opaque: true }],
 ];
 for (const [name, size, opts] of targets) {
   writeFileSync(resolve(OUT, name), encodePNG(renderIcon(size, opts), size));
