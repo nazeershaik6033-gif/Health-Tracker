@@ -46,6 +46,11 @@
    Order matters: these all have the same specificity, so the block that wins is
    the last one matching. `.dark` is set alongside data-theme for dark and black,
    and carries only `color-scheme` and the shimmer overlay. */
+/* Tinted surfaces come as a hue triple — fill, foreground, left rule. The
+   Tailwind `@theme` ramp above can't do this job: it emits one fixed value per
+   class, so `bg-brand-50` stayed pale on a black canvas. Every tinted card and
+   icon chip in the app reads these instead, which is what makes them follow the
+   theme. Foregrounds are checked to clear 4.5:1 on their own fill. */
 :root,
 [data-theme='light'] {
   --surface-canvas: #f7f7f5;
@@ -55,6 +60,28 @@
   --text-primary: #101413;
   --text-secondary: #5c6360;
   --text-muted: #8b918e;
+
+  --tint-brand-bg: #e9f8f1;
+  --tint-brand-fg: #093f32;
+  --tint-brand-rule: #14a06a;
+  --tint-warm-bg: #fff3ea;
+  --tint-warm-fg: #7a3b12;
+  --tint-warm-rule: #ff7a2f;
+  --tint-amber-bg: #fdf6e3;
+  --tint-amber-fg: #6b4a10;
+  --tint-amber-rule: #f0b429;
+  --tint-purple-bg: #f1eefe;
+  --tint-purple-fg: #3f2d8f;
+  --tint-purple-rule: #7c5cf0;
+  --tint-blue-bg: #eaf0fe;
+  --tint-blue-fg: #1e3a8a;
+  --tint-blue-rule: #4f7df3;
+  --tint-danger-bg: #fdeeee;
+  --tint-danger-fg: #7f1d1d;
+  --tint-danger-rule: #dc2626;
+  /* Pills sitting *on* a tinted card, so they lift off the fill rather than
+     the canvas — white on light themes, a sliver of light on dark ones. */
+  --tint-pill: rgb(255 255 255 / 0.8);
   color-scheme: light;
 }
 
@@ -68,6 +95,26 @@
   --text-primary: #3a3229;
   --text-secondary: #6a5d4c;
   --text-muted: #8d8270;
+
+  --tint-brand-bg: #e6efdd;
+  --tint-brand-fg: #274034;
+  --tint-brand-rule: #0f8557;
+  --tint-warm-bg: #f7e7d5;
+  --tint-warm-fg: #6d3d18;
+  --tint-warm-rule: #ea5f12;
+  --tint-amber-bg: #f5ecd2;
+  --tint-amber-fg: #61460f;
+  --tint-amber-rule: #d99a12;
+  --tint-purple-bg: #eae4f0;
+  --tint-purple-fg: #3c2d73;
+  --tint-purple-rule: #6b4fd8;
+  --tint-blue-bg: #e4eaf0;
+  --tint-blue-fg: #21386e;
+  --tint-blue-rule: #3f6ad1;
+  --tint-danger-bg: #f6e0da;
+  --tint-danger-fg: #6f2118;
+  --tint-danger-rule: #c53030;
+  --tint-pill: rgb(255 255 255 / 0.62);
   color-scheme: light;
 }
 
@@ -80,6 +127,26 @@
   --text-primary: #eef2f0;
   --text-secondary: #a3aeaa;
   --text-muted: #7b8683;
+
+  --tint-brand-bg: #12211b;
+  --tint-brand-fg: #d7f0e3;
+  --tint-brand-rule: #33b985;
+  --tint-warm-bg: #241710;
+  --tint-warm-fg: #f7ceac;
+  --tint-warm-rule: #ff9152;
+  --tint-amber-bg: #221c0b;
+  --tint-amber-fg: #f3dda6;
+  --tint-amber-rule: #f0b429;
+  --tint-purple-bg: #191634;
+  --tint-purple-fg: #d3caf9;
+  --tint-purple-rule: #9b83f5;
+  --tint-blue-bg: #111c33;
+  --tint-blue-fg: #c6d8fb;
+  --tint-blue-rule: #6f95f6;
+  --tint-danger-bg: #251313;
+  --tint-danger-fg: #f7cdcb;
+  --tint-danger-rule: #ef4444;
+  --tint-pill: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
 
@@ -94,6 +161,26 @@
   --text-primary: #f2f3f2;
   --text-secondary: #a6a9a7;
   --text-muted: #7c807e;
+
+  --tint-brand-bg: #0b1712;
+  --tint-brand-fg: #d7f0e3;
+  --tint-brand-rule: #33b985;
+  --tint-warm-bg: #180f08;
+  --tint-warm-fg: #f7ceac;
+  --tint-warm-rule: #ff9152;
+  --tint-amber-bg: #171205;
+  --tint-amber-fg: #f3dda6;
+  --tint-amber-rule: #f0b429;
+  --tint-purple-bg: #110f24;
+  --tint-purple-fg: #d3caf9;
+  --tint-purple-rule: #9b83f5;
+  --tint-blue-bg: #0b1322;
+  --tint-blue-fg: #c6d8fb;
+  --tint-blue-rule: #6f95f6;
+  --tint-danger-bg: #190d0d;
+  --tint-danger-fg: #f7cdcb;
+  --tint-danger-rule: #ef4444;
+  --tint-pill: rgb(255 255 255 / 0.06);
   color-scheme: dark;
 }
 
@@ -178,6 +265,93 @@
     border-color: var(--surface-border);
   }
 
+  /* ------------------------------------------------------------------ tints
+     `.accent-card` is the quote-card treatment: a tinted fill with a coloured
+     rule down the leading edge. `.tint-*` sets the same hue on a small icon
+     chip. Both default to brand green; add a hue modifier to change it. Every
+     value resolves per theme from the block above. */
+  .accent-card,
+  .tint-brand {
+    --tint-bg: var(--tint-brand-bg);
+    --tint-fg: var(--tint-brand-fg);
+    --tint-rule: var(--tint-brand-rule);
+  }
+  .accent-warm,
+  .tint-warm {
+    --tint-bg: var(--tint-warm-bg);
+    --tint-fg: var(--tint-warm-fg);
+    --tint-rule: var(--tint-warm-rule);
+  }
+  .accent-amber,
+  .tint-amber {
+    --tint-bg: var(--tint-amber-bg);
+    --tint-fg: var(--tint-amber-fg);
+    --tint-rule: var(--tint-amber-rule);
+  }
+  .accent-purple,
+  .tint-purple {
+    --tint-bg: var(--tint-purple-bg);
+    --tint-fg: var(--tint-purple-fg);
+    --tint-rule: var(--tint-purple-rule);
+  }
+  .accent-blue,
+  .tint-blue {
+    --tint-bg: var(--tint-blue-bg);
+    --tint-fg: var(--tint-blue-fg);
+    --tint-rule: var(--tint-blue-rule);
+  }
+  .accent-danger,
+  .tint-danger {
+    --tint-bg: var(--tint-danger-bg);
+    --tint-fg: var(--tint-danger-fg);
+    --tint-rule: var(--tint-danger-rule);
+  }
+
+  .accent-card {
+    background: var(--tint-bg);
+    color: var(--tint-fg);
+    border-radius: var(--radius-card);
+    /* The leading rule from the reference. Logical inline-start rather than
+       left, so it stays on the leading edge under RTL. */
+    border-inline-start: 3px solid var(--tint-rule);
+  }
+
+  /* Headings sit at full strength, body copy one step back. Both derive from
+     the same foreground so they stay legible on every fill. */
+  .accent-title {
+    color: var(--tint-fg);
+  }
+  .accent-body {
+    color: var(--tint-fg);
+    opacity: 0.82;
+  }
+  .accent-rule-fg {
+    color: var(--tint-rule);
+  }
+
+  /* A pill resting on a tinted card. */
+  .accent-pill {
+    background: var(--tint-pill);
+    color: var(--tint-fg);
+  }
+
+  .tint-brand,
+  .tint-warm,
+  .tint-amber,
+  .tint-purple,
+  .tint-blue,
+  .tint-danger {
+    background: var(--tint-bg);
+    color: var(--tint-fg);
+  }
+
+  /* Same fill without the rule — for chips and badges where a 3px bar would
+     overwhelm the element. */
+  .tint-soft {
+    background: var(--tint-bg);
+    color: var(--tint-fg);
+  }
+
   .text-secondary {
     color: var(--text-secondary);
   }
@@ -236,6 +410,42 @@
     transform: translateX(100%);
   }
 }
+@keyframes sheet-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 .animate-sheet-up {
   animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
@@ -245,6 +455,31 @@
 }
 .animate-toast-in {
   animation: toast-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-sheet-down {
+  animation: sheet-down 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.animate-fade-out {
+  animation: fade-out 0.22s ease-in forwards;
+}
+.animate-route-in {
+  animation: route-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ---------------------------------------------------------------- stagger
+   Children rise in one after another. The index comes from a `--i` custom
+   property set per item; the cap keeps a 60-row list from taking two seconds
+   to finish, since anything past the fold is invisible anyway. */
+.stagger > * {
+  animation: rise-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation-delay: calc(min(var(--i, 0), 12) * 22ms);
+}
+
+/* Long lists skip layout and paint for off-screen rows, which is what keeps
+   the stagger smooth on a high-refresh display. */
+.list-fast > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
 }
 
 /* Skeleton shimmer for AI calls that take a beat */

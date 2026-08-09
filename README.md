@@ -44,6 +44,18 @@ prompt. Installing it is what enables share-to-track (below).
 **Trackers** — water, sleep, weight, workouts and steps, each with a goal, an
 entry flow and a trend chart.
 
+**Workouts** — a session per day built from a bundled catalog of ~285
+exercises, searchable by name, muscle group and equipment. Strength work logs
+sets × reps × weight; cardio, mobility and sport log duration. Personal records
+(heaviest set, estimated 1RM, best volume) and a per-exercise trend are derived
+from your log, so they never drift out of step with it.
+
+Calories for resistance work are estimated from sets, reps and time under
+tension, which is a genuinely rough figure — resistance-training expenditure
+varies far more between people than steady-state cardio. The app says so where
+it shows the number, and every estimate can be overridden. Volume moved is
+tracked exactly and is the more honest strength signal.
+
 **Ria, the AI coach** — reads your profile, targets, today's log and recent
 trends, and answers with your actual numbers. Also produces the daily insight
 card on the home screen, per-meal scores, and diet/workout plans.
@@ -208,13 +220,37 @@ src/
   ai/           ProviderAdapter interface + Anthropic / Gemini / OpenRouter
                 adapters, prompts, JSON schemas, streaming SSE reader
   db/           Dexie schema, repository layer, JSON export/import
+  data/         bundled seed catalogs (foods, exercises) as compact tuples
   lib/          camera, barcode decoding, OCR, image pipeline,
-                Open Food Facts, nutrition maths, fuzzy food search
+                Open Food Facts, nutrition maths, fuzzy search, motion
   components/   design-system pieces (rings, macro bars, sheets, icons)
   screens/      one file per route
   stores/       Zustand app state + live Dexie queries
   sw.ts         service worker: precache, runtime caching, share target
 ```
+
+**Theming.** Every tinted surface reads a hue triple — fill, foreground and a
+leading rule — from CSS variables selected by `[data-theme]` in
+`styles/index.css`. Tailwind's `@theme` ramp can't do that job: it emits one
+fixed value per class, which is why tinted cards used to stay pale on a black
+canvas. Use `.accent-card` (with an `.accent-*` hue modifier) for tinted cards
+and `.tint-*` for icon chips rather than reaching for `bg-brand-50` again.
+
+**Motion** is CSS and platform APIs only — no animation library, so nothing is
+added to the offline bundle. `lib/motion.ts` holds the shared helpers
+(`haptic`, `animateNumber`, reduced-motion checks); a global
+`prefers-reduced-motion` rule neutralises everything for users who ask for it.
+
+**Search** is one scorer in `lib/search.ts`, specialised by `foodSearch.ts` and
+`exerciseSearch.ts`. Every typed word must land somewhere or the row scores
+zero, which is what makes multi-word queries behave.
+
+**Workout sessions extend `WorkoutEntry` rather than replacing it.** The
+per-exercise detail lives in an optional `exercises` array while `type`,
+`durationMin` and `kcal` stay populated as roll-ups, so day totals, streaks,
+calendar dots, AI context and export all keep reading a workout as one figure.
+Rows logged before sessions existed have no `exercises` array and still render
+and count.
 
 **Stack** — Vite 6, React 19, TypeScript (strict), Tailwind v4, Dexie 4
 (IndexedDB), Zustand, React Router 7, Recharts, `vite-plugin-pwa` (Workbox,
@@ -248,12 +284,21 @@ node scripts/gen-icons.mjs
 Photos in an export are base64-encoded and make the file much larger, so
 export-with-photos is a separate button.
 
+Because a downloaded JSON file is easy to lose on a phone, export hands the
+file to the OS share sheet where one exists (Drive, Files, a chat) and falls
+back to a download otherwise. The app records when you last backed up and
+nudges once a backup is more than two weeks old; importing shows you what a
+file contains and asks whether to merge it or replace everything first.
+
 ---
 
 ## Limitations, stated plainly
 
-- No background gallery scanning — share-to-track instead (see above)
+- No background gallery scanning — share-to-track instead (see above). Picking
+  a photo from the library by hand works everywhere, on Snap and Label alike
 - No automatic step counting — manual entry
+- Calories burned in resistance training are estimated from sets, reps and
+  tempo; treat them as a guide, not a measurement
 - FatSecret needs a proxy you deploy yourself; there is no browser-direct path
   (CORS and IP whitelisting, see above)
 - AI portion estimates from a photo are estimates; check them before saving

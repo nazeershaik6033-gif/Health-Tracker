@@ -14,6 +14,7 @@ import { Card } from '@/components/ui';
 import {
   IconCameraPlus,
   IconChevronRight,
+  IconClose,
   IconDroplet,
   IconFlame,
   IconGallery,
@@ -22,19 +23,27 @@ import {
   IconScale,
   IconSparkle,
   IconSteps,
+  IconWarning,
 } from '@/components/icons';
 import { formatDuration, relativeDayLabel } from '@/lib/date';
+import { backupOverdue, describeLastBackup } from '@/lib/backup';
 import { formatKcal, kgToDisplay, weightUnit } from '@/lib/nutrition';
 import { setWater } from '@/db/repo';
 import type { MealSlot } from '@/types';
 
 export default function Home() {
   const navigate = useNavigate();
-  const { profile, selectedDate, setPendingSlot, showToast } = useApp();
+  const { profile, settings, selectedDate, setPendingSlot, showToast } = useApp();
   const day = useDay();
   const streak = useStreak();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showAllTrackers, setShowAllTrackers] = useState(false);
+  // Dismissal is per-session rather than stored: the nudge should come back
+  // tomorrow if the backup still hasn't happened, but never twice in a sitting.
+  const [backupDismissed, setBackupDismissed] = useState(false);
+
+  const showBackupNudge =
+    !backupDismissed && backupOverdue(settings, profile?.createdAt);
 
   const snaps = useLiveQuery(
     async () => db.snaps.orderBy('createdAt').reverse().limit(6).toArray(),
@@ -72,6 +81,34 @@ export default function Home() {
       <TopBar streakDays={streak?.streak} />
 
       <div className="space-y-3 px-4 pt-1">
+        {showBackupNudge && (
+          <div className="accent-card accent-amber flex items-center gap-3 p-3.5">
+            <IconWarning width={18} height={18} className="accent-rule-fg shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="accent-title text-[13.5px] font-bold">
+                {describeLastBackup(settings.lastBackupAt)}
+              </p>
+              <p className="accent-body text-[12px]">
+                Everything is stored in this browser — clearing site data erases it.
+              </p>
+            </div>
+            <Link
+              to="/settings"
+              className="accent-pill shrink-0 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-transform active:scale-95"
+            >
+              Back up
+            </Link>
+            <button
+              type="button"
+              onClick={() => setBackupDismissed(true)}
+              aria-label="Dismiss backup reminder"
+              className="accent-body shrink-0 rounded-lg p-1 transition-transform active:scale-90"
+            >
+              <IconClose width={15} height={15} />
+            </button>
+          </div>
+        )}
+
         <InsightCard date={selectedDate} />
 
         {/* -------------------------- Track Food ------------------------- */}
@@ -108,7 +145,7 @@ export default function Home() {
               type="button"
               onClick={() => setPickerOpen(true)}
               aria-label="Add food"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-accent-500 text-accent-500 transition-colors hover:bg-accent-50"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-accent-500 text-accent-500 transition-transform active:scale-90"
             >
               <IconPlus width={17} height={17} strokeWidth={2.25} />
             </button>
@@ -118,7 +155,7 @@ export default function Home() {
             to="/snap/gallery"
             className="surface-sunken flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:brightness-95"
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-accent-600">
+            <div className="tint-warm flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
               <IconGallery width={20} height={20} />
             </div>
             <p className="flex-1 text-[13px] leading-snug font-semibold">
@@ -318,16 +355,16 @@ export default function Home() {
         {/* ----------------------- AI plan / coach ----------------------- */}
         <Link
           to="/plans"
-          className="flex items-center gap-3 rounded-2xl bg-brand-50 p-3.5 transition-colors hover:brightness-97"
+          className="accent-card flex items-center gap-3 p-3.5 transition-transform active:scale-[0.99]"
         >
-          <IconSparkle width={20} height={20} className="shrink-0 text-brand-600" />
+          <IconSparkle width={20} height={20} className="accent-rule-fg shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="text-[14px] font-bold text-brand-800">Your AI Diet Plan is Ready!</p>
-            <p className="text-[12px] text-brand-700/80">
+            <p className="accent-title text-[14px] font-bold">Your AI Diet Plan is Ready!</p>
+            <p className="accent-body text-[12px]">
               Built from your goal, targets and what you've logged
             </p>
           </div>
-          <IconChevronRight width={18} height={18} className="shrink-0 text-brand-600" />
+          <IconChevronRight width={18} height={18} className="accent-rule-fg shrink-0" />
         </Link>
 
         <p className="pb-2 text-center text-[11px] text-muted">

@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { clearAllData, saveProfile } from '@/db/repo';
-import { downloadBundle, exportData, importData } from '@/db/export';
+import {
+  exportData,
+  importData,
+  previewBundle,
+  shareBundle,
+  type BundlePreview,
+} from '@/db/export';
 import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
 import { keyShapeWarning } from '@/ai/types';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
 import { buildLabel, checkForUpdate, forceReload } from '@/lib/appUpdate';
 import { computeTargets, macroTargets } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
+import { describeLastBackup } from '@/lib/backup';
+import { BottomSheet } from '@/components/BottomSheet';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
 import {
   IconCheck,
@@ -33,6 +41,7 @@ export default function Settings() {
   const [busy, setBusy] = useState<'export' | 'import' | 'reset' | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState('');
+  const [staged, setStaged] = useState<{ bundle: unknown; preview: BundlePreview } | null>(null);
 
   const [updating, setUpdating] = useState<'check' | 'force' | null>(null);
   const [updateMessage, setUpdateMessage] = useState('');
@@ -219,8 +228,9 @@ export default function Settings() {
     setMessage('');
     try {
       const bundle = await exportData(includePhotos);
-      const { size } = downloadBundle(bundle);
-      setMessage(`Exported ${formatBytes(size)}.`);
+      const { size, shared } = await shareBundle(bundle);
+      await setSettings({ lastBackupAt: Date.now() });
+      setMessage(shared ? `Shared ${formatBytes(size)}.` : `Exported ${formatBytes(size)}.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Export failed.');
     } finally {
@@ -228,11 +238,25 @@ export default function Settings() {
     }
   }
 
-  async function doImport(file: File) {
-    setBusy('import');
+  /** Step one of an import: show what's in the file before touching anything. */
+  async function stageImport(file: File) {
     setMessage('');
     try {
       const bundle = JSON.parse(await file.text());
+      setStaged({ bundle, preview: previewBundle(bundle) });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'That file could not be read.');
+    }
+  }
+
+  async function doImport(bundle: unknown, replace: boolean) {
+    setBusy('import');
+    setMessage('');
+    setStaged(null);
+    try {
+      // Replace clears first so rows the backup doesn't carry actually go,
+      // rather than surviving underneath a merge.
+      if (replace) await clearAllData();
       const summary = await importData(bundle);
       const total = Object.values(summary.imported).reduce((a, b) => a + b, 0);
       await refreshProfile();
@@ -280,7 +304,7 @@ export default function Settings() {
           {savedKey ? (
             <div
               className={`flex items-center gap-2 rounded-xl p-3 ${
-                savedKeyWarning ? 'bg-amber-50' : 'bg-brand-50'
+                savedKeyWarning ? 'tint-soft tint-amber' : 'tint-soft tint-brand'
               }`}
             >
               {savedKeyWarning ? (
@@ -326,7 +350,7 @@ export default function Settings() {
               would only come back as a bare 401, which says nothing about the
               key being incomplete or from the wrong provider's page. */}
           {keyWarning && (
-            <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[12px] leading-relaxed text-amber-900">
+            <div className="flex items-start gap-2 accent-card accent-amber p-3 text-[12px] leading-relaxed">
               <IconWarning width={14} height={14} className="mt-0.5 shrink-0" />
               <p>
                 {keyWarning}{' '}
@@ -352,7 +376,7 @@ export default function Settings() {
                   type="button"
                   onClick={() => saveModel(m)}
                   className={`hairline rounded-full border px-2.5 py-1.5 text-[11.5px] font-medium ${
-                    modelFor(settings) === m ? 'border-brand-500 bg-brand-50 text-brand-700' : ''
+                    modelFor(settings) === m ? 'border-brand-500 tint-soft tint-brand' : ''
                   }`}
                 >
                   {m}
@@ -403,7 +427,7 @@ export default function Settings() {
             </p>
           )}
 
-          <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+          <div className="flex items-start gap-2 accent-card accent-amber p-3 text-[11.5px] leading-relaxed">
             <IconLock width={14} height={14} className="mt-0.5 shrink-0" />
             <p>
               Your key is stored in this browser and sent only to {meta.label}. Nothing passes
@@ -581,9 +605,12 @@ export default function Settings() {
             onChange={async (e) => {
               const file = e.target.files?.[0];
               e.target.value = '';
-              if (file) await doImport(file);
+              if (file) await stageImport(file);
             }}
           />
+
+          <p className="text-[12px] text-secondary">{describeLastBackup(settings.lastBackupAt)}</p>
+
           <p className="text-[11.5px] text-muted">
             Exports never include your API key. Photos make the file much larger — a few hundred
             snaps can run to tens of megabytes.
@@ -592,6 +619,49 @@ export default function Settings() {
           {busy === 'export' && <p className="text-[12.5px] text-secondary">Preparing export…</p>}
           {busy === 'import' && <p className="text-[12.5px] text-secondary">Restoring…</p>}
         </Card>
+
+        <BottomSheet
+          open={Boolean(staged)}
+          onClose={() => setStaged(null)}
+          title="Restore this backup?"
+        >
+          {staged && (
+            <div className="space-y-3 pb-2">
+              <p className="text-[13px] text-secondary">
+                Made {staged.preview.exportedAt.slice(0, 10) || 'at an unknown date'} ·{' '}
+                {staged.preview.total.toLocaleString()} record
+                {staged.preview.total === 1 ? '' : 's'} ·{' '}
+                {staged.preview.includesPhotos ? 'with photos' : 'no photos'}
+                {staged.preview.from && ` · covers ${staged.preview.from} to ${staged.preview.to}`}
+              </p>
+
+              <div className="surface-sunken space-y-1 rounded-xl p-3">
+                {Object.entries(staged.preview.counts)
+                  .filter(([, n]) => n > 0)
+                  .map(([name, n]) => (
+                    <div key={name} className="flex justify-between text-[12.5px]">
+                      <span className="capitalize">{name}</span>
+                      <span className="tabular text-secondary">{n.toLocaleString()}</span>
+                    </div>
+                  ))}
+              </div>
+
+              <p className="text-[12px] text-muted">
+                Merge keeps what you already have and adds anything the file carries. Replace all
+                deletes everything on this device first. Your API key is untouched either way.
+              </p>
+
+              <div className="flex gap-2">
+                <Button full onClick={() => doImport(staged.bundle, false)}>
+                  Merge
+                </Button>
+                <Button full variant="secondary" onClick={() => doImport(staged.bundle, true)}>
+                  Replace all
+                </Button>
+              </div>
+            </div>
+          )}
+        </BottomSheet>
 
         {/* --------------------------- Profile -------------------------- */}
         <Card>
@@ -801,7 +871,7 @@ function FatSecretCard() {
             hint="Required — FatSecret can't be reached from a browser without one."
           />
 
-          <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+          <div className="flex items-start gap-2 accent-card accent-amber p-3 text-[11.5px] leading-relaxed">
             <IconWarning width={14} height={14} className="mt-0.5 shrink-0" />
             <p>
               Their token endpoint sends no CORS headers, and keys are locked to whitelisted IP
@@ -909,7 +979,7 @@ function FatSecretCard() {
             </p>
           )}
 
-          <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+          <div className="flex items-start gap-2 accent-card accent-amber p-3 text-[11.5px] leading-relaxed">
             <IconLock width={14} height={14} className="mt-0.5 shrink-0" />
             <p>
               A Client Secret entered here is stored in this browser and readable by anyone with

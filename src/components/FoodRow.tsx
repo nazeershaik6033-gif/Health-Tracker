@@ -40,7 +40,7 @@ export function FoodRow({
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
           added
             ? 'border-brand-500 bg-brand-500 text-white'
-            : 'border-brand-500 text-brand-600 hover:bg-brand-50'
+            : 'border-brand-500 text-brand-600'
         }`}
       >
         {added ? (

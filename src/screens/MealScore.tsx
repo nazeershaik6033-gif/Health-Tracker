@@ -106,7 +106,7 @@ export default function MealScore() {
 
         {/* Ria's take */}
         {meal.aiNote && (
-          <div className="rounded-2xl bg-brand-50 p-4">
+          <div className="accent-card p-4">
             <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-brand-700">
               <IconSparkle width={13} height={13} />
               Ria&apos;s Take
@@ -174,7 +174,7 @@ export default function MealScore() {
 
         <Link
           to="/coach"
-          className="flex items-center gap-2.5 rounded-2xl bg-brand-50 p-3.5 text-brand-800"
+          className="flex items-center gap-2.5 accent-card p-3.5 text-brand-800"
         >
           <IconSparkle width={17} height={17} className="shrink-0 text-brand-600" />
           <span className="flex-1 text-[13.5px] font-semibold">Ask Ria about this meal</span>

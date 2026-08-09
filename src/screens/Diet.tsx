@@ -189,7 +189,7 @@ export default function Diet() {
                     }}
                     onBlur={() => setConfirmMeal(null)}
                     className={`rounded-lg p-1.5 ${
-                      confirmMeal === meal.id ? 'bg-red-50 text-red-600' : 'text-muted'
+                      confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
                     }`}
                   >
                     <IconTrash width={14} height={14} />
@@ -248,7 +248,7 @@ export default function Diet() {
                           }
                           className={`shrink-0 rounded-lg p-1.5 transition-colors ${
                             confirmDelete === key
-                              ? 'bg-red-50 text-red-600'
+                              ? 'tint-soft tint-danger'
                               : 'text-muted hover:text-red-600'
                           }`}
                         >
@@ -262,7 +262,7 @@ export default function Diet() {
                     <li className="border-t border-[var(--surface-border)] pt-2">
                       <Link
                         to={`/meal/${meal.id}`}
-                        className="flex items-center gap-2 rounded-lg bg-brand-50 px-2.5 py-2 text-[12.5px] font-semibold text-brand-800"
+                        className="flex items-center gap-2 rounded-lg tint-soft tint-brand px-2.5 py-2 text-[12.5px] font-semibold"
                       >
                         <IconSparkle width={13} height={13} />
                         You scored {meal.healthScore} on 10

@@ -24,6 +24,7 @@ export default function Label() {
   const { settings, selectedDate, showToast } = useApp();
   const camera = useCamera();
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraFileRef = useRef<HTMLInputElement>(null);
 
   const [phase, setPhase] = useState<Phase>('capture');
   const [food, setFood] = useState<Food | null>(null);
@@ -140,8 +141,21 @@ export default function Label() {
         }
       />
 
+      {/* No `capture` — it would launch the camera and put the photo library
+          out of reach, which is the opposite of what this button offers. */}
       <input
         ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) await fromFile(file);
+        }}
+      />
+      <input
+        ref={cameraFileRef}
         type="file"
         accept="image/*"
         capture="environment"
@@ -180,9 +194,14 @@ export default function Label() {
                 <p className="text-[13.5px]">
                   {camera.status === 'starting' ? 'Starting camera…' : camera.error}
                 </p>
-                <Button variant="secondary" onClick={() => fileRef.current?.click()}>
-                  Choose a photo instead
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button variant="secondary" onClick={() => fileRef.current?.click()}>
+                    Choose from gallery
+                  </Button>
+                  <Button variant="ghost" onClick={() => cameraFileRef.current?.click()}>
+                    Take a photo
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -282,7 +301,7 @@ export default function Label() {
                     type="button"
                     onClick={() => setServingLabel(s.label)}
                     className={`hairline rounded-full border px-3 py-1.5 text-[13px] font-medium ${
-                      s.label === servingLabel ? 'border-brand-500 bg-brand-50 text-brand-700' : ''
+                      s.label === servingLabel ? 'border-brand-500 tint-soft tint-brand' : ''
                     }`}
                   >
                     {s.label}

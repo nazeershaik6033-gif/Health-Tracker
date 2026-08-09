@@ -148,7 +148,7 @@ export default function FoodEditor() {
       <PageHeader title={editing ? 'Edit food' : 'Create a food'} back={() => navigate(-1)} />
 
       {editing && (
-        <p className="mx-4 mt-3 rounded-xl bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+        <p className="mx-4 mt-3 accent-card accent-amber p-3 text-[11.5px] leading-relaxed">
           Meals you have already logged keep the numbers they were logged with — changing this
           food only affects what you add from now on.
         </p>

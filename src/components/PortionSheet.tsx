@@ -109,10 +109,8 @@ export function PortionSheet({
       }
     >
       <div className="space-y-4 pb-2">
-        <div className="-mt-2 flex items-center gap-2">
-          {brand && (
-            <p className="flex-1 text-[13px] text-secondary">{brand}</p>
-          )}
+        <div className="flex items-center gap-2">
+          {brand && <p className="min-w-0 truncate text-[13px] text-secondary">{brand}</p>}
           {onEditFood && (
             <button
               type="button"
@@ -186,7 +184,7 @@ export function PortionSheet({
                     onClick={() => setServingLabel(s.label)}
                     className={`hairline rounded-full border px-3 py-1.5 text-[13px] font-medium ${
                       s.label === servingLabel
-                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        ? "border-brand-500 tint-soft tint-brand"
                         : ""
                     }`}
                   >

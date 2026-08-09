@@ -12,7 +12,12 @@ import { DEFAULT_FATSECRET, type Snap } from '@/types';
  * number.
  */
 
-export const EXPORT_VERSION = 2;
+/**
+ * 3 adds the `exercises` table. Older bundles import unchanged — the restore
+ * loop skips table keys a file doesn't carry, and the guard below only rejects
+ * files from a *newer* version than this build understands.
+ */
+export const EXPORT_VERSION = 3;
 
 interface SerialisedSnap extends Omit<Snap, 'blob' | 'thumb'> {
   blob?: string;
@@ -48,6 +53,7 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     chats,
     insights,
     plans,
+    exercises,
   ] = await Promise.all([
     db.profile.toArray(),
     db.settings.toArray(),
@@ -63,6 +69,9 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     db.chats.toArray(),
     db.insights.toArray(),
     db.plans.toArray(),
+    // Same reasoning as foods: the seed catalog ships with the app, so only
+    // custom entries and ones actually used are worth carrying.
+    db.exercises.filter((e) => e.source !== 'seed' || e.useCount > 0).toArray(),
   ]);
 
   const serialisedSnaps: SerialisedSnap[] = await Promise.all(
@@ -106,6 +115,7 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
       chats,
       insights,
       plans,
+      exercises,
     },
   };
 }
@@ -117,24 +127,13 @@ export interface ImportSummary {
 }
 
 export async function importData(bundle: unknown): Promise<ImportSummary> {
-  if (!bundle || typeof bundle !== 'object') {
-    throw new Error('That file is not a Healthify backup.');
-  }
-  const parsed = bundle as Partial<ExportBundle>;
-  if (parsed.app !== 'healthify' || !parsed.data) {
-    throw new Error('That file is not a Healthify backup.');
-  }
-  if (typeof parsed.version === 'number' && parsed.version > EXPORT_VERSION) {
-    throw new Error(
-      'That backup was made by a newer version of Healthify. Update the app and try again.',
-    );
-  }
+  const parsed = assertBundle(bundle);
 
   const warnings: string[] = [];
   const imported: Record<string, number> = {};
   let photosRestored = 0;
 
-  const { snaps: rawSnaps, settings: rawSettings, ...rest } = parsed.data as Record<
+  const { snaps: rawSnaps, settings: rawSettings, ...rest } = (parsed.data ?? {}) as Record<
     string,
     unknown[]
   >;
@@ -152,6 +151,7 @@ export async function importData(bundle: unknown): Promise<ImportSummary> {
     chats: db.chats,
     insights: db.insights,
     plans: db.plans,
+    exercises: db.exercises,
   } as never;
 
   for (const [name, table] of Object.entries(tables)) {
@@ -211,6 +211,96 @@ export async function importData(bundle: unknown): Promise<ImportSummary> {
   }
 
   return { imported, photosRestored, warnings };
+}
+
+/** What a file contains, shown before an import so it isn't a blind merge. */
+export interface BundlePreview {
+  version: number;
+  exportedAt: string;
+  includesPhotos: boolean;
+  counts: Record<string, number>;
+  total: number;
+  from?: string;
+  to?: string;
+}
+
+export function previewBundle(bundle: unknown): BundlePreview {
+  const parsed = assertBundle(bundle);
+  const counts: Record<string, number> = {};
+  let total = 0;
+  const dates: string[] = [];
+
+  for (const [name, rows] of Object.entries(parsed.data ?? {})) {
+    if (!Array.isArray(rows)) continue;
+    counts[name] = rows.length;
+    total += rows.length;
+    for (const row of rows) {
+      const date = (row as { date?: unknown })?.date;
+      if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) dates.push(date);
+    }
+  }
+  dates.sort();
+
+  return {
+    version: typeof parsed.version === 'number' ? parsed.version : 1,
+    exportedAt: parsed.exportedAt ?? '',
+    includesPhotos: Boolean(parsed.includesPhotos),
+    counts,
+    total,
+    from: dates[0],
+    to: dates[dates.length - 1],
+  };
+}
+
+function assertBundle(bundle: unknown): Partial<ExportBundle> {
+  if (!bundle || typeof bundle !== 'object') {
+    throw new Error('That file is not a Healthify backup.');
+  }
+  const parsed = bundle as Partial<ExportBundle>;
+  if (parsed.app !== 'healthify' || !parsed.data) {
+    throw new Error('That file is not a Healthify backup.');
+  }
+  if (typeof parsed.version === 'number' && parsed.version > EXPORT_VERSION) {
+    throw new Error(
+      'That backup was made by a newer version of Healthify. Update the app and try again.',
+    );
+  }
+  return parsed;
+}
+
+function bundleFilename(bundle: ExportBundle): string {
+  return `healthify-backup-${bundle.exportedAt.slice(0, 10)}.json`;
+}
+
+/**
+ * Hands the file to the OS share sheet where one exists, falling back to a
+ * download.
+ *
+ * On a phone a downloaded JSON lands somewhere most people never look, which
+ * makes the backup theoretically present and practically useless. The share
+ * sheet puts it into Drive, Files or a chat in one tap.
+ */
+export async function shareBundle(
+  bundle: ExportBundle,
+): Promise<{ size: number; shared: boolean }> {
+  const json = JSON.stringify(bundle);
+  const blob = new Blob([json], { type: 'application/json' });
+  const file = new File([blob], bundleFilename(bundle), { type: 'application/json' });
+
+  if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Healthify backup' });
+      return { size: blob.size, shared: true };
+    } catch (err) {
+      // A cancelled share sheet is a deliberate choice, not a failure — don't
+      // fall through to a download the user didn't ask for.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return { size: blob.size, shared: false };
+      }
+    }
+  }
+
+  return { ...downloadBundle(bundle), shared: false };
 }
 
 export function downloadBundle(bundle: ExportBundle): { size: number } {

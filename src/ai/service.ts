@@ -9,6 +9,7 @@ import {
   INSIGHT_SCHEMA,
   MEAL_ANALYSIS_SCHEMA,
   PLAN_SCHEMA,
+  SESSION_SCHEMA,
   WORKOUT_PLAN_SCHEMA,
   clampScore,
   num,
@@ -242,10 +243,30 @@ export function dayContext(bundle: DayBundle, profile: Profile | undefined): str
   }
 
   const burned = bundle.workouts.reduce((s, w) => s + w.kcal, 0);
+  // Sets, reps and load when the session has them, so answers can reference
+  // what was actually trained rather than just "Strength session, 45 min".
+  const describeWorkout = (w: (typeof bundle.workouts)[number]) => {
+    if (!w.exercises?.length) return `${w.type} ${w.durationMin} min`;
+    const detail = w.exercises
+      .map((e) => {
+        const sets = e.sets ?? [];
+        // Sets first: strength entries also carry a derived duration, so
+        // checking duration would describe a bench press as "4 min".
+        if (!sets.length) {
+          return e.durationMin ? `${e.name} ${Math.round(e.durationMin)} min` : e.name;
+        }
+        const load = sets.some((s) => s.weightKg)
+          ? ` @ ${Math.max(...sets.map((s) => s.weightKg ?? 0))} kg`
+          : '';
+        return `${e.name} ${sets.length}×${sets.map((s) => s.reps).join('/')}${load}`;
+      })
+      .join('; ');
+    return `${w.title ?? w.type} (${detail})`;
+  };
   lines.push(
     `Workouts: ${
       bundle.workouts.length
-        ? `${bundle.workouts.map((w) => `${w.type} ${w.durationMin} min`).join(', ')} — ${burned} kcal burned`
+        ? `${bundle.workouts.map(describeWorkout).join(', ')} — ${burned} kcal burned`
         : 'none logged'
     }`,
   );
@@ -395,6 +416,95 @@ ${context}`;
       };
     },
   );
+}
+
+/* ------------------------------- exercises ------------------------------- */
+
+export interface SuggestedExercise {
+  exerciseId: string;
+  sets: number;
+  reps: number;
+  durationMin: number;
+}
+
+/**
+ * Builds one session the user can log immediately.
+ *
+ * `catalog` is the id/name shortlist the model must choose from — without it
+ * the reply is prose that has to be re-entered by hand. Ids that come back
+ * outside the list are dropped by the caller rather than trusted.
+ */
+export async function generateSession(
+  settings: Settings,
+  context: string,
+  catalog: { id: string; name: string }[],
+  signal?: AbortSignal,
+): Promise<{ title: string; summary: string; exercises: SuggestedExercise[] }> {
+  const adapter = getAdapter(settings);
+  const list = catalog.map((c) => `${c.id} = ${c.name}`).join('\n');
+  const prompt = `Build ONE workout session for this user, to do today.
+
+Pick 4–7 exercises. Use ONLY these exercise ids — any id not on this list will be discarded:
+${list}
+
+For strength exercises set sets and reps and leave durationMin 0. For cardio, flexibility and sport set durationMin and leave sets and reps 0. Match the volume to what their log shows they actually do; do not prescribe an advanced session to someone training rarely.
+
+--- Their data ---
+${context}`;
+
+  const allowed = new Set(catalog.map((c) => c.id));
+
+  return withRepair(
+    (extra = '') =>
+      adapter.extract(prompt + extra, {
+        system: COACH_SYSTEM,
+        schema: SESSION_SCHEMA,
+        schemaName: 'session',
+        maxTokens: 1200,
+        signal,
+      }),
+    (raw) => {
+      const parsed = parseJSON<{
+        title?: string;
+        summary?: string;
+        exercises?: { exerciseId?: string; sets?: number; reps?: number; durationMin?: number }[];
+      }>(raw);
+      return {
+        title: (parsed.title ?? "Today's session").trim(),
+        summary: (parsed.summary ?? '').trim(),
+        exercises: (parsed.exercises ?? [])
+          .filter((e) => e.exerciseId && allowed.has(e.exerciseId))
+          .map((e) => ({
+            exerciseId: e.exerciseId as string,
+            sets: num(e.sets, 0),
+            reps: num(e.reps, 0),
+            durationMin: num(e.durationMin, 0),
+          })),
+      };
+    },
+  );
+}
+
+/** Plain-text form guidance for one movement. */
+export async function explainExercise(
+  settings: Settings,
+  name: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const adapter = getAdapter(settings);
+  const prompt = `Explain how to perform "${name}" safely and well.
+
+Cover the setup, the movement itself, the two or three faults people most often make, and how to scale it easier or harder. Keep it under 180 words, plain sentences, no markdown headings. You are not a clinician — if this movement carries a common injury risk, say so plainly in one line.`;
+
+  let out = '';
+  for await (const chunk of adapter.chat([{ role: 'user', content: prompt }], {
+    system: COACH_SYSTEM,
+    maxTokens: 600,
+    signal,
+  })) {
+    out += chunk;
+  }
+  return out.trim();
 }
 
 /** Converts an AI food draft into a storable Food row. */

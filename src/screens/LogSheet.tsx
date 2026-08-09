@@ -30,7 +30,7 @@ export default function LogSheet() {
       title: 'Snap a meal',
       body: 'Photograph your plate and get calories and macros back',
       ai: true,
-      tint: 'bg-brand-50 text-brand-600',
+      tint: 'tint-soft tint-brand',
     },
     {
       to: '/scan',
@@ -38,7 +38,7 @@ export default function LogSheet() {
       title: 'Scan a barcode',
       body: 'Packaged food, straight from the label',
       ai: false,
-      tint: 'bg-accent-50 text-accent-600',
+      tint: 'tint-soft tint-warm',
     },
     {
       to: '/label',
@@ -46,7 +46,7 @@ export default function LogSheet() {
       title: 'Read a nutrition label',
       body: 'Point at the panel on the back of a pack',
       ai: false,
-      tint: 'bg-amber-50 text-amber-600',
+      tint: 'tint-soft tint-amber',
     },
     {
       to: '/voice',
@@ -54,7 +54,7 @@ export default function LogSheet() {
       title: 'Say what you ate',
       body: '"Two rotis, a katori of dal and a glass of milk"',
       ai: true,
-      tint: 'bg-purple-50 text-purple-600',
+      tint: 'tint-soft tint-purple',
     },
     {
       to: '/search',
@@ -62,7 +62,7 @@ export default function LogSheet() {
       title: 'Search foods',
       body: 'Browse the database and your frequently tracked list',
       ai: false,
-      tint: 'bg-blue-50 text-blue-600',
+      tint: 'tint-soft tint-blue',
     },
     {
       // Last because it is the most effort, but present because it is the only

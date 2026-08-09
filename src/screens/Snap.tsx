@@ -36,7 +36,11 @@ export default function Snap() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { settings, selectedDate, showToast } = useApp();
+  // Two inputs, because `capture` is a one-way door: with it the OS opens the
+  // camera and the photo library is unreachable, without it the library. One
+  // input cannot serve both affordances.
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraFileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const [phase, setPhase] = useState<Phase>('capture');
@@ -268,8 +272,22 @@ export default function Snap() {
         }
       />
 
+      {/* Gallery picker — deliberately no `capture`, which would make the OS
+          launch the camera and hide the photo library entirely. */}
       <input
         ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) await ingest(file);
+        }}
+      />
+      {/* The OS camera app, for when getUserMedia can't give us a live preview. */}
+      <input
+        ref={cameraFileRef}
         type="file"
         accept="image/*"
         capture="environment"
@@ -327,9 +345,17 @@ export default function Snap() {
                 {(camera.status === 'denied' ||
                   camera.status === 'error' ||
                   camera.status === 'unavailable') && (
-                  <Button variant="secondary" onClick={() => fileRef.current?.click()}>
-                    Choose a photo instead
-                  </Button>
+                  <div className="flex flex-col gap-2">
+                    <Button variant="secondary" onClick={() => fileRef.current?.click()}>
+                      Choose from gallery
+                    </Button>
+                    {/* The OS camera app is a separate permission from
+                        getUserMedia, so this often works when the preview
+                        above does not. */}
+                    <Button variant="ghost" onClick={() => cameraFileRef.current?.click()}>
+                      Take a photo
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -432,7 +458,7 @@ export default function Snap() {
             </div>
 
             {analysis.confidence === 'low' && (
-              <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 p-2.5 text-[12px] text-amber-800">
+              <p className="flex items-start gap-1.5 accent-card accent-amber p-2.5 text-[12px]">
                 <IconWarning width={14} height={14} className="mt-px shrink-0" />
                 Low confidence on this one — check the portions below before saving.
               </p>
@@ -485,7 +511,7 @@ export default function Snap() {
           </Card>
 
           {analysis.take && (
-            <div className="mt-3 rounded-2xl bg-brand-50 p-3.5">
+            <div className="mt-3 accent-card p-3.5">
               <p className="mb-1 flex items-center gap-1.5 text-[12px] font-bold text-brand-700">
                 <IconSparkle width={13} height={13} />
                 Ria&apos;s take

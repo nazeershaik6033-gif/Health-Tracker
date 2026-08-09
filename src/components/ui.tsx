@@ -117,7 +117,7 @@ export function Chip({
       type="button"
       onClick={onClick}
       className={`hairline inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-        active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'hover:surface-sunken'
+        active ? 'border-brand-500 tint-soft tint-brand' : 'hover:surface-sunken'
       }`}
     >
       {icon}
@@ -129,7 +129,7 @@ export function Chip({
 /** Small ✨ badge marking anything the AI produced. */
 export function AIBadge({ label = 'AI' }: { label?: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">
+    <span className="accent-pill inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold">
       <IconSparkle width={11} height={11} />
       {label}
     </span>

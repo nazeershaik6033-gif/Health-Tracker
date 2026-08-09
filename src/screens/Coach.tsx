@@ -136,7 +136,7 @@ export default function Coach() {
       <div className="min-h-dvh">
         <PageHeader title="Ria" back={() => navigate(-1)} />
         <div className="flex flex-col items-center gap-4 px-8 pt-24 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+          <div className="flex h-16 w-16 items-center justify-center accent-card">
             <IconSparkle width={30} height={30} />
           </div>
           <p className="text-[15px] font-semibold">Meet Ria, your AI coach</p>
@@ -179,7 +179,7 @@ export default function Coach() {
         {messages.length === 0 && (
           <div className="pt-6">
             <div className="mb-5 flex flex-col items-center gap-2 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+              <div className="flex h-14 w-14 items-center justify-center accent-card">
                 <IconSparkle width={26} height={26} />
               </div>
               <p className="text-[15px] font-bold">Ask Ria anything</p>
@@ -280,7 +280,7 @@ function Bubble({ message }: { message: ChatMessage }) {
     <div className="flex justify-start">
       <div
         className={`max-w-[88%] rounded-2xl rounded-bl-md px-3.5 py-2.5 text-[14px] leading-relaxed ${
-          message.error ? 'bg-red-50 text-red-800' : 'surface-card'
+          message.error ? 'tint-soft tint-danger' : 'surface-card'
         }`}
       >
         {message.content ? (
