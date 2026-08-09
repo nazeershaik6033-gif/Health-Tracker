@@ -123,6 +123,17 @@
 
       Deliberately classic (not module) and dependency-free, because the whole
       point is that it survives the module bundle failing.
+
+      A plain reload is not always enough to get out of here. A service worker
+      old enough to predate a working build — installed back when this project
+      may have been serving raw, unbuilt source — answers every navigation
+      itself and never re-checks its own script if nothing about the update
+      flow it runs ever succeeded. That worker is what a plain reload would
+      hit again. So "Try again" unregisters every worker and clears every
+      cache first: IndexedDB (meals, photos, tracker entries) is a completely
+      separate store and is never touched by either call, so this is safe even
+      as a last resort, and it is only ever reached after a real, timed-out
+      boot failure and an explicit tap.
     -->
     <script>
       (function () {
@@ -140,12 +151,50 @@
           lastError = (e && e.reason && (e.reason.message || String(e.reason))) || lastError;
         });
 
-        document.getElementById('boot-retry').addEventListener('click', function () {
-          // Reload past the HTTP cache — a half-fetched asset is the likeliest
-          // cause of getting here.
+        function reload() {
+          // Past the HTTP cache too — a half-fetched asset is the other
+          // likely cause of landing here.
           var u = new URL(window.location.href);
           u.searchParams.set('__retry', Date.now().toString(36));
           window.location.replace(u.toString());
+        }
+
+        document.getElementById('boot-retry').addEventListener('click', function () {
+          var btn = document.getElementById('boot-retry');
+          btn.disabled = true;
+          btn.textContent = 'Clearing…';
+
+          var done = [];
+          if ('serviceWorker' in navigator) {
+            done.push(
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(
+                  regs.map(function (r) {
+                    return r.unregister();
+                  }),
+                );
+              }).catch(function () {}),
+            );
+          }
+          if ('caches' in window) {
+            done.push(
+              caches.keys().then(function (keys) {
+                return Promise.all(
+                  keys.map(function (k) {
+                    return caches.delete(k);
+                  }),
+                );
+              }).catch(function () {}),
+            );
+          }
+
+          // Reload regardless of how the clear went — a partial clear still
+          // beats reloading straight back into the same stuck worker.
+          var to = setTimeout(reload, 4000);
+          Promise.all(done).then(function () {
+            clearTimeout(to);
+            reload();
+          });
         });
 
         setTimeout(function () {
