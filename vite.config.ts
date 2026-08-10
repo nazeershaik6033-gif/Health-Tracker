@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
-import { copyFileSync } from 'node:fs';
+import { copyFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
@@ -14,16 +14,31 @@ import { resolve } from 'node:path';
 const base = process.env.BASE_PATH || '/';
 
 /**
- * GitHub Pages has no SPA rewrite, so a deep link like `/diet` 404s. Pages
- * serves 404.html for unknown paths, so shipping a copy of index.html under
- * that name makes the router pick the route up instead.
+ * `docs/` for the published build, which is committed and served straight off
+ * the main branch; `dist/` for throwaway local builds. Kept separate so a
+ * casual `npm run build` can never quietly rewrite what is deployed.
  */
-function spaFallback() {
+const outDir = process.env.OUT_DIR || 'dist';
+
+/**
+ * Two things GitHub Pages needs that Vite does not emit on its own.
+ *
+ * 404.html — Pages has no SPA rewrite, so a deep link like `/diet` 404s.
+ * Pages serves 404.html for unknown paths, so shipping a copy of index.html
+ * under that name makes the router pick the route up instead.
+ *
+ * .nojekyll — branch-served sites run through Jekyll, which silently drops
+ * paths beginning with an underscore. Vite does not emit any today, but the
+ * failure mode is a missing asset with no error, so the guard is worth its
+ * one line.
+ */
+function pagesExtras() {
   return {
-    name: 'spa-404-fallback',
+    name: 'pages-extras',
     closeBundle() {
-      const dist = resolve(fileURLToPath(new URL('./dist', import.meta.url)));
-      copyFileSync(resolve(dist, 'index.html'), resolve(dist, '404.html'));
+      const out = resolve(fileURLToPath(new URL(`./${outDir}`, import.meta.url)));
+      copyFileSync(resolve(out, 'index.html'), resolve(out, '404.html'));
+      writeFileSync(resolve(out, '.nojekyll'), '');
     },
   };
 }
@@ -40,6 +55,8 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   build: {
+    outDir,
+    emptyOutDir: true,
     // Vite 6 defaults to a Safari 16 baseline. Unsupported *syntax* doesn't
     // degrade — the script fails to parse and the page is blank, with the app
     // working everywhere else. Naming older Safari explicitly costs a little
@@ -114,6 +131,6 @@ export default defineConfig({
         },
       },
     }),
-    spaFallback(),
+    pagesExtras(),
   ],
 });

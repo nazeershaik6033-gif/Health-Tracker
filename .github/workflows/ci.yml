@@ -32,3 +32,26 @@ jobs:
         run: |
           test -f dist/sw.js || { echo "service worker missing from build"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "manifest missing from build"; exit 1; }
+
+      # docs/ is the published site, committed and served straight off main.
+      # A source change committed without rebuilding would leave the live app
+      # silently one build behind, so fail loudly instead.
+      - name: Check the published build is not stale
+        run: npm run check:pages
+
+      - name: Check the published build is actually deployable
+        run: |
+          test -f docs/index.html || { echo "no docs/index.html"; exit 1; }
+          # SPA fallback for deep links; Pages has no rewrite rule.
+          test -f docs/404.html || { echo "no docs/404.html SPA fallback"; exit 1; }
+          # Jekyll would silently drop underscore-prefixed paths.
+          test -f docs/.nojekyll || { echo "no docs/.nojekyll"; exit 1; }
+          # The bug that started all this: the raw source served instead of a
+          # build. If the entry point is still TypeScript, nothing can run.
+          # Negated form on purpose: `grep && exit` would fail the step under
+          # `set -e` in the passing case, when grep finds nothing and returns 1.
+          ! grep -q 'src="/src/main.tsx"' docs/index.html \
+            || { echo "docs/index.html is the unbuilt source"; exit 1; }
+          # And the base path must match the project sub-path.
+          grep -q 'src="/Health-Tracker/assets/' docs/index.html \
+            || { echo "docs/index.html is not referencing base-prefixed assets"; exit 1; }

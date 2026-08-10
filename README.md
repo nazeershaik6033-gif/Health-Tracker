@@ -18,7 +18,9 @@ npm run dev          # http://localhost:5173
 ```
 
 ```bash
-npm run build        # typecheck + production build into dist/
+npm run build        # typecheck + production build into dist/ (throwaway)
+npm run build:pages  # the published build, into docs/ — commit the result
+npm run check:pages  # fail if docs/ is older than the source
 npm run preview      # serve the built app
 npm run typecheck
 npm run lint
@@ -26,6 +28,33 @@ npm run lint
 
 The app is installable from the browser's "Add to Home Screen" / install
 prompt. Installing it is what enables share-to-track (below).
+
+### Deploying
+
+The live site is the committed **`docs/`** directory, served straight off
+`main` by GitHub Pages — repository **Settings → Pages → Build and deployment
+→ Source: Deploy from a branch → `main` / `/docs`**.
+
+So a change is only live once `docs/` is rebuilt and committed with it:
+
+```bash
+npm run build:pages
+git add docs && git commit
+```
+
+Two things make that hard to get wrong. `npm run build:pages` records a hash
+of every input it built from, and CI recomputes it — commit a source change
+without rebuilding and the build fails, naming the command that fixes it. CI
+also refuses a `docs/index.html` whose entry point is still `/src/main.tsx`,
+which is what a raw, unbuilt deploy looks like.
+
+There is deliberately **no Actions-based Pages deploy**. Running one alongside
+a branch-served site publishes two different things to the same URL; whichever
+finishes last wins, and the app loads or blanks depending on the race. That
+happened, and it cost several rounds of misdiagnosis — the symptom looks like
+a browser bug, not a deployment one.
+
+`docs/` is generated. Never hand-edit it; edit the source and rebuild.
 
 ---
 
