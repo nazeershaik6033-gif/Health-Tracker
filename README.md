@@ -353,11 +353,54 @@ file contains and asks whether to merge it or replace everything first.
 
 ---
 
+## Apple Health and Apple Watch
+
+Apple gives websites **no access to HealthKit** — not to the Health app, not to
+the Watch. It is a native-only capability, available to App Store apps and
+nothing else. There is no browser API to work around, so no web app can sync
+with your Watch, including this one.
+
+What Apple does provide is a full export, and that is what this reads:
+
+1. Health app → your **profile picture** (top right)
+2. **Export All Health Data** — takes a few minutes
+3. **Save to Files**
+4. In Healthify: **Settings → Import from Apple Health**, choose `export.zip`
+
+It brings across **steps, weight, sleep, water and workouts**. This is a
+snapshot you re-run when you want to catch up, not a live connection.
+
+The file is read entirely on your device — nothing is uploaded, and no key is
+needed. The zip is opened with a small central-directory reader and the
+platform's own `DecompressionStream`, and the XML is streamed rather than
+loaded, because these exports routinely run to hundreds of megabytes.
+
+Three details worth knowing, because they change the numbers:
+
+- **Steps and water take the highest single source for a day, not the sum.**
+  An iPhone and a Watch both record the same walk, and both are in the file;
+  adding them up roughly doubles your day. Health de-duplicates by source
+  priority internally, and this is the closest honest approximation.
+- **Overlapping sleep is merged, not added.** The same night is often reported
+  by several sources with overlapping windows.
+- **Times use the offset in the file**, so a night slept at 23:00 in Delhi
+  reads as 23:00 wherever you later open the app.
+
+By default an import **only fills days you have nothing recorded for**, so it
+can never overwrite something you typed. You can choose to let the export win
+instead. Re-running the same import is safe — it writes nothing the second
+time.
+
+---
+
 ## Limitations, stated plainly
 
 - No background gallery scanning — share-to-track instead (see above). Picking
   a photo from the library by hand works everywhere, on Snap and Label alike
-- No automatic step counting — manual entry
+- No automatic step counting — manual entry, or a bulk import from an Apple
+  Health export (see above)
+- No live Apple Watch or Health sync, and there cannot be one from a web app —
+  HealthKit has no browser API
 - Calories burned in resistance training are estimated from sets, reps and
   tempo; treat them as a guide, not a measurement
 - FatSecret needs a proxy you deploy yourself; there is no browser-direct path

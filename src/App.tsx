@@ -21,6 +21,8 @@ const Settings = lazy(() => import('@/screens/Settings'));
 // deliberate navigation rather than part of the launch path.
 const CalendarScreen = lazy(() => import('@/screens/Calendar'));
 const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
+// Lazy: the zip/XML reader is dead weight for everyone who never imports.
+const ImportHealth = lazy(() => import('@/screens/ImportHealth'));
 const Streaks = lazy(() => import('@/screens/Streaks'));
 const Plans = lazy(() => import('@/screens/Plans'));
 const Coach = lazy(() => import('@/screens/Coach'));
@@ -98,6 +100,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/diet" element={<Diet />} />
             <Route path="/calendar" element={<CalendarScreen />} />
+            <Route path="/import/health" element={<ImportHealth />} />
             <Route path="/food/new" element={<FoodEditor />} />
             <Route path="/food/:id/edit" element={<FoodEditor />} />
             <Route path="/log" element={<LogSheet />} />
