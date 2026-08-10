@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
-    
+
     <meta charset="UTF-8" />
     <meta
       name="viewport"
@@ -45,32 +45,56 @@
         gap: 1rem;
         align-items: center;
         justify-content: center;
-        padding: 2rem;
+        padding: 2rem 1.25rem;
         background: #f7f7f5;
         color: #101413;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
         text-align: center;
+        overflow-y: auto;
       }
       #boot-fail {
-        max-width: 20rem;
+        width: 100%;
+        max-width: 24rem;
         font-size: 0.875rem;
         line-height: 1.5;
       }
-      #boot-retry {
-        margin-top: 0.75rem;
-        padding: 0.6rem 1.25rem;
-        border: 0;
+      /* Left-aligned and monospaced: this is a stack trace, not prose, and it
+         gets read back to us verbatim. */
+      #boot-err {
+        margin: 0.75rem 0;
+        padding: 0.625rem;
+        max-height: 40vh;
+        overflow: auto;
+        border-radius: 0.625rem;
+        background: #ececeb;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.6875rem;
+        line-height: 1.45;
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .boot-btn {
+        display: block;
+        width: 100%;
+        margin-top: 0.5rem;
+        padding: 0.7rem 1.25rem;
+        border: 1px solid #d7d7d4;
         border-radius: 0.75rem;
-        background: #14a06a;
-        color: #fff;
+        background: transparent;
+        color: inherit;
         font: inherit;
         font-weight: 600;
       }
-      #boot-err {
+      #boot-retry {
+        border-color: transparent;
+        background: #14a06a;
+        color: #fff;
+      }
+      #boot-note {
         margin-top: 0.75rem;
         font-size: 0.6875rem;
         opacity: 0.6;
-        word-break: break-word;
       }
       #boot i {
         width: 2.25rem;
@@ -94,6 +118,12 @@
           border-color: #1d2724;
           border-top-color: #33b985;
         }
+        #boot-err {
+          background: #161f1c;
+        }
+        .boot-btn {
+          border-color: #2a3733;
+        }
       }
       @media (prefers-reduced-motion: reduce) {
         #boot i {
@@ -108,8 +138,14 @@
         <i></i>
         <div id="boot-fail" hidden>
           <p id="boot-msg">The app didn&rsquo;t finish loading.</p>
-          <button type="button" id="boot-retry">Try again</button>
-          <p id="boot-err"></p>
+          <pre id="boot-err"></pre>
+          <button type="button" id="boot-retry" class="boot-btn">Try again</button>
+          <button type="button" id="boot-copy" class="boot-btn">Copy details</button>
+          <button type="button" id="boot-reset" class="boot-btn">Reset offline copy</button>
+          <p id="boot-note">
+            Your logged meals and trackers are stored separately and are not affected by resetting
+            the offline copy.
+          </p>
         </div>
       </div>
     </div>
@@ -123,22 +159,78 @@
 
       Deliberately classic (not module) and dependency-free, because the whole
       point is that it survives the module bundle failing.
+
+      It records *every* error rather than only the last, and reports the
+      environment alongside them. A failure that reproduces on one device and
+      nowhere else cannot be diagnosed from "it's blank" — the split between
+      standalone and browser, and between worker-controlled and not, is usually
+      the whole answer, and neither is visible to the person reporting it.
     -->
     <script>
       (function () {
         var BOOT_TIMEOUT_MS = 12000;
-        var lastError = '';
+        var errors = [];
 
-        window.addEventListener('error', function (e) {
-          // Resource errors have no `message`; name the file that failed.
-          lastError =
-            (e && e.message) ||
-            (e && e.target && (e.target.src || e.target.href)) ||
-            '';
-        }, true);
+        function record(entry) {
+          // Capped: a render loop can throw thousands, and the first few are
+          // the ones that explain the rest.
+          if (errors.length < 10) errors.push(entry);
+        }
+
+        // Capture phase, so failed <script>/<link> loads are seen too — those
+        // don't bubble and carry no message, only a target.
+        window.addEventListener(
+          'error',
+          function (e) {
+            if (e && e.target && e.target !== window && (e.target.src || e.target.href)) {
+              record('[load] failed to load ' + (e.target.src || e.target.href));
+              return;
+            }
+            record(
+              '[error] ' +
+                ((e && e.message) || 'unknown') +
+                (e && e.filename ? '\n  at ' + e.filename + ':' + e.lineno + ':' + e.colno : '') +
+                (e && e.error && e.error.stack ? '\n' + e.error.stack : '')
+            );
+          },
+          true
+        );
         window.addEventListener('unhandledrejection', function (e) {
-          lastError = (e && e.reason && (e.reason.message || String(e.reason))) || lastError;
+          var r = e && e.reason;
+          record(
+            '[promise] ' +
+              ((r && (r.message || String(r))) || 'unhandled rejection') +
+              (r && r.stack ? '\n' + r.stack : '')
+          );
         });
+
+        // Shared with the React error boundary, so a crash after mount ends up
+        // in the same report as one before it.
+        window.__healthifyBoot = { errors: errors };
+
+        function details() {
+          var body = errors.length
+            ? errors.join('\n\n')
+            : 'No JavaScript error was reported — the app scripts most likely never ' +
+              'arrived or never ran.';
+          return (
+            body +
+            '\n\n--- environment ---\nurl: ' +
+            location.href +
+            '\nstandalone: ' +
+            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+              ? 'yes'
+              : navigator.standalone
+                ? 'yes (ios)'
+                : 'no') +
+            '\ncontrolled by SW: ' +
+            (navigator.serviceWorker && navigator.serviceWorker.controller ? 'yes' : 'no') +
+            '\nonline: ' +
+            navigator.onLine +
+            '\nua: ' +
+            navigator.userAgent
+          );
+        }
 
         document.getElementById('boot-retry').addEventListener('click', function () {
           // Reload past the HTTP cache — a half-fetched asset is the likeliest
@@ -148,15 +240,60 @@
           window.location.replace(u.toString());
         });
 
+        document.getElementById('boot-copy').addEventListener('click', function () {
+          var b = this;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(details()).then(function () {
+              b.textContent = 'Copied';
+            }, function () {});
+          }
+        });
+
+        // Last resort, and safe to be blunt here in a way Settings' Force
+        // reload is not: nothing is running, so there is no working offline
+        // copy left to protect. IndexedDB is a separate store and untouched.
+        document.getElementById('boot-reset').addEventListener('click', function () {
+          var b = this;
+          b.textContent = 'Resetting…';
+          var jobs = [];
+          if (window.caches && caches.keys) {
+            jobs.push(
+              caches.keys().then(function (keys) {
+                return Promise.all(
+                  keys.map(function (k) {
+                    return caches['delete'](k);
+                  })
+                );
+              })
+            );
+          }
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            jobs.push(
+              navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(
+                  rs.map(function (r) {
+                    return r.unregister();
+                  })
+                );
+              })
+            );
+          }
+          Promise.all(jobs)['catch'](function () {})['then'](function () {
+            // Back to the app root, not the current route: a deep link is one
+            // more thing that can fail while we are trying to prove the basics.
+            var base = document.querySelector('link[rel="apple-touch-icon"]');
+            var root = base ? base.getAttribute('href').split('icons/')[0] : location.pathname;
+            location.replace(root + '?__reload=' + Date.now().toString(36));
+          });
+        });
+
         setTimeout(function () {
           // React replaces #root on mount, so still finding this means it never did.
           var boot = document.getElementById('boot');
           if (!boot) return;
           boot.querySelector('i').style.display = 'none';
           document.getElementById('boot-fail').hidden = false;
-          if (lastError) {
-            document.getElementById('boot-err').textContent = String(lastError).slice(0, 200);
-          }
+          document.getElementById('boot-err').textContent = details();
         }, BOOT_TIMEOUT_MS);
       })();
     </script>

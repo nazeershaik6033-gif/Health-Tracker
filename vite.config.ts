@@ -39,6 +39,13 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  build: {
+    // Vite 6 defaults to a Safari 16 baseline. Unsupported *syntax* doesn't
+    // degrade — the script fails to parse and the page is blank, with the app
+    // working everywhere else. Naming older Safari explicitly costs a little
+    // bundle size and removes that whole failure mode on an out-of-date iPhone.
+    target: ['es2020', 'safari14', 'chrome87', 'firefox78', 'edge88'],
+  },
   plugins: [
     react(),
     tailwindcss(),
