@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+    />
+    <!--
+      One tag, no `media`, because the app owns this: with five themes the OS
+      preference is only the answer for "System". A browser uses the first
+      theme-color whose media matches, so media-scoped tags here would always
+      win and the chosen theme would never reach the status bar. `useTheme`
+      rewrites the content on every theme change.
+    -->
+    <meta name="theme-color" content="#14A06A" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Healthify" />
+    <meta
+      name="description"
+      content="Track calories with a photo, barcode or your voice. Log meals, water, sleep, weight and workouts, with an AI nutrition and fitness coach."
+    />
+    <link rel="icon" type="image/png" sizes="192x192" href="/Health-Tracker/icons/icon-192.png?v=2" />
+    <link rel="apple-touch-icon" href="/Health-Tracker/icons/apple-touch-icon.png?v=2" />
+    <title>Healthify — AI Health Tracker</title>
+    <!--
+      Cold-start splash. Between the HTML arriving and React mounting there is
+      nothing on screen, which on a slow connection or a freshly rebuilt cache
+      is a long white flash. This is inline and unconditional so it needs no
+      stylesheet and no JS to appear; React replaces #root on mount, so it also
+      needs nothing to remove it.
+
+      Colours are duplicated from the Light and Dark palettes in
+      styles/index.css rather than read from the vars, which have not loaded
+      yet. Keep them in step if those palettes change.
+    -->
+    <style>
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1.25rem;
+        background: #f7f7f5;
+        color: #101413;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+        text-align: center;
+        overflow-y: auto;
+      }
+      #boot-fail {
+        width: 100%;
+        max-width: 24rem;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      /* Left-aligned and monospaced: this is a stack trace, not prose, and it
+         gets read back to us verbatim. */
+      #boot-err {
+        margin: 0.75rem 0;
+        padding: 0.625rem;
+        max-height: 40vh;
+        overflow: auto;
+        border-radius: 0.625rem;
+        background: #ececeb;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.6875rem;
+        line-height: 1.45;
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .boot-btn {
+        display: block;
+        width: 100%;
+        margin-top: 0.5rem;
+        padding: 0.7rem 1.25rem;
+        border: 1px solid #d7d7d4;
+        border-radius: 0.75rem;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 600;
+      }
+      #boot-retry {
+        border-color: transparent;
+        background: #14a06a;
+        color: #fff;
+      }
+      #boot-note {
+        margin-top: 0.75rem;
+        font-size: 0.6875rem;
+        opacity: 0.6;
+      }
+      #boot i {
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 999px;
+        border: 3px solid #cdefe0;
+        border-top-color: #14a06a;
+        animation: boot-spin 0.8s linear infinite;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        #boot {
+          background: #0b1210;
+          color: #eef2f0;
+        }
+        #boot i {
+          border-color: #1d2724;
+          border-top-color: #33b985;
+        }
+        #boot-err {
+          background: #161f1c;
+        }
+        .boot-btn {
+          border-color: #2a3733;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot i {
+          animation-duration: 2.4s;
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/Health-Tracker/assets/index-Bib-a-3a.js"></script>
+    <link rel="stylesheet" crossorigin href="/Health-Tracker/assets/index-BmC5ME_n.css">
+  <link rel="manifest" href="/Health-Tracker/manifest.webmanifest"></head>
+  <body>
+    <div id="root">
+      <div id="boot" role="status" aria-label="Loading Healthify">
+        <i></i>
+        <div id="boot-fail" hidden>
+          <p id="boot-msg">The app didn&rsquo;t finish loading.</p>
+          <pre id="boot-err"></pre>
+          <button type="button" id="boot-retry" class="boot-btn">Try again</button>
+          <button type="button" id="boot-copy" class="boot-btn">Copy details</button>
+          <button type="button" id="boot-reset" class="boot-btn">Reset offline copy</button>
+          <p id="boot-note">
+            Your logged meals and trackers are stored separately and are not affected by resetting
+            the offline copy.
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--
+      Boot watchdog.
+
+      A spinner that can hang forever is worse than the white screen it
+      replaced: it looks like progress, so nobody reloads and nothing says what
+      broke. If the module script fails to load or throws, React never mounts
+      and #boot is never replaced — so time it out and say so, with a way out.
+
+      Deliberately classic (not module) and dependency-free, because the whole
+      point is that it survives the module bundle failing.
+
+      It records *every* error rather than only the last, and reports the
+      environment alongside them. A failure that reproduces on one device and
+      nowhere else cannot be diagnosed from "it's blank" — the split between
+      standalone and browser, and between worker-controlled and not, is usually
+      the whole answer, and neither is visible to the person reporting it.
+    -->
+    <script>
+      (function () {
+        var BOOT_TIMEOUT_MS = 12000;
+        var errors = [];
+
+        function record(entry) {
+          // Capped: a render loop can throw thousands, and the first few are
+          // the ones that explain the rest.
+          if (errors.length < 10) errors.push(entry);
+        }
+
+        // Capture phase, so failed <script>/<link> loads are seen too — those
+        // don't bubble and carry no message, only a target.
+        window.addEventListener(
+          'error',
+          function (e) {
+            if (e && e.target && e.target !== window && (e.target.src || e.target.href)) {
+              var src = e.target.src || e.target.href;
+              record('[load] failed to load ' + src);
+              // A request for the TypeScript entry point can only mean this
+              // page is the unbuilt source: the build rewrites that tag to a
+              // hashed bundle under the base path, so it never survives it.
+              // On GitHub Pages that means the site is publishing the repo
+              // from a branch instead of the workflow's build output — worth
+              // saying outright, because the generic message sends people
+              // hunting through the app for a bug that isn't there.
+              if (/\/src\/main\.tsx$/.test(src)) {
+                record(
+                  '[deploy] This page is the project SOURCE, not the built app — ' +
+                    'nothing here can run. The server is publishing the repository ' +
+                    'verbatim.\n  Fix: GitHub repo → Settings → Pages → Build and ' +
+                    'deployment → Source → "GitHub Actions".'
+                );
+              }
+              return;
+            }
+            record(
+              '[error] ' +
+                ((e && e.message) || 'unknown') +
+                (e && e.filename ? '\n  at ' + e.filename + ':' + e.lineno + ':' + e.colno : '') +
+                (e && e.error && e.error.stack ? '\n' + e.error.stack : '')
+            );
+          },
+          true
+        );
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          record(
+            '[promise] ' +
+              ((r && (r.message || String(r))) || 'unhandled rejection') +
+              (r && r.stack ? '\n' + r.stack : '')
+          );
+        });
+
+        // Shared with the React error boundary, so a crash after mount ends up
+        // in the same report as one before it.
+        window.__healthifyBoot = { errors: errors };
+
+        function details() {
+          var body = errors.length
+            ? errors.join('\n\n')
+            : 'No JavaScript error was reported — the app scripts most likely never ' +
+              'arrived or never ran.';
+          return (
+            body +
+            '\n\n--- environment ---\nurl: ' +
+            location.href +
+            '\nstandalone: ' +
+            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+              ? 'yes'
+              : navigator.standalone
+                ? 'yes (ios)'
+                : 'no') +
+            '\ncontrolled by SW: ' +
+            (navigator.serviceWorker && navigator.serviceWorker.controller ? 'yes' : 'no') +
+            '\nonline: ' +
+            navigator.onLine +
+            '\nua: ' +
+            navigator.userAgent
+          );
+        }
+
+        document.getElementById('boot-retry').addEventListener('click', function () {
+          // Reload past the HTTP cache — a half-fetched asset is the likeliest
+          // cause of getting here.
+          var u = new URL(window.location.href);
+          u.searchParams.set('__retry', Date.now().toString(36));
+          window.location.replace(u.toString());
+        });
+
+        document.getElementById('boot-copy').addEventListener('click', function () {
+          var b = this;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(details()).then(function () {
+              b.textContent = 'Copied';
+            }, function () {});
+          }
+        });
+
+        // Last resort, and safe to be blunt here in a way Settings' Force
+        // reload is not: nothing is running, so there is no working offline
+        // copy left to protect. IndexedDB is a separate store and untouched.
+        document.getElementById('boot-reset').addEventListener('click', function () {
+          var b = this;
+          b.textContent = 'Resetting…';
+          var jobs = [];
+          if (window.caches && caches.keys) {
+            jobs.push(
+              caches.keys().then(function (keys) {
+                return Promise.all(
+                  keys.map(function (k) {
+                    return caches['delete'](k);
+                  })
+                );
+              })
+            );
+          }
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            jobs.push(
+              navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(
+                  rs.map(function (r) {
+                    return r.unregister();
+                  })
+                );
+              })
+            );
+          }
+          Promise.all(jobs)['catch'](function () {})['then'](function () {
+            // Back to the app root, not the current route: a deep link is one
+            // more thing that can fail while we are trying to prove the basics.
+            var base = document.querySelector('link[rel="apple-touch-icon"]');
+            var root = base ? base.getAttribute('href').split('icons/')[0] : location.pathname;
+            location.replace(root + '?__reload=' + Date.now().toString(36));
+          });
+        });
+
+        setTimeout(function () {
+          // React replaces #root on mount, so still finding this means it never did.
+          var boot = document.getElementById('boot');
+          if (!boot) return;
+          boot.querySelector('i').style.display = 'none';
+          document.getElementById('boot-fail').hidden = false;
+          document.getElementById('boot-err').textContent = details();
+        }, BOOT_TIMEOUT_MS);
+      })();
+    </script>
+  </body>
+</html>
