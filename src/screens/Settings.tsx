@@ -577,6 +577,19 @@ export default function Settings() {
           )}
         </Card>
 
+        {/* -------------------------- Apple Health ---------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle>Apple Health</SectionTitle>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Bring across steps, weight, sleep, water and workouts from an Apple Health export.
+            Apple gives websites no access to Health or the Watch directly, so this reads the
+            export file rather than syncing — on your device, with nothing uploaded.
+          </p>
+          <Button variant="secondary" onClick={() => navigate('/import/health')}>
+            Import from Apple Health
+          </Button>
+        </Card>
+
         {/* ------------------------ Backup / restore -------------------- */}
         <Card className="space-y-3">
           <SectionTitle>Backup</SectionTitle>

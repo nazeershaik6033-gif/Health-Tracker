@@ -587,3 +587,136 @@ export async function clearAllData(): Promise<void> {
 }
 
 export { today };
+
+/* ------------------------------------------------------------------------ */
+/* Apple Health import                                                       */
+/* ------------------------------------------------------------------------ */
+
+export type HealthMergeMode = 'fill' | 'overwrite';
+
+export interface HealthApplyResult {
+  written: number;
+  skipped: number;
+}
+
+/**
+ * Writes parsed Apple Health aggregates into the trackers.
+ *
+ * `fill` only touches days that have nothing recorded, so an import can never
+ * overwrite something typed by hand — the safe default, and the one that makes
+ * re-running an import idempotent. `overwrite` replaces the day outright, for
+ * when the export is the better record.
+ *
+ * Workouts are matched on date, type and duration rather than a day key: a day
+ * legitimately holds several, so "does this day have workouts" is the wrong
+ * question and would drop all but the first.
+ */
+export async function applyHealthImport(
+  data: {
+    steps: Map<string, number>;
+    weight: Map<string, number>;
+    water: Map<string, number>;
+    sleep: Map<string, { bedtime: string; wake: string; durationMin: number }>;
+    workouts: { date: string; type: string; durationMin: number; kcal: number }[];
+  },
+  metrics: Set<'steps' | 'weight' | 'sleep' | 'water' | 'workouts'>,
+  mode: HealthMergeMode,
+): Promise<HealthApplyResult> {
+  const profile = await getProfile();
+  const stepGoal = profile?.stepGoal ?? 8000;
+  const waterGoal = profile?.waterGoalGlasses ?? 8;
+  let written = 0;
+  let skipped = 0;
+
+  if (metrics.has('steps')) {
+    for (const [date, count] of data.steps) {
+      const existing = await db.steps.get(date);
+      if (existing && existing.count > 0 && mode === 'fill') {
+        skipped++;
+        continue;
+      }
+      await db.steps.put({
+        date,
+        count: Math.round(count),
+        goal: existing?.goal ?? stepGoal,
+        source: 'sensor',
+        updatedAt: Date.now(),
+      });
+      written++;
+    }
+  }
+
+  if (metrics.has('weight')) {
+    for (const [date, kg] of data.weight) {
+      const existing = await db.weight.get(date);
+      if (existing && mode === 'fill') {
+        skipped++;
+        continue;
+      }
+      await db.weight.put({ date, kg, note: 'Apple Health', updatedAt: Date.now() });
+      written++;
+    }
+  }
+
+  if (metrics.has('sleep')) {
+    for (const [date, s] of data.sleep) {
+      const existing = await db.sleep.get(date);
+      if (existing && mode === 'fill') {
+        skipped++;
+        continue;
+      }
+      await db.sleep.put({ date, ...s, updatedAt: Date.now() });
+      written++;
+    }
+  }
+
+  if (metrics.has('water')) {
+    for (const [date, ml] of data.water) {
+      const existing = await db.water.get(date);
+      if (existing && existing.glasses > 0 && mode === 'fill') {
+        skipped++;
+        continue;
+      }
+      const glassMl = existing?.glassMl ?? 250;
+      await db.water.put({
+        date,
+        glasses: Math.round(ml / glassMl),
+        goalGlasses: existing?.goalGlasses ?? waterGoal,
+        glassMl,
+        updatedAt: Date.now(),
+      });
+      written++;
+    }
+  }
+
+  if (metrics.has('workouts')) {
+    for (const w of data.workouts) {
+      const sameDay = await db.workouts.where('date').equals(w.date).toArray();
+      const duplicate = sameDay.some(
+        (e) => e.type === w.type && Math.abs(e.durationMin - w.durationMin) <= 1,
+      );
+      if (duplicate) {
+        skipped++;
+        continue;
+      }
+      await db.workouts.add({
+        id: uid('wk_'),
+        date: w.date,
+        type: w.type,
+        durationMin: w.durationMin,
+        kcal: w.kcal,
+        intensity: w.kcal / Math.max(w.durationMin, 1) > 9 ? 'vigorous' : w.kcal / Math.max(w.durationMin, 1) > 5 ? 'moderate' : 'light',
+        note: 'Imported from Apple Health',
+        createdAt: Date.now(),
+      });
+      written++;
+    }
+  }
+
+  // Targets are weight-derived; a bulk weight import should refresh them.
+  if (metrics.has('weight') && data.weight.size && profile && !profile.targetsManual) {
+    await saveProfile({});
+  }
+
+  return { written, skipped };
+}

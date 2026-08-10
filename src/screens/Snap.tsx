@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
-import { addMealItems, addSnap, getSnap, updateSnap } from '@/db/repo';
+import { addMealItems, addSnap, deleteSnap, getSnap, updateSnap } from '@/db/repo';
 import { analyseMealPhoto } from '@/ai/service';
 import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
@@ -50,6 +50,9 @@ export default function Snap() {
   const [error, setError] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
+  // Two-tap confirm rather than window.confirm, which a standalone PWA on iOS
+  // renders as a jarring system dialog over the app.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const keyed = hasKey(settings);
   const camera = useCamera({ autoStart: phase === 'capture' && keyed });
@@ -242,8 +245,17 @@ export default function Snap() {
 
   /* ------------------------------- render ------------------------------ */
 
+  // svh, not dvh or min-h-dvh, for a screen whose shutter is pinned to the
+  // bottom and which must never scroll:
+  //   min-h-dvh  lets the column grow past the screen instead of fitting in it
+  //   dvh        tracks the *current* viewport, so it grows as browser chrome
+  //              retracts — the shutter then sits under a toolbar that is
+  //              about to come back
+  //   svh        is the viewport with chrome fully shown, the one size that
+  //              fits in every state
+  // Each phase below owns its own scrolling.
   return (
-    <div className="flex min-h-dvh flex-col bg-black">
+    <div className="flex h-svh flex-col overflow-hidden bg-black">
       <PageHeader
         title="Snap a meal"
         back={() => navigate(-1)}
@@ -301,8 +313,10 @@ export default function Snap() {
 
       {/* --------------------------- capture --------------------------- */}
       {phase === 'capture' && (
-        <div className="relative flex flex-1 flex-col">
-          <div className="relative flex-1 overflow-hidden bg-black">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* min-h-0 so the preview yields space to the shutter bar below
+              rather than shoving it off the bottom of the screen. */}
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
             <video
               ref={camera.videoRef}
               playsInline
@@ -366,7 +380,11 @@ export default function Snap() {
             )}
           </div>
 
-          <div className="bg-black px-6 pt-5 pb-safe">
+          {/* A browser toolbar is not a safe-area inset, so in a Safari tab
+              env(safe-area-inset-bottom) is 0 and pb-safe alone left the
+              shutter tucked under the toolbar. The floor gives it real
+              clearance there while notched devices still get their inset. */}
+          <div className="bg-black px-6 pt-5 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
             <p className="mb-4 text-center text-[12.5px] text-white/60">
               {keyed
                 ? 'Fit the whole plate in frame. Good light gives a much better estimate.'
@@ -399,7 +417,7 @@ export default function Snap() {
 
       {/* -------------------------- analysing -------------------------- */}
       {phase === 'analysing' && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-8">
+        <div className="flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-8">
           {preview && (
             <img
               src={preview}
@@ -428,7 +446,7 @@ export default function Snap() {
 
       {/* ---------------------------- result --------------------------- */}
       {phase === 'result' && analysis && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
+        <div className="flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
           {preview && (
             <img
               src={preview}
@@ -533,7 +551,7 @@ export default function Snap() {
 
       {/* ----------------------------- error --------------------------- */}
       {phase === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-canvas)] px-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
           {preview && (
             <img src={preview} alt="" className="h-40 w-40 rounded-2xl object-cover opacity-60" />
           )}
@@ -550,6 +568,36 @@ export default function Snap() {
               Start over
             </Button>
           </div>
+
+          {/* The photo is already saved by this point — ingest() writes it
+              before analysis is attempted, so it survives in the gallery.
+              "Start over" deliberately keeps it (a failed reading is often
+              worth retrying later), which left no way at all to throw a bad
+              photo away from here. */}
+          {snap && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirmDelete) {
+                  setConfirmDelete(true);
+                  return;
+                }
+                await deleteSnap(snap.id);
+                showToast({ message: 'Photo deleted' });
+                setConfirmDelete(false);
+                reset();
+              }}
+              // The accessible name has to contain the visible text, or voice
+              // control cannot activate what the button says it is (WCAG 2.5.3).
+              aria-label={confirmDelete ? 'Tap again to delete photo' : 'Delete photo'}
+              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
+                confirmDelete ? 'bg-red-600 text-white' : 'text-muted'
+              }`}
+            >
+              <IconTrash width={15} height={15} />
+              {confirmDelete ? 'Tap again to delete' : 'Delete photo'}
+            </button>
+          )}
         </div>
       )}
 
