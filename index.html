@@ -183,7 +183,23 @@
           'error',
           function (e) {
             if (e && e.target && e.target !== window && (e.target.src || e.target.href)) {
-              record('[load] failed to load ' + (e.target.src || e.target.href));
+              var src = e.target.src || e.target.href;
+              record('[load] failed to load ' + src);
+              // A request for the TypeScript entry point can only mean this
+              // page is the unbuilt source: the build rewrites that tag to a
+              // hashed bundle under the base path, so it never survives it.
+              // On GitHub Pages that means the site is publishing the repo
+              // from a branch instead of the workflow's build output — worth
+              // saying outright, because the generic message sends people
+              // hunting through the app for a bug that isn't there.
+              if (/\/src\/main\.tsx$/.test(src)) {
+                record(
+                  '[deploy] This page is the project SOURCE, not the built app — ' +
+                    'nothing here can run. The server is publishing the repository ' +
+                    'verbatim.\n  Fix: GitHub repo → Settings → Pages → Build and ' +
+                    'deployment → Source → "GitHub Actions".'
+                );
+              }
               return;
             }
             record(
