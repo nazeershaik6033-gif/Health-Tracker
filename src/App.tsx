@@ -23,6 +23,8 @@ const CalendarScreen = lazy(() => import('@/screens/Calendar'));
 const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
 // Lazy: the zip/XML reader is dead weight for everyone who never imports.
 const ImportHealth = lazy(() => import('@/screens/ImportHealth'));
+const GlobalSearch = lazy(() => import('@/screens/GlobalSearch'));
+const RecipeBuilder = lazy(() => import('@/screens/RecipeBuilder'));
 const Streaks = lazy(() => import('@/screens/Streaks'));
 const Plans = lazy(() => import('@/screens/Plans'));
 const Coach = lazy(() => import('@/screens/Coach'));
@@ -49,6 +51,7 @@ const FULLSCREEN = [
   '/onboarding',
   '/log',
   '/search',
+  '/find',
   // Has its own sticky action bar; the bottom nav would sit on top of it and
   // swallow the taps on Save. Prefix, so it covers /food/new and
   // /food/:id/edit alike — the matcher appends the slash itself.
@@ -101,6 +104,8 @@ export default function App() {
             <Route path="/diet" element={<Diet />} />
             <Route path="/calendar" element={<CalendarScreen />} />
             <Route path="/import/health" element={<ImportHealth />} />
+            <Route path="/find" element={<GlobalSearch />} />
+            <Route path="/food/recipe" element={<RecipeBuilder />} />
             <Route path="/food/new" element={<FoodEditor />} />
             <Route path="/food/:id/edit" element={<FoodEditor />} />
             <Route path="/log" element={<LogSheet />} />

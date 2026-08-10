@@ -2,12 +2,16 @@
  * Barcode decoding with a native-first, wasm-fallback strategy.
  *
  * `BarcodeDetector` is hardware-accelerated where it exists (Chrome, Edge,
- * Safari 17+) but is missing entirely in Firefox, so zxing-wasm covers the
- * rest. The decoder choice matters far less than the two things around it:
- * cropping to the guide box before decoding, and requiring the same value on
- * several consecutive frames before accepting it. Those are what stop a
- * misread under glare or motion blur.
+ * Chromium-based browsers generally) but WebKit has never implemented it —
+ * so on iOS Safari, native detection always misses and every scan runs on
+ * the wasm decoder below. It is not the rare fallback path the split
+ * suggests; on iPhone it is the only path. The decoder choice matters far
+ * less than the two things around it: cropping to the guide box before
+ * decoding, and requiring the same value on several consecutive frames
+ * before accepting it. Those are what stop a misread under glare or motion
+ * blur.
  */
+import zxingWasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url';
 
 export type BarcodeFormat =
   | 'ean_13'
@@ -83,7 +87,20 @@ async function createWasm(): Promise<Decoder | null> {
     // Loaded on demand — the wasm binary is ~640 KB and most sessions never
     // open the scanner.
     const zxing = await import('zxing-wasm/reader');
-    await zxing.prepareZXingModule?.({ fireImmediately: true });
+    // zxing-wasm's *default* locateFile fetches the binary from jsDelivr's
+    // CDN on every session, not from anything this app ships. That is a
+    // silent violation of "nothing leaves your device but the AI requests you
+    // configure", and a single point of failure: a content blocker, a
+    // corporate filter, or the CDN having a bad day all present as "Scan
+    // doesn't work", with no local fallback to catch it. Worse, WebKit does
+    // not implement the Barcode Detection API at all — native detection
+    // never succeeds on iOS Safari, so every scan there depended on this CDN
+    // fetch. Pointing locateFile at the copy Vite bundles removes the
+    // dependency entirely; decoding then works fully offline.
+    await zxing.prepareZXingModule?.({
+      overrides: { locateFile: () => zxingWasmUrl },
+      fireImmediately: true,
+    });
 
     return {
       kind: 'wasm',

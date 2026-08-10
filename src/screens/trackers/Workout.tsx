@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
@@ -36,6 +36,7 @@ export default function Workout() {
   const { profile, selectedDate, refreshProfile } = useApp();
   const day = useDay();
   const history = useHistory(14);
+  const [params, setParams] = useSearchParams();
 
   const goal = profile?.workoutKcalGoal ?? 300;
   const [goalInput, setGoalInput] = useState(String(goal));
@@ -48,6 +49,22 @@ export default function Workout() {
     index: number;
     logged: LoggedExercise;
   } | null>(null);
+
+  // Landing here from global search with ?exercise=<id> jumps straight into
+  // the same set-entry flow a manual pick from ExercisePicker would open,
+  // rather than making the search result a dead end that still requires
+  // reopening the picker and searching again.
+  useEffect(() => {
+    const id = params.get('exercise');
+    if (!id) return;
+    const next = new URLSearchParams(params);
+    next.delete('exercise');
+    setParams(next, { replace: true });
+    void db.exercises.get(id).then((exercise) => {
+      if (exercise) setPending(exercise);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   const latestWeight = useLiveQuery(async () => db.weight.orderBy('date').reverse().first(), []);
   const bodyWeightKg = latestWeight?.kg ?? profile?.startWeightKg ?? 70;
