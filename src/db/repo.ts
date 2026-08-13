@@ -364,6 +364,17 @@ export function favouriteLabel(favourite: Favourite): string {
 export interface DaySummary {
   date: string;
   kcal: number;
+  /**
+   * Macros for the day, summed the same way `kcal` is.
+   *
+   * Carried here so the month view can describe a day by more than its calorie
+   * count — 1900 kcal that hit its protein and 1900 kcal that did not are the
+   * same number and not the same day.
+   */
+  protein: number;
+  fat: number;
+  carbs: number;
+  fibre: number;
   meals: number;
   water: boolean;
   sleep: boolean;
@@ -389,6 +400,10 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
       row = {
         date,
         kcal: 0,
+        protein: 0,
+        fat: 0,
+        carbs: 0,
+        fibre: 0,
         meals: 0,
         water: false,
         sleep: false,
@@ -404,7 +419,13 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
   for (const meal of meals) {
     const row = at(meal.date);
     row.meals += 1;
-    for (const item of meal.items) row.kcal += item.nutrients.kcal;
+    for (const item of meal.items) {
+      row.kcal += item.nutrients.kcal;
+      row.protein += item.nutrients.protein;
+      row.fat += item.nutrients.fat;
+      row.carbs += item.nutrients.carbs;
+      row.fibre += item.nutrients.fibre;
+    }
   }
   // A zero-glass row is a goal that was set, not water that was drunk.
   for (const w of water) if (w.glasses > 0) at(w.date).water = true;
@@ -413,7 +434,13 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
   for (const s of steps) if (s.count > 0) at(s.date).steps = true;
   for (const w of workouts) at(w.date).workouts = true;
 
-  for (const row of map.values()) row.kcal = Math.round(row.kcal);
+  for (const row of map.values()) {
+    row.kcal = Math.round(row.kcal);
+    row.protein = Math.round(row.protein);
+    row.fat = Math.round(row.fat);
+    row.carbs = Math.round(row.carbs);
+    row.fibre = Math.round(row.fibre);
+  }
   return map;
 }
 

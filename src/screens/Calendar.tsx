@@ -25,8 +25,10 @@ import {
   formatPortion,
   per100gFromItem,
   rescaleMealItem,
+  totalNutrients,
 } from '@/lib/nutrition';
 import { RingProgress } from '@/components/RingProgress';
+import { DayTotals } from '@/components/DayTotals';
 import { PortionSheet } from '@/components/PortionSheet';
 import { Button, Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import {
@@ -39,7 +41,7 @@ import {
   IconSteps,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem } from '@/types';
+import { MEAL_SLOTS, MEAL_SLOT_LABEL, ZERO_NUTRIENTS, type Food, type MealItem } from '@/types';
 
 /**
  * Month view of everything logged, and a full summary of whichever day is
@@ -139,14 +141,18 @@ export default function CalendarScreen() {
 
   /* -------------------------------- render ------------------------------- */
 
-  const dayKcal = bundle
-    ? Math.round(
-        bundle.meals.reduce(
-          (sum, m) => sum + m.items.reduce((s, i) => s + i.nutrients.kcal, 0),
-          0,
-        ),
-      )
-    : 0;
+  // Macros come from the meals already stored, so every past date has had this
+  // breakdown all along — the calendar just never showed it, and a bare calorie
+  // count cannot tell a 1900 kcal day that hit its protein from one that didn't.
+  const dayTotals = useMemo(
+    () => (bundle?.meals.length ? totalNutrients(bundle.meals) : ZERO_NUTRIENTS),
+    [bundle?.meals],
+  );
+  const dayBurned = useMemo(
+    () => (bundle?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0),
+    [bundle?.workouts],
+  );
+  const targets = profile?.targets ?? ZERO_NUTRIENTS;
 
   return (
     <div className="pb-28">
@@ -195,7 +201,11 @@ export default function CalendarScreen() {
                   type="button"
                   disabled={future}
                   onClick={() => setSelectedDate(date)}
-                  aria-label={`${date}${s ? `, ${s.kcal} calories logged` : ', nothing logged'}`}
+                  aria-label={
+                    s
+                      ? `${date}, ${s.kcal} calories, ${s.protein} g protein, ${s.carbs} g carbs, ${s.fat} g fat, ${s.fibre} g fibre`
+                      : `${date}, nothing logged`
+                  }
                   aria-current={active ? 'date' : undefined}
                   className={`relative flex aspect-square flex-col items-center justify-center rounded-xl transition-colors ${
                     active ? 'bg-brand-500 text-white' : future ? 'opacity-25' : 'surface-sunken'
@@ -255,12 +265,15 @@ export default function CalendarScreen() {
             {relativeDayLabel(selectedDate)}
           </h2>
           <span className="tabular text-[13px] font-semibold text-secondary">
-            {dayKcal} / {kcalTarget} Cal
+            {Math.round(dayTotals.kcal)} / {kcalTarget} Cal
           </span>
         </div>
 
         {bundle && (
           <>
+            {/* The same card the Diet screen shows for today, for any day you
+                pick — calories, and where each macro actually landed. */}
+            <DayTotals totals={dayTotals} targets={targets} burned={dayBurned} compact />
             {/* Meals */}
             {MEAL_SLOTS.map((slot) => {
               const meal = bundle.meals.find((m) => m.slot === slot);

@@ -20,8 +20,7 @@ import {
   slotTarget,
 } from '@/lib/nutrition';
 import { addDays, relativeDayLabel, today } from '@/lib/date';
-import { RingProgress } from '@/components/RingProgress';
-import { MacroBar } from '@/components/MacroBar';
+import { DayTotals } from '@/components/DayTotals';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import {
@@ -152,61 +151,9 @@ export default function Diet() {
       </div>
 
       {/* Day totals */}
-      <Card className="mb-3 space-y-3.5">
-        <div className="flex items-center gap-3">
-          <RingProgress
-            value={day.totals.kcal / (day.targets.kcal || 1)}
-            size={56}
-            stroke={4.5}
-            color="var(--color-ring-calorie)"
-            label={`${Math.round(day.totals.kcal)} of ${day.targets.kcal} calories`}
-          >
-            <div className="text-center leading-none">
-              <p className="tabular text-[13px] font-extrabold">{Math.round(day.totals.kcal)}</p>
-              <p className="text-[8px] text-muted">kcal</p>
-            </div>
-          </RingProgress>
-          <div className="flex-1">
-            <p className="text-[15px] font-bold">
-              {Math.max(0, day.targets.kcal - day.totals.kcal).toLocaleString()} Cal left
-            </p>
-            <p className="tabular text-[12.5px] text-secondary">
-              {Math.round(day.totals.kcal).toLocaleString()} eaten
-              {day.workoutKcal > 0 && ` · ${day.workoutKcal} burned`}
-            </p>
-          </div>
-        </div>
-        <div className="hairline grid grid-cols-2 gap-x-5 gap-y-3 border-t pt-3.5">
-          <MacroBar
-            label="Protein"
-            value={day.totals.protein}
-            target={day.targets.protein}
-            color="var(--color-macro-protein)"
-            asPercent={false}
-          />
-          <MacroBar
-            label="Fats"
-            value={day.totals.fat}
-            target={day.targets.fat}
-            color="var(--color-macro-fat)"
-            asPercent={false}
-          />
-          <MacroBar
-            label="Carbs"
-            value={day.totals.carbs}
-            target={day.targets.carbs}
-            color="var(--color-macro-carb)"
-            asPercent={false}
-          />
-          <MacroBar
-            label="Fibre"
-            value={day.totals.fibre}
-            target={day.targets.fibre}
-            color="var(--color-macro-fibre)"
-            asPercent={false}
-          />
-        </div>
-      </Card>
+      <div className="mb-3">
+        <DayTotals totals={day.totals} targets={day.targets} burned={day.workoutKcal} />
+      </div>
 
       {/* Slots */}
       <div className="space-y-3">
