@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -29,7 +29,7 @@ import { formatDuration, relativeDayLabel } from '@/lib/date';
 import { backupOverdue, describeLastBackup } from '@/lib/backup';
 import { formatKcal, kgToDisplay, weightUnit } from '@/lib/nutrition';
 import { setWater } from '@/db/repo';
-import type { MealSlot } from '@/types';
+import type { MealSlot, Snap as SnapRow } from '@/types';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -198,23 +198,7 @@ export default function Home() {
         {snaps && snaps.length > 0 && (
           <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
             {snaps.map((s) => (
-              <Link
-                key={s.id}
-                to={s.mealId ? `/meal/${s.mealId}` : `/snap?id=${s.id}`}
-                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl"
-              >
-                <img
-                  src={URL.createObjectURL(s.thumb)}
-                  alt={s.analysis?.title ?? 'Meal snap'}
-                  className="h-full w-full object-cover"
-                  onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
-                />
-                {s.autoTracked && (
-                  <span className="absolute top-1 left-1 rounded bg-black/55 px-1 py-0.5 text-[8.5px] font-bold text-white">
-                    ✦ Auto
-                  </span>
-                )}
-              </Link>
+              <SnapThumb key={s.id} snap={s} />
             ))}
           </div>
         )}
@@ -391,6 +375,44 @@ export default function Home() {
     </>
   );
 }
+
+/**
+ * One thumbnail in the snaps rail.
+ *
+ * The URL is minted in an effect keyed on the blob, not during render. Doing it
+ * inline created a fresh object URL on *every* render and revoked it in
+ * `onLoad`, so any re-render — a water tap, a live-query tick — leaked the
+ * previous one for the lifetime of the page.
+ */
+const SnapThumb = memo(function SnapThumb({ snap }: { snap: SnapRow }) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    const next = URL.createObjectURL(snap.thumb);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [snap.thumb]);
+
+  return (
+    <Link
+      to={snap.mealId ? `/meal/${snap.mealId}` : `/snap?id=${snap.id}`}
+      className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl"
+    >
+      {url && (
+        <img
+          src={url}
+          alt={snap.analysis?.title ?? 'Meal snap'}
+          className="h-full w-full object-cover"
+        />
+      )}
+      {snap.autoTracked && (
+        <span className="absolute top-1 left-1 rounded bg-black/55 px-1 py-0.5 text-[8.5px] font-bold text-white">
+          ✦ Auto
+        </span>
+      )}
+    </Link>
+  );
+});
 
 /** Weight-goal ring: 0 at the starting weight, 1 at the target. */
 function clampProgress(start: number, current: number, target: number): number {

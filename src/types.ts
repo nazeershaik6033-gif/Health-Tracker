@@ -87,12 +87,44 @@ export interface Meal {
   createdAt: number;
 }
 
+/**
+ * A portion you pinned to a meal slot.
+ *
+ * The unit here is a *saved portion*, not a saved food: "2 rotis" is a fact
+ * about your breakfast, not about roti, so a flag on `Food` could never hold
+ * it. Storing `MealItem[]` — the same shape a `Meal` already stores — means one
+ * favourite covers both "1 katori dal" and the whole "2 roti + dal + curd"
+ * usual, with no second concept, and the macros are frozen exactly as you
+ * entered them rather than drifting when the underlying food is edited.
+ *
+ * Nothing is ever added here automatically. `order` is yours to set.
+ */
+export interface Favourite {
+  id: string;
+  slot: MealSlot;
+  /** Defaults to the single item's name; set explicitly for a combo. */
+  label?: string;
+  items: MealItem[];
+  /** Manual position within the slot, ascending. */
+  order: number;
+  useCount: number;
+  lastUsedAt?: number;
+  createdAt: number;
+}
+
 export type SnapStatus = 'pending' | 'analysing' | 'ready' | 'logged' | 'failed';
 
+/**
+ * A photo's metadata and its thumbnail.
+ *
+ * The full-resolution capture deliberately lives in a separate table. IndexedDB
+ * hands back whole records, so with the full image on this row every listing —
+ * the Home rail, the gallery — deserialised megabytes of JPEG just to draw
+ * 80px squares. The thumb stays here because a listing genuinely needs it.
+ */
 export interface Snap {
   id: string;
   date: string;
-  blob: Blob;
   thumb: Blob;
   width: number;
   height: number;
@@ -103,6 +135,12 @@ export interface Snap {
   analysis?: SnapAnalysis;
   error?: string;
   createdAt: number;
+}
+
+/** The full-resolution capture, keyed by its snap's id. */
+export interface SnapImage {
+  id: string;
+  blob: Blob;
 }
 
 export interface SnapAnalysis {

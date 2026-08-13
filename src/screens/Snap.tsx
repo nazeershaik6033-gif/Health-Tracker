@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
-import { addMealItems, addSnap, deleteSnap, getSnap, updateSnap } from '@/db/repo';
+import { addMealItems, addSnap, deleteSnap, getSnap, getSnapImage, updateSnap } from '@/db/repo';
 import { analyseMealPhoto } from '@/ai/service';
 import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
@@ -59,8 +59,13 @@ export default function Snap() {
 
   /* ------------------------------ analysis ----------------------------- */
 
+  /**
+   * `image` is passed straight through on the capture path, where the blob is
+   * already in hand; "Try again" has only the row, so it reads the full image
+   * back out of its own table.
+   */
   const analyse = useCallback(
-    async (row: SnapRow) => {
+    async (row: SnapRow, image?: Blob) => {
       setPhase('analysing');
       setError('');
       abortRef.current?.abort();
@@ -69,7 +74,9 @@ export default function Snap() {
 
       try {
         await updateSnap(row.id, { status: 'analysing' });
-        const part = await blobToImagePart(row.blob);
+        const full = image ?? (await getSnapImage(row.id));
+        if (!full) throw new Error('That photo is no longer stored on this device.');
+        const part = await blobToImagePart(full);
         const result = await analyseMealPhoto(settings, part, controller.signal);
         await updateSnap(row.id, { status: 'ready', analysis: result });
         setAnalysis(result);
@@ -89,19 +96,21 @@ export default function Snap() {
   const ingest = useCallback(
     async (blob: Blob, autoTracked = false) => {
       const prepared = await prepareImage(blob);
-      const row = await addSnap({
-        date: selectedDate,
-        blob: prepared.full,
-        thumb: prepared.thumb,
-        width: prepared.width,
-        height: prepared.height,
-        status: 'pending',
-        autoTracked,
-      });
+      const row = await addSnap(
+        {
+          date: selectedDate,
+          thumb: prepared.thumb,
+          width: prepared.width,
+          height: prepared.height,
+          status: 'pending',
+          autoTracked,
+        },
+        prepared.full,
+      );
       setSnap(row);
       setPreview(URL.createObjectURL(prepared.full));
       camera.stop();
-      if (keyed) await analyse(row);
+      if (keyed) await analyse(row, prepared.full);
       else {
         setError('Add an AI key in Settings to read this photo.');
         setPhase('error');
@@ -171,7 +180,10 @@ export default function Snap() {
       const row = await getSnap(id);
       if (!row) return;
       setSnap(row);
-      setPreview(URL.createObjectURL(row.blob));
+      const full = await getSnapImage(id);
+      // Fall back to the thumbnail: a stored snap should still be viewable if
+      // its full image went missing, rather than showing an empty frame.
+      setPreview(URL.createObjectURL(full ?? row.thumb));
       if (row.analysis) {
         setAnalysis(row.analysis);
         setPhase('result');

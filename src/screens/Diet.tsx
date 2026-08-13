@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
-import { deleteMeal, getFood, removeMealItem, replaceMealItem } from '@/db/repo';
+import {
+  addFavourite,
+  deleteMeal,
+  getFood,
+  removeFavourite,
+  removeMealItem,
+  replaceMealItem,
+} from '@/db/repo';
 import {
   buildMealItem,
   buildMealItemFromGrams,
@@ -23,9 +30,17 @@ import {
   IconDiet,
   IconPlus,
   IconSparkle,
+  IconStar,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
+import {
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  type Food,
+  type Meal,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 
 export default function Diet() {
   const navigate = useNavigate();
@@ -35,6 +50,7 @@ export default function Diet() {
   const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
+    slot: MealSlot;
     index: number;
     item: MealItem;
     food?: Food;
@@ -44,9 +60,9 @@ export default function Diet() {
    * The logged item only remembers the one serving it used; the food row
    * carries the full list, so it is fetched to allow switching units.
    */
-  async function openEdit(mealId: string, index: number, item: MealItem) {
+  async function openEdit(mealId: string, slot: MealSlot, index: number, item: MealItem) {
     const food = item.foodId ? await getFood(item.foodId) : undefined;
-    setEditing({ mealId, index, item, food });
+    setEditing({ mealId, slot, index, item, food });
   }
 
   async function saveEdit(qty: number, servingLabel: string, grams?: number) {
@@ -72,6 +88,43 @@ export default function Diet() {
     await removeMealItem(mealId, index);
     setConfirmDelete(null);
     showToast({ message: `${name} removed` });
+  }
+
+  /**
+   * Pins everything in a slot as one favourite — the "this is my usual
+   * breakfast" case. A day you already logged is the most accurate description
+   * of a usual meal there is, so it is the cheapest place to capture one.
+   */
+  async function pinMeal(slot: MealSlot, meal: Meal) {
+    const names = meal.items.map((i) => i.name);
+    const label =
+      names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ');
+    const favourite = await addFavourite({
+      slot,
+      label,
+      items: meal.items.map((item) => ({ ...item, nutrients: { ...item.nutrients } })),
+    });
+
+    showToast({
+      message: `Pinned to ${MEAL_SLOT_LABEL[slot]} favourites`,
+      actionLabel: 'Undo',
+      onAction: () => removeFavourite(favourite.id),
+    });
+  }
+
+  /** Pins one already-logged item, at exactly the portion it was logged at. */
+  async function pinItem(slot: MealSlot, item: MealItem) {
+    const favourite = await addFavourite({
+      slot,
+      items: [{ ...item, nutrients: { ...item.nutrients } }],
+    });
+    setEditing(null);
+
+    showToast({
+      message: `${item.name} pinned to ${MEAL_SLOT_LABEL[slot]}`,
+      actionLabel: 'Undo',
+      onAction: () => removeFavourite(favourite.id),
+    });
   }
 
   return (
@@ -169,6 +222,16 @@ export default function Diet() {
                 <span className="tabular text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
+                {meal && meal.items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => pinMeal(slot, meal)}
+                    aria-label={`Save this ${MEAL_SLOT_LABEL[slot].toLowerCase()} as a favourite`}
+                    className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+                  >
+                    <IconStar width={15} height={15} />
+                  </button>
+                )}
                 {/* Clearing a whole slot used to mean deleting every item. */}
                 {meal && meal.items.length > 0 && (
                   <button
@@ -219,7 +282,7 @@ export default function Diet() {
                             only way to fix a quantity was delete and re-add. */}
                         <button
                           type="button"
-                          onClick={() => openEdit(meal.id, i, item)}
+                          onClick={() => openEdit(meal.id, slot, i, item)}
                           aria-label={`Edit ${item.name}`}
                           className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                         >
@@ -317,6 +380,19 @@ export default function Diet() {
           }
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
+          // Pins the portion shown in the sheet, which may differ from what is
+          // logged — dial in the amount you usually eat, star it, then cancel.
+          onFavourite={(qty, servingLabel, grams) =>
+            pinItem(
+              editing.slot,
+              editing.food && grams !== undefined
+                ? buildMealItemFromGrams(editing.food, grams)
+                : editing.food
+                  ? buildMealItem(editing.food, servingLabel, qty)
+                  : rescaleMealItem(editing.item, qty, servingLabel),
+            )
+          }
+          favouriteSlotLabel={MEAL_SLOT_LABEL[editing.slot]}
           onDelete={async () => {
             await removeItem(editing.mealId, editing.index, editing.item.name);
             setEditing(null);

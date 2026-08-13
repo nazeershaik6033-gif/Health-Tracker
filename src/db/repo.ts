@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
 import { seedExercises } from '@/data/exercises.seed';
@@ -7,6 +8,7 @@ import { DEFAULT_FATSECRET } from '@/types';
 import type {
   ChatMessage,
   Exercise,
+  Favourite,
   Food,
   Insight,
   Meal,
@@ -254,6 +256,106 @@ export async function replaceMealItem(
   await updateMeal(mealId, { items });
 }
 
+/* ------------------------------ favourites ------------------------------- */
+
+/**
+ * The pinned list for one slot, in the user's own order.
+ *
+ * Reads the `[slot+order]` index directly, so this stays one bounded scan
+ * rather than a whole-table read plus a sort — the pinned list renders on
+ * every visit to the food search.
+ */
+export async function favouritesForSlot(slot: MealSlot): Promise<Favourite[]> {
+  return db.favourites
+    .where('[slot+order]')
+    .between([slot, Dexie.minKey], [slot, Dexie.maxKey])
+    .toArray();
+}
+
+export async function allFavourites(): Promise<Favourite[]> {
+  return db.favourites.toArray();
+}
+
+/**
+ * Pins a portion to a slot. New entries go to the end of the list rather than
+ * the top: the order is the user's to arrange, so nothing already placed moves
+ * because something new was added.
+ */
+export async function addFavourite(
+  input: Omit<Favourite, 'id' | 'order' | 'useCount' | 'createdAt'>,
+): Promise<Favourite> {
+  const siblings = await favouritesForSlot(input.slot);
+  const order = siblings.reduce((max, f) => Math.max(max, f.order), -1) + 1;
+  const favourite: Favourite = {
+    ...input,
+    id: uid('fav_'),
+    order,
+    useCount: 0,
+    createdAt: Date.now(),
+  };
+  await db.favourites.add(favourite);
+  return favourite;
+}
+
+export async function updateFavourite(id: string, patch: Partial<Favourite>): Promise<void> {
+  const existing = await db.favourites.get(id);
+  if (!existing) return;
+  const next = { ...existing, ...patch };
+  // A favourite with nothing in it has no meaning; drop it rather than leaving
+  // an empty row that logs nothing when tapped.
+  if (next.items.length === 0) await db.favourites.delete(id);
+  else await db.favourites.put(next);
+}
+
+export async function removeFavourite(id: string): Promise<void> {
+  await db.favourites.delete(id);
+}
+
+/**
+ * Writes a new manual order for one slot. `orderedIds` is the full list as the
+ * user arranged it; positions are rewritten from scratch so repeated drags
+ * can't drift into ties.
+ */
+export async function reorderFavourites(orderedIds: string[]): Promise<void> {
+  await db.transaction('rw', db.favourites, async () => {
+    for (const [index, id] of orderedIds.entries()) {
+      const existing = await db.favourites.get(id);
+      if (existing) await db.favourites.put({ ...existing, order: index });
+    }
+  });
+}
+
+/**
+ * Logs a favourite into a day at its saved quantity, and counts the use.
+ *
+ * The stored items are copied, not referenced: editing the favourite later
+ * must not rewrite meals already logged from it.
+ */
+export async function logFavourite(
+  date: string,
+  favourite: Favourite,
+  slotOverride?: MealSlot,
+): Promise<Meal> {
+  const meal = await addMealItems(
+    date,
+    slotOverride ?? favourite.slot,
+    favourite.items.map((item) => ({ ...item, nutrients: { ...item.nutrients } })),
+  );
+  await db.favourites.put({
+    ...favourite,
+    useCount: favourite.useCount + 1,
+    lastUsedAt: Date.now(),
+  });
+  return meal;
+}
+
+/** Display name: the explicit label, or the single item's name. */
+export function favouriteLabel(favourite: Favourite): string {
+  if (favourite.label?.trim()) return favourite.label.trim();
+  if (favourite.items.length === 1) return favourite.items[0].name;
+  return `${favourite.items.length} items`;
+}
+
 /**
  * Which days in a range have anything logged, and how many calories each.
  * One pass per table rather than a query per day: a month view would otherwise
@@ -334,9 +436,21 @@ export async function deleteMeal(id: string): Promise<void> {
 
 /* --------------------------------- snaps --------------------------------- */
 
-export async function addSnap(snap: Omit<Snap, 'id' | 'createdAt'>): Promise<Snap> {
+/**
+ * Writes the metadata row and the full image together.
+ *
+ * Both halves land in one transaction, so a snap can never exist as a row
+ * pointing at an image that was never stored.
+ */
+export async function addSnap(
+  snap: Omit<Snap, 'id' | 'createdAt'>,
+  blob: Blob,
+): Promise<Snap> {
   const next: Snap = { ...snap, id: uid('snap_'), createdAt: Date.now() };
-  await db.snaps.add(next);
+  await db.transaction('rw', db.snaps, db.snapImages, async () => {
+    await db.snaps.add(next);
+    await db.snapImages.put({ id: next.id, blob });
+  });
   return next;
 }
 
@@ -350,6 +464,14 @@ export async function getSnap(id: string): Promise<Snap | undefined> {
 }
 
 /**
+ * The full-resolution capture. Fetched only by the two callers that genuinely
+ * need it — the detail preview and the vision request — never by a listing.
+ */
+export async function getSnapImage(id: string): Promise<Blob | undefined> {
+  return (await db.snapImages.get(id))?.blob;
+}
+
+/**
  * Deletes a snap, and by default the meal it was logged as.
  *
  * Deleting the photo used to leave the calories behind, so a meal you thought
@@ -359,7 +481,10 @@ export async function getSnap(id: string): Promise<Snap | undefined> {
  */
 export async function deleteSnap(id: string, keepMeal = false): Promise<void> {
   const snap = await db.snaps.get(id);
-  await db.snaps.delete(id);
+  await db.transaction('rw', db.snaps, db.snapImages, async () => {
+    await db.snaps.delete(id);
+    await db.snapImages.delete(id);
+  });
   if (keepMeal || !snap?.mealId) return;
   // Delete directly: deleteMeal would try to repair a snap that is now gone.
   await db.meals.delete(snap.mealId);
@@ -560,12 +685,14 @@ export type DayBundle = Awaited<ReturnType<typeof dayBundle>>;
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.profile, db.meals, db.snaps, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises],
+    [db.profile, db.meals, db.snaps, db.snapImages, db.favourites, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises],
     async () => {
       await Promise.all([
         db.profile.clear(),
         db.meals.clear(),
         db.snaps.clear(),
+        db.snapImages.clear(),
+        db.favourites.clear(),
         db.water.clear(),
         db.sleep.clear(),
         db.weight.clear(),
