@@ -105,6 +105,16 @@ export const IconSparkle = (p: P) => (
   </svg>
 );
 
+/**
+ * The favourite marker. `filled` paints it solid for a pinned item — a star
+ * that only changes colour is hard to read at a glance against a tinted row.
+ */
+export const IconStar = ({ filled, ...p }: P & { filled?: boolean }) => (
+  <svg {...base(p)} fill={filled ? 'currentColor' : 'none'}>
+    <path d="M12 3.5l2.6 5.3 5.9.85-4.25 4.15 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.65l5.9-.85z" />
+  </svg>
+);
+
 export const IconScale = (p: P) => (
   <svg {...base(p)}>
     <rect x="3" y="4" width="18" height="16" rx="3" />

@@ -24,7 +24,7 @@ import {
   foodGenerationPrompt,
   profileContext,
 } from './prompts';
-import { AIError, type ChatTurn, type ImagePart } from './types';
+import { AIError, UNREPAIRABLE, type ChatTurn, type ImagePart } from './types';
 
 /* ------------------------------ shared shapes ---------------------------- */
 
@@ -88,24 +88,32 @@ function toAnalysis(raw: RawAnalysis, fallbackTitle: string): SnapAnalysis {
   };
 }
 
+const REPAIR_HINT =
+  '\n\nReturn ONLY the JSON object. No prose, no markdown fences, no explanation.';
+
 /**
- * One retry with an explicit repair instruction. Models occasionally emit
- * prose alongside the object; asking once for "JSON only" recovers most of
- * those without doubling latency on the happy path.
+ * One retry, matched to what actually went wrong.
+ *
+ * Models occasionally emit prose alongside the object; asking once for "JSON
+ * only" recovers most of those without doubling latency on the happy path. But
+ * the retry used to fire for *every* failure that wasn't an auth problem — so a
+ * dropped connection or a rate limit made the user wait through two round trips
+ * to be told the same thing, and a reply truncated at the token ceiling was
+ * re-requested with the same ceiling, guaranteeing the same truncation. Now
+ * unrepairable failures propagate immediately, and a truncated reply is retried
+ * with the budget it needed in the first place.
  */
 async function withRepair<T>(
-  run: (extra?: string) => Promise<string>,
+  run: (extra: string, maxTokens?: number) => Promise<string>,
   map: (raw: string) => T,
+  maxTokens: number,
 ): Promise<T> {
   try {
-    return map(await run());
+    return map(await run('', maxTokens));
   } catch (err) {
-    if (err instanceof AIError && (err.kind === 'auth' || err.kind === 'no-key' || err.kind === 'refused')) {
-      throw err;
-    }
-    return map(
-      await run('\n\nReturn ONLY the JSON object. No prose, no markdown fences, no explanation.'),
-    );
+    if (err instanceof AIError && UNREPAIRABLE.has(err.kind)) throw err;
+    const truncated = err instanceof AIError && err.kind === 'truncated';
+    return map(await run(truncated ? '' : REPAIR_HINT, truncated ? maxTokens * 2 : maxTokens));
   }
 }
 
@@ -118,14 +126,17 @@ export async function analyseMealPhoto(
 ): Promise<SnapAnalysis> {
   const adapter = getAdapter(settings);
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.vision([image], SNAP_PROMPT + extra, {
         schema: MEAL_ANALYSIS_SCHEMA,
         schemaName: 'meal_analysis',
-        maxTokens: 2000,
+        maxTokens,
         signal,
       }),
     (raw) => toAnalysis(parseJSON<RawAnalysis>(raw), 'Meal'),
+    // A crowded thali runs to a dozen items, each with five nutrient fields
+    // and a score; 2000 was not enough for those and they failed outright.
+    3000,
   );
 }
 
@@ -165,14 +176,15 @@ export async function readNutritionLabel(
 ) {
   const adapter = getAdapter(settings);
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.vision([image], LABEL_PROMPT + extra, {
         schema: FOOD_GENERATION_SCHEMA,
         schemaName: 'food',
-        maxTokens: 1200,
+        maxTokens,
         signal,
       }),
     (raw) => toFoodDraft(parseJSON<RawFood>(raw), 'Scanned product'),
+    1200,
   );
 }
 
@@ -181,15 +193,16 @@ export async function readNutritionLabel(
 export async function generateFood(settings: Settings, query: string, signal?: AbortSignal) {
   const adapter = getAdapter(settings);
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.extract(foodGenerationPrompt(query) + extra, {
         schema: FOOD_GENERATION_SCHEMA,
         schemaName: 'food',
-        maxTokens: 900,
+        maxTokens,
         light: true,
         signal,
       }),
     (raw) => toFoodDraft(parseJSON<RawFood>(raw), query),
+    900,
   );
 }
 
@@ -202,14 +215,15 @@ export async function parseSpokenMeal(
 ): Promise<SnapAnalysis> {
   const adapter = getAdapter(settings);
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.extract(`${VOICE_PROMPT}\n\nWhat they said:\n"${transcript}"${extra}`, {
         schema: MEAL_ANALYSIS_SCHEMA,
         schemaName: 'meal_analysis',
-        maxTokens: 1500,
+        maxTokens,
         signal,
       }),
     (raw) => toAnalysis(parseJSON<RawAnalysis>(raw), 'Voice log'),
+    2000,
   );
 }
 
@@ -303,12 +317,12 @@ export async function generateInsight(
 ): Promise<{ title: string; body: string; chips: string[] }> {
   const adapter = getAdapter(settings);
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.extract(`${INSIGHT_PROMPT}\n\n--- Their day ---\n${context}${extra}`, {
         system: COACH_SYSTEM,
         schema: INSIGHT_SCHEMA,
         schemaName: 'insight',
-        maxTokens: 600,
+        maxTokens,
         light: true,
         signal,
       }),
@@ -320,6 +334,7 @@ export async function generateInsight(
         chips: (parsed.chips ?? []).map((c) => String(c).trim()).filter(Boolean).slice(0, 2),
       };
     },
+    600,
   );
 }
 
@@ -342,12 +357,12 @@ Give every meal slot a concrete suggestion with a portion, and its calories.
 ${context}`;
 
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.extract(prompt + extra, {
         system: COACH_SYSTEM,
         schema: PLAN_SCHEMA,
         schemaName: 'diet_plan',
-        maxTokens: 3000,
+        maxTokens,
         signal,
       }),
     (raw) => {
@@ -373,6 +388,7 @@ ${context}`;
         })),
       };
     },
+    3000,
   );
 }
 
@@ -390,12 +406,12 @@ Match it to their goal and current activity level — do not prescribe six days 
 ${context}`;
 
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.extract(prompt + extra, {
         system: COACH_SYSTEM,
         schema: WORKOUT_PLAN_SCHEMA,
         schemaName: 'workout_plan',
-        maxTokens: 2000,
+        maxTokens,
         signal,
       }),
     (raw) => {
@@ -415,6 +431,7 @@ ${context}`;
         })),
       };
     },
+    2000,
   );
 }
 
@@ -455,12 +472,12 @@ ${context}`;
   const allowed = new Set(catalog.map((c) => c.id));
 
   return withRepair(
-    (extra = '') =>
+    (extra, maxTokens) =>
       adapter.extract(prompt + extra, {
         system: COACH_SYSTEM,
         schema: SESSION_SCHEMA,
         schemaName: 'session',
-        maxTokens: 1200,
+        maxTokens,
         signal,
       }),
     (raw) => {
@@ -482,6 +499,7 @@ ${context}`;
           })),
       };
     },
+    1200,
   );
 }
 

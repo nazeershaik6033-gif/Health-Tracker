@@ -4,6 +4,7 @@ import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood, findFoodByBarcode, upsertFood } from '@/db/repo';
 import { lookupBarcodeTiered } from '@/lib/foodLookup';
 import { ConsensusBuffer, createDecoder, isValidEAN, type Decoder } from '@/lib/scanner/barcode';
+import { interpretScan } from '@/lib/scanner/payload';
 import { useCamera } from '@/lib/camera';
 import { HAPTIC, haptic } from '@/lib/motion';
 import { captureFrame } from '@/lib/image';
@@ -18,8 +19,15 @@ import { Button, Card, Field, PageHeader } from '@/components/ui';
 import { IconBarcode, IconSparkle, IconTorch, IconWarning } from '@/components/icons';
 import { MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
 
-/** Guide box as a fraction of the frame — the decoder only sees this region. */
-const ROI = { x: 0.1, y: 0.32, w: 0.8, h: 0.28 };
+/**
+ * Guide box as a fraction of the frame — the decoder only sees this region.
+ *
+ * Taller than it needs to be for a 1D barcode, because the same box now has to
+ * frame a QR code, which is square. A letterbox sized to a barcode clips the
+ * top and bottom off a QR held at a natural distance, and a clipped QR never
+ * decodes at all.
+ */
+const ROI = { x: 0.12, y: 0.24, w: 0.76, h: 0.44 };
 
 type Phase = 'scanning' | 'looking-up' | 'found' | 'not-found';
 
@@ -45,6 +53,9 @@ export default function Scan() {
   const [qty, setQty] = useState('1');
   const [servingLabel, setServingLabel] = useState('');
   const [generating, setGenerating] = useState(false);
+  // A QR that turned out not to be a product — a menu link, a Wi-Fi string.
+  // Shown rather than swallowed, since the user did deliberately scan it.
+  const [other, setOther] = useState<{ url?: string; text: string } | null>(null);
 
   /* ------------------------------ lookup ------------------------------- */
 
@@ -96,6 +107,52 @@ export default function Scan() {
     [camera, settings],
   );
 
+  /**
+   * Routes a decoded symbol by what it contains.
+   *
+   * Only the `gtin` case is a database lookup. A QR carrying its own nutrition
+   * panel becomes a food immediately — no network, no key needed — and anything
+   * else is surfaced as itself rather than silently dropped, since the user did
+   * deliberately point the camera at it.
+   */
+  const handleScan = useCallback(
+    async (raw: string) => {
+      if (busyRef.current) return;
+      const payload = interpretScan(raw);
+
+      if (payload.kind === 'gtin') {
+        await handleCode(payload.gtin);
+        return;
+      }
+
+      busyRef.current = true;
+      camera.stop();
+      setCode(raw);
+
+      if (payload.kind === 'nutrition') {
+        const created = await createFood({
+          name: payload.name,
+          brand: payload.brand,
+          per100g: payload.per100g,
+          servings: payload.servings,
+          source: 'custom',
+          tags: ['scanned'],
+        });
+        setFood(created);
+        setServingLabel(created.servings[0]?.label ?? '100 g');
+        setNote('Read from the code itself — check the numbers before saving');
+        setError('');
+        setPhase('found');
+      } else {
+        setOther(
+          payload.kind === 'url' ? { url: payload.url, text: payload.url } : { text: payload.text },
+        );
+      }
+      busyRef.current = false;
+    },
+    [camera, handleCode],
+  );
+
   /* ------------------------------ scan loop ---------------------------- */
 
   useEffect(() => {
@@ -107,7 +164,7 @@ export default function Scan() {
       decoderRef.current = decoder;
       setDecoderKind(decoder.kind);
       if (decoder.kind === 'none') {
-        setError('No barcode decoder is available in this browser. Enter the number by hand.');
+        setError('No code decoder is available in this browser. Enter the number by hand.');
       }
     })();
 
@@ -144,7 +201,7 @@ export default function Scan() {
         const confirmed = bufferRef.current.push(hit.value);
         if (confirmed) {
           haptic(HAPTIC.success);
-          await handleCode(confirmed);
+          await handleScan(confirmed);
         }
       } catch {
         /* a dropped frame is not worth surfacing */
@@ -156,7 +213,7 @@ export default function Scan() {
       stopped = true;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [phase, camera.status, camera.videoRef, handleCode]);
+  }, [phase, camera.status, camera.videoRef, handleScan]);
 
   /* ------------------------------- actions ----------------------------- */
 
@@ -207,7 +264,7 @@ export default function Scan() {
   return (
     <div className="flex min-h-dvh flex-col bg-black">
       <PageHeader
-        title="Scan a barcode"
+        title="Scan a code"
         back={() => navigate(-1)}
         action={
           phase === 'scanning' && camera.torchAvailable ? (
@@ -260,7 +317,8 @@ export default function Scan() {
 
           <div className="bg-black px-6 pt-4 pb-safe">
             <p className="text-center text-[12.5px] text-white/60">
-              Line the barcode up inside the box. Hold steady — it confirms across two reads.
+              Line the barcode or QR up inside the box. Hold steady — it confirms across two
+              reads.
             </p>
             {decoderKind === 'wasm' && (
               <p className="mt-1 text-center text-[11px] text-white/35">
@@ -412,6 +470,55 @@ export default function Scan() {
           autoFocus
           hint="The digits printed under the barcode."
         />
+        <div className="h-2" />
+      </BottomSheet>
+
+      {/* A QR that isn't a product. Shown as itself rather than sent to a
+          lookup that could only ever fail. */}
+      <BottomSheet
+        open={Boolean(other)}
+        onClose={() => {
+          setOther(null);
+          rescan();
+        }}
+        title={other?.url ? 'That code is a link' : 'That code is text'}
+        footer={
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setOther(null);
+                rescan();
+              }}
+            >
+              Scan again
+            </Button>
+            {other?.url ? (
+              <Button
+                size="lg"
+                full
+                onClick={() => window.open(other.url, '_blank', 'noopener,noreferrer')}
+              >
+                Open link
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                full
+                onClick={() => void navigator.clipboard?.writeText(other?.text ?? '')}
+              >
+                Copy text
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <p className="surface-sunken rounded-xl p-3 text-[12.5px] break-all">{other?.text}</p>
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">
+          {other?.url
+            ? 'It carries no product code, so there is nothing to look up. Opening it leaves the app.'
+            : 'It carries no product code and no nutrition data.'}
+        </p>
         <div className="h-2" />
       </BottomSheet>
 

@@ -51,13 +51,27 @@ export const MEAL_ANALYSIS_SCHEMA = {
   },
 } as const;
 
+/**
+ * `brand` is required despite being optional in practice.
+ *
+ * Strict schema mode — which both Anthropic and OpenRouter enforce, and which
+ * this file's header already commits to — rejects a schema that declares
+ * `additionalProperties: false` while leaving a declared property out of
+ * `required`. That made this schema invalid, so every call carrying it failed
+ * before the model saw it: reading a nutrition label and generating a food with
+ * AI were both broken outright. An empty string is the "no brand" value, and
+ * `toFoodDraft` already maps it back to undefined.
+ */
 export const FOOD_GENERATION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['name', 'per100g', 'servings'],
+  required: ['name', 'brand', 'per100g', 'servings'],
   properties: {
     name: { type: 'string' },
-    brand: { type: 'string' },
+    brand: {
+      type: 'string',
+      description: 'Brand name, or "" for a generic or home-cooked food',
+    },
     per100g: {
       type: 'object',
       additionalProperties: false,

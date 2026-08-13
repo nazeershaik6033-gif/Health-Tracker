@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
-import { deleteMeal, getFood, removeMealItem, replaceMealItem } from '@/db/repo';
+import {
+  addFavourite,
+  deleteMeal,
+  getFood,
+  removeFavourite,
+  removeMealItem,
+  replaceMealItem,
+} from '@/db/repo';
 import {
   buildMealItem,
   buildMealItemFromGrams,
@@ -13,8 +20,7 @@ import {
   slotTarget,
 } from '@/lib/nutrition';
 import { addDays, relativeDayLabel, today } from '@/lib/date';
-import { RingProgress } from '@/components/RingProgress';
-import { MacroBar } from '@/components/MacroBar';
+import { DayTotals } from '@/components/DayTotals';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import {
@@ -23,9 +29,17 @@ import {
   IconDiet,
   IconPlus,
   IconSparkle,
+  IconStar,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
+import {
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  type Food,
+  type Meal,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 
 export default function Diet() {
   const navigate = useNavigate();
@@ -35,6 +49,7 @@ export default function Diet() {
   const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
+    slot: MealSlot;
     index: number;
     item: MealItem;
     food?: Food;
@@ -44,9 +59,9 @@ export default function Diet() {
    * The logged item only remembers the one serving it used; the food row
    * carries the full list, so it is fetched to allow switching units.
    */
-  async function openEdit(mealId: string, index: number, item: MealItem) {
+  async function openEdit(mealId: string, slot: MealSlot, index: number, item: MealItem) {
     const food = item.foodId ? await getFood(item.foodId) : undefined;
-    setEditing({ mealId, index, item, food });
+    setEditing({ mealId, slot, index, item, food });
   }
 
   async function saveEdit(qty: number, servingLabel: string, grams?: number) {
@@ -74,6 +89,43 @@ export default function Diet() {
     showToast({ message: `${name} removed` });
   }
 
+  /**
+   * Pins everything in a slot as one favourite — the "this is my usual
+   * breakfast" case. A day you already logged is the most accurate description
+   * of a usual meal there is, so it is the cheapest place to capture one.
+   */
+  async function pinMeal(slot: MealSlot, meal: Meal) {
+    const names = meal.items.map((i) => i.name);
+    const label =
+      names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ');
+    const favourite = await addFavourite({
+      slot,
+      label,
+      items: meal.items.map((item) => ({ ...item, nutrients: { ...item.nutrients } })),
+    });
+
+    showToast({
+      message: `Pinned to ${MEAL_SLOT_LABEL[slot]} favourites`,
+      actionLabel: 'Undo',
+      onAction: () => removeFavourite(favourite.id),
+    });
+  }
+
+  /** Pins one already-logged item, at exactly the portion it was logged at. */
+  async function pinItem(slot: MealSlot, item: MealItem) {
+    const favourite = await addFavourite({
+      slot,
+      items: [{ ...item, nutrients: { ...item.nutrients } }],
+    });
+    setEditing(null);
+
+    showToast({
+      message: `${item.name} pinned to ${MEAL_SLOT_LABEL[slot]}`,
+      actionLabel: 'Undo',
+      onAction: () => removeFavourite(favourite.id),
+    });
+  }
+
   return (
     <div className="px-4 pt-safe">
       {/* Day switcher */}
@@ -99,61 +151,9 @@ export default function Diet() {
       </div>
 
       {/* Day totals */}
-      <Card className="mb-3 space-y-3.5">
-        <div className="flex items-center gap-3">
-          <RingProgress
-            value={day.totals.kcal / (day.targets.kcal || 1)}
-            size={56}
-            stroke={4.5}
-            color="var(--color-ring-calorie)"
-            label={`${Math.round(day.totals.kcal)} of ${day.targets.kcal} calories`}
-          >
-            <div className="text-center leading-none">
-              <p className="tabular text-[13px] font-extrabold">{Math.round(day.totals.kcal)}</p>
-              <p className="text-[8px] text-muted">kcal</p>
-            </div>
-          </RingProgress>
-          <div className="flex-1">
-            <p className="text-[15px] font-bold">
-              {Math.max(0, day.targets.kcal - day.totals.kcal).toLocaleString()} Cal left
-            </p>
-            <p className="tabular text-[12.5px] text-secondary">
-              {Math.round(day.totals.kcal).toLocaleString()} eaten
-              {day.workoutKcal > 0 && ` · ${day.workoutKcal} burned`}
-            </p>
-          </div>
-        </div>
-        <div className="hairline grid grid-cols-2 gap-x-5 gap-y-3 border-t pt-3.5">
-          <MacroBar
-            label="Protein"
-            value={day.totals.protein}
-            target={day.targets.protein}
-            color="var(--color-macro-protein)"
-            asPercent={false}
-          />
-          <MacroBar
-            label="Fats"
-            value={day.totals.fat}
-            target={day.targets.fat}
-            color="var(--color-macro-fat)"
-            asPercent={false}
-          />
-          <MacroBar
-            label="Carbs"
-            value={day.totals.carbs}
-            target={day.targets.carbs}
-            color="var(--color-macro-carb)"
-            asPercent={false}
-          />
-          <MacroBar
-            label="Fibre"
-            value={day.totals.fibre}
-            target={day.targets.fibre}
-            color="var(--color-macro-fibre)"
-            asPercent={false}
-          />
-        </div>
-      </Card>
+      <div className="mb-3">
+        <DayTotals totals={day.totals} targets={day.targets} burned={day.workoutKcal} />
+      </div>
 
       {/* Slots */}
       <div className="space-y-3">
@@ -169,6 +169,16 @@ export default function Diet() {
                 <span className="tabular text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
+                {meal && meal.items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => pinMeal(slot, meal)}
+                    aria-label={`Save this ${MEAL_SLOT_LABEL[slot].toLowerCase()} as a favourite`}
+                    className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+                  >
+                    <IconStar width={15} height={15} />
+                  </button>
+                )}
                 {/* Clearing a whole slot used to mean deleting every item. */}
                 {meal && meal.items.length > 0 && (
                   <button
@@ -219,7 +229,7 @@ export default function Diet() {
                             only way to fix a quantity was delete and re-add. */}
                         <button
                           type="button"
-                          onClick={() => openEdit(meal.id, i, item)}
+                          onClick={() => openEdit(meal.id, slot, i, item)}
                           aria-label={`Edit ${item.name}`}
                           className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                         >
@@ -317,6 +327,19 @@ export default function Diet() {
           }
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
+          // Pins the portion shown in the sheet, which may differ from what is
+          // logged — dial in the amount you usually eat, star it, then cancel.
+          onFavourite={(qty, servingLabel, grams) =>
+            pinItem(
+              editing.slot,
+              editing.food && grams !== undefined
+                ? buildMealItemFromGrams(editing.food, grams)
+                : editing.food
+                  ? buildMealItem(editing.food, servingLabel, qty)
+                  : rescaleMealItem(editing.item, qty, servingLabel),
+            )
+          }
+          favouriteSlotLabel={MEAL_SLOT_LABEL[editing.slot]}
           onDelete={async () => {
             await removeItem(editing.mealId, editing.index, editing.item.name);
             setEditing(null);

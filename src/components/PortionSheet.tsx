@@ -2,7 +2,7 @@ import { useState } from "react";
 import { scaleNutrients } from "@/lib/nutrition";
 import { BottomSheet } from "./BottomSheet";
 import { Button, Field } from "./ui";
-import { IconTrash } from "./icons";
+import { IconStar, IconTrash } from "./icons";
 import type { Food, Serving } from "@/types";
 
 /**
@@ -33,6 +33,18 @@ export interface PortionSheetProps {
   onDelete?: () => void;
   /** Opens the food's own editor. Absent when there is no food row behind it. */
   onEditFood?: () => void;
+  /**
+   * Pins the portion currently shown to a meal slot.
+   *
+   * The star lives here rather than on the food row because this is the only
+   * screen where the quantity exists: "2 rotis for breakfast" can be saved the
+   * moment it is dialled in, without logging it first and starring it after.
+   */
+  onFavourite?: (qty: number, servingLabel: string, grams?: number) => void;
+  /** e.g. "Breakfast" — names the slot the star would pin to. */
+  favouriteSlotLabel?: string;
+  /** Renders the star already filled, for a portion that is pinned. */
+  favourited?: boolean;
 }
 
 export function PortionSheet({
@@ -47,6 +59,9 @@ export function PortionSheet({
   onConfirm,
   onDelete,
   onEditFood,
+  onFavourite,
+  favouriteSlotLabel,
+  favourited = false,
 }: PortionSheetProps) {
   const fallback: Serving = servings[0] ?? { label: "100 g", grams: 100 };
   const [servingLabel, setServingLabel] = useState(
@@ -87,6 +102,33 @@ export function PortionSheet({
               aria-label={`Remove ${title}`}
             >
               <IconTrash width={16} height={16} />
+            </Button>
+          )}
+          {onFavourite && (
+            <Button
+              variant="secondary"
+              aria-label={
+                favourited
+                  ? `${title} is a favourite for ${favouriteSlotLabel}`
+                  : `Save this portion as a ${favouriteSlotLabel} favourite`
+              }
+              aria-pressed={favourited}
+              onClick={() =>
+                mode === "grams"
+                  ? onFavourite(
+                      1,
+                      `${Math.round(typedGrams * 10) / 10} g`,
+                      typedGrams,
+                    )
+                  : onFavourite(quantity, servingLabel)
+              }
+            >
+              <IconStar
+                width={16}
+                height={16}
+                filled={favourited}
+                className={favourited ? "text-accent-500" : undefined}
+              />
             </Button>
           )}
           <Button

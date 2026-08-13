@@ -79,6 +79,9 @@
   --tint-danger-bg: #fdeeee;
   --tint-danger-fg: #7f1d1d;
   --tint-danger-rule: #dc2626;
+  --tint-pink-bg: #fdecf3;
+  --tint-pink-fg: #7a1338;
+  --tint-pink-rule: #e8467c;
   /* Pills sitting *on* a tinted card, so they lift off the fill rather than
      the canvas — white on light themes, a sliver of light on dark ones. */
   --tint-pill: rgb(255 255 255 / 0.8);
@@ -114,6 +117,9 @@
   --tint-danger-bg: #f6e0da;
   --tint-danger-fg: #6f2118;
   --tint-danger-rule: #c53030;
+  --tint-pink-bg: #f4dfe2;
+  --tint-pink-fg: #6b2036;
+  --tint-pink-rule: #d43a70;
   --tint-pill: rgb(255 255 255 / 0.62);
   color-scheme: light;
 }
@@ -146,6 +152,9 @@
   --tint-danger-bg: #251313;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
+  --tint-pink-bg: #2a1220;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
   --tint-pill: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
@@ -180,6 +189,9 @@
   --tint-danger-bg: #190d0d;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
+  --tint-pink-bg: #1c0c15;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
   --tint-pill: rgb(255 255 255 / 0.06);
   color-scheme: dark;
 }
@@ -306,6 +318,14 @@
     --tint-fg: var(--tint-danger-fg);
     --tint-rule: var(--tint-danger-rule);
   }
+  /* Matches --color-ring-workout, so exercise reads as one colour wherever it
+     appears — the tracker ring, the log sheet entry, the Home tile. */
+  .accent-pink,
+  .tint-pink {
+    --tint-bg: var(--tint-pink-bg);
+    --tint-fg: var(--tint-pink-fg);
+    --tint-rule: var(--tint-pink-rule);
+  }
 
   .accent-card {
     background: var(--tint-bg);
@@ -340,6 +360,7 @@
   .tint-amber,
   .tint-purple,
   .tint-blue,
+  .tint-pink,
   .tint-danger {
     background: var(--tint-bg);
     color: var(--tint-fg);
