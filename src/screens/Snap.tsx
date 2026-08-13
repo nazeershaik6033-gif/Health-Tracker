@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { addMealItems, addSnap, deleteSnap, getSnap, getSnapImage, updateSnap } from '@/db/repo';
 import { analyseMealPhoto } from '@/ai/service';
-import { hasKey } from '@/ai/registry';
-import { describeError } from '@/ai/types';
+import { hasKey, modelFor } from '@/ai/registry';
+import { describeError, errorDetail } from '@/ai/types';
 import { useCamera } from '@/lib/camera';
 import { blobToImagePart, canvasToBlob, captureFrame, prepareImage } from '@/lib/image';
 import {
@@ -48,6 +48,9 @@ export default function Snap() {
   const [preview, setPreview] = useState<string>('');
   const [analysis, setAnalysis] = useState<SnapAnalysis | null>(null);
   const [error, setError] = useState('');
+  // Provider, model and HTTP status behind the friendly message — the only
+  // thing that makes a failed reading actionable or reportable.
+  const [detail, setDetail] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
   // Two-tap confirm rather than window.confirm, which a standalone PWA on iOS
@@ -86,6 +89,7 @@ export default function Snap() {
         const message = describeError(err);
         await updateSnap(row.id, { status: 'failed', error: message });
         setError(message);
+        setDetail(errorDetail(err, settings.provider, modelFor(settings)));
         setPhase('error');
       }
     },
@@ -251,6 +255,7 @@ export default function Snap() {
     setSnap(null);
     setAnalysis(null);
     setError('');
+    setDetail('');
     setPhase('capture');
     void camera.start();
   }
@@ -569,6 +574,16 @@ export default function Snap() {
           )}
           <IconWarning width={30} height={30} className="text-amber-500" />
           <p className="text-[14px] font-semibold">{error}</p>
+          {detail && (
+            <button
+              type="button"
+              onClick={() => void navigator.clipboard?.writeText(detail)}
+              title="Tap to copy"
+              className="tabular max-w-full rounded-lg surface-sunken px-2.5 py-1.5 text-[11px] break-words text-muted"
+            >
+              {detail}
+            </button>
+          )}
           <div className="flex gap-2">
             {!keyed ? (
               <Button onClick={() => navigate('/settings')}>Open Settings</Button>

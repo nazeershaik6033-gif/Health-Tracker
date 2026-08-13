@@ -54,6 +54,11 @@ export default function Home() {
   const units = profile?.units ?? 'metric';
   const eaten = day.totals.kcal;
   const target = day.targets.kcal || 1;
+  // What a workout actually earns you. Home showed calories eaten against the
+  // target and nothing else, so an hour in the gym changed no number on the
+  // screen the user looks at most.
+  const burned = day.workoutKcal;
+  const net = eaten - burned;
   const lostKg = profile ? profile.startWeightKg - (latestWeight?.kg ?? profile.startWeightKg) : 0;
 
   const openSlot = (slot: MealSlot) => {
@@ -115,11 +120,16 @@ export default function Home() {
         <Card className="space-y-3.5">
           <div className="flex items-center gap-3">
             <RingProgress
-              value={eaten / target}
+              // The ring tracks net intake, so it unwinds when you train.
+              value={net / target}
               size={52}
               stroke={4}
               color="var(--color-ring-calorie)"
-              label={`${formatKcal(eaten)} of ${formatKcal(target)} calories`}
+              label={
+                burned > 0
+                  ? `${formatKcal(net)} net of ${formatKcal(target)} calories, ${formatKcal(eaten)} eaten and ${formatKcal(burned)} burned`
+                  : `${formatKcal(eaten)} of ${formatKcal(target)} calories`
+              }
             >
               <IconFlame width={20} height={20} className="text-accent-500" />
             </RingProgress>
@@ -128,9 +138,14 @@ export default function Home() {
               <p className="text-[16px] font-bold tracking-tight">Track Food</p>
               <p className="tabular text-[13px] text-secondary">
                 {eaten > 0
-                  ? `${formatKcal(eaten)} of ${formatKcal(target)} Cal Eaten`
+                  ? `${formatKcal(net)} of ${formatKcal(target)} Cal Net`
                   : `Eat ${formatKcal(target)} Cal`}
               </p>
+              {burned > 0 && (
+                <p className="tabular text-[11.5px] text-muted">
+                  {formatKcal(eaten)} eaten − {formatKcal(burned)} burned
+                </p>
+              )}
             </Link>
 
             <button
