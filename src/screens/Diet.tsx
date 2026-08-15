@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
@@ -6,6 +6,7 @@ import {
   addFavourite,
   deleteMeal,
   getFood,
+  moveMealItems,
   removeFavourite,
   removeMealItem,
   replaceMealItem,
@@ -23,10 +24,13 @@ import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { DayTotals } from '@/components/DayTotals';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
+import { MealPickerSheet } from '@/components/MealPickerSheet';
+import { MacroStrip } from '@/components/MacroStrip';
 import {
   IconChevronLeft,
   IconChevronRight,
   IconDiet,
+  IconMove,
   IconPlus,
   IconSparkle,
   IconStar,
@@ -54,6 +58,29 @@ export default function Diet() {
     item: MealItem;
     food?: Food;
   } | null>(null);
+  const [moving, setMoving] = useState<{
+    mealId: string;
+    from: MealSlot;
+    indices: number[];
+    label: string;
+  } | null>(null);
+  // Which rows are showing their macros. Purely a view concern, so it lives in
+  // state rather than on the meal, and resets when the screen does.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  const allKeys = useMemo(
+    () => day.meals.flatMap((m) => m.items.map((_, i) => `${m.id}-${i}`)),
+    [day.meals],
+  );
+  const allExpanded = allKeys.length > 0 && allKeys.every((k) => expanded.has(k));
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
 
   /**
    * The logged item only remembers the one serving it used; the food row
@@ -82,6 +109,27 @@ export default function Diet() {
     setPendingSlot(slot);
     navigate('/search');
   };
+
+  /**
+   * Re-files logged food under a different heading, for the dinner entered as
+   * lunch. Undo moves exactly what was moved back, using the positions the
+   * items landed at — they are appended to the target, so they are no longer
+   * where they started.
+   */
+  async function runMove(to: MealSlot) {
+    if (!moving) return;
+    const { mealId, indices, label } = moving;
+    setMoving(null);
+
+    const result = await moveMealItems(mealId, indices, to);
+    if (!result) return;
+
+    showToast({
+      message: `${label} moved to ${MEAL_SLOT_LABEL[to]}`,
+      actionLabel: 'Undo',
+      onAction: () => void moveMealItems(result.mealId, result.indices, result.from),
+    });
+  }
 
   async function removeItem(mealId: string, index: number, name: string) {
     await removeMealItem(mealId, index);
@@ -155,6 +203,20 @@ export default function Diet() {
         <DayTotals totals={day.totals} targets={day.targets} burned={day.workoutKcal} />
       </div>
 
+      {/* One switch for the whole day, because the question "where did today's
+          carbs come from" is asked of every row at once, not one at a time. */}
+      {allKeys.length > 0 && (
+        <div className="mb-2 flex justify-end px-1">
+          <button
+            type="button"
+            onClick={() => setExpanded(allExpanded ? new Set() : new Set(allKeys))}
+            className="text-[12.5px] font-semibold text-brand-600"
+          >
+            {allExpanded ? 'Collapse all' : 'Expand all'}
+          </button>
+        </div>
+      )}
+
       {/* Slots */}
       <div className="space-y-3">
         {MEAL_SLOTS.map((slot) => {
@@ -164,19 +226,46 @@ export default function Diet() {
 
           return (
             <Card key={slot} className="py-3">
-              <div className="flex items-center gap-2 px-1">
-                <h2 className="flex-1 text-[15px] font-bold">{MEAL_SLOT_LABEL[slot]}</h2>
-                <span className="tabular text-[12.5px] text-secondary">
-                  {eaten}/{target} Cal
+              {/* Four controls plus a slot name plus a calorie readout is more
+                  than one line holds on a phone, and "Morning Snack" cut to
+                  "Morning Sn…" is the wrong thing to sacrifice. The controls are
+                  tightened and the readout drops its unit — the card above
+                  states the unit, and these are the only two numbers here. */}
+              <div className="flex items-center gap-1 px-1">
+                <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold">
+                  {MEAL_SLOT_LABEL[slot]}
+                </h2>
+                <span className="tabular shrink-0 text-[12.5px] text-secondary">
+                  {eaten}/{target}
                 </span>
+                {/* Moves the whole slot at once — a meal logged under the wrong
+                    heading is the usual reason to want this, and repairing it
+                    row by row would be five sheets deep. */}
+                {meal && meal.items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMoving({
+                        mealId: meal.id,
+                        from: slot,
+                        indices: meal.items.map((_, i) => i),
+                        label: MEAL_SLOT_LABEL[slot],
+                      })
+                    }
+                    aria-label={`Move ${MEAL_SLOT_LABEL[slot]} to another meal`}
+                    className="shrink-0 rounded-lg p-1 text-muted transition-transform active:scale-90"
+                  >
+                    <IconMove width={14} height={14} />
+                  </button>
+                )}
                 {meal && meal.items.length > 0 && (
                   <button
                     type="button"
                     onClick={() => pinMeal(slot, meal)}
                     aria-label={`Save this ${MEAL_SLOT_LABEL[slot].toLowerCase()} as a favourite`}
-                    className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+                    className="shrink-0 rounded-lg p-1 text-muted transition-transform active:scale-90"
                   >
-                    <IconStar width={15} height={15} />
+                    <IconStar width={14} height={14} />
                   </button>
                 )}
                 {/* Clearing a whole slot used to mean deleting every item. */}
@@ -198,7 +287,7 @@ export default function Diet() {
                       showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
                     }}
                     onBlur={() => setConfirmMeal(null)}
-                    className={`rounded-lg p-1.5 ${
+                    className={`shrink-0 rounded-lg p-1 ${
                       confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
                     }`}
                   >
@@ -209,7 +298,7 @@ export default function Diet() {
                   type="button"
                   onClick={() => openSlot(slot)}
                   aria-label={`Add to ${MEAL_SLOT_LABEL[slot]}`}
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-500 text-white"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-500 text-white"
                 >
                   <IconPlus width={15} height={15} strokeWidth={2.5} />
                 </button>
@@ -220,50 +309,76 @@ export default function Diet() {
                   {meal.items.map((item, i) => {
                     const key = `${meal.id}-${i}`;
                     return (
-                      <li
-                        key={key}
-                        className="flex items-center gap-2.5 border-t border-[var(--surface-border)] px-1 py-2.5"
-                      >
-                        {item.score !== undefined && <ScoreCircle score={item.score} size={28} />}
-                        {/* Tapping the row edits the portion. Before this the
-                            only way to fix a quantity was delete and re-add. */}
-                        <button
-                          type="button"
-                          onClick={() => openEdit(meal.id, slot, i, item)}
-                          aria-label={`Edit ${item.name}`}
-                          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[14px] font-medium">
-                              {item.name}
-                            </span>
-                            <span className="block truncate text-[12px] text-secondary">
+                      <li key={key} className="border-t border-[var(--surface-border)] px-1 py-2.5">
+                        <div className="flex items-center gap-2">
+                          {item.score !== undefined && <ScoreCircle score={item.score} size={28} />}
+                          {/* Tapping the row edits the portion. Before this the
+                              only way to fix a quantity was delete and re-add.
+                              Name, portion and calories are three targets for
+                              the one action, so the Expand chip can sit beside
+                              the name without nesting inside a button. */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(meal.id, slot, i, item)}
+                                aria-label={`Edit ${item.name}`}
+                                className="min-w-0 truncate text-left text-[14px] font-medium"
+                              >
+                                {item.name}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(key)}
+                                aria-expanded={expanded.has(key)}
+                                aria-label={`${expanded.has(key) ? 'Hide' : 'Show'} macros for ${item.name}`}
+                                className="hairline shrink-0 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-secondary"
+                              >
+                                {expanded.has(key) ? 'Hide' : 'Expand'}
+                              </button>
+                              <span className="flex-1" />
+                            </div>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              aria-hidden="true"
+                              onClick={() => openEdit(meal.id, slot, i, item)}
+                              className="block w-full truncate text-left text-[12px] text-secondary"
+                            >
                               {formatPortion(item.qty, item.servingLabel)}
-                            </span>
-                          </span>
-                          <span className="tabular shrink-0 text-[13px] font-semibold">
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            onClick={() => openEdit(meal.id, slot, i, item)}
+                            className="tabular shrink-0 text-[13px] font-semibold"
+                          >
                             {Math.round(item.nutrients.kcal)}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            confirmDelete === key
-                              ? removeItem(meal.id, i, item.name)
-                              : setConfirmDelete(key)
-                          }
-                          onBlur={() => setConfirmDelete(null)}
-                          aria-label={
-                            confirmDelete === key ? `Confirm remove ${item.name}` : `Remove ${item.name}`
-                          }
-                          className={`shrink-0 rounded-lg p-1.5 transition-colors ${
-                            confirmDelete === key
-                              ? 'tint-soft tint-danger'
-                              : 'text-muted hover:text-red-600'
-                          }`}
-                        >
-                          <IconTrash width={15} height={15} />
-                        </button>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              confirmDelete === key
+                                ? removeItem(meal.id, i, item.name)
+                                : setConfirmDelete(key)
+                            }
+                            onBlur={() => setConfirmDelete(null)}
+                            aria-label={
+                              confirmDelete === key ? `Confirm remove ${item.name}` : `Remove ${item.name}`
+                            }
+                            className={`shrink-0 rounded-lg p-1.5 transition-colors ${
+                              confirmDelete === key
+                                ? 'tint-soft tint-danger'
+                                : 'text-muted hover:text-red-600'
+                            }`}
+                          >
+                            <IconTrash width={15} height={15} />
+                          </button>
+                        </div>
+
+                        {expanded.has(key) && <MacroStrip nutrients={item.nutrients} />}
                       </li>
                     );
                   })}
@@ -340,10 +455,34 @@ export default function Diet() {
             )
           }
           favouriteSlotLabel={MEAL_SLOT_LABEL[editing.slot]}
+          // Moves the row as it is logged, not the portion currently dialled in
+          // the sheet — an unsaved quantity change is a separate decision, and
+          // silently committing it on the way out would be a surprise.
+          onMove={() => {
+            setMoving({
+              mealId: editing.mealId,
+              from: editing.slot,
+              indices: [editing.index],
+              label: editing.item.name,
+            });
+            setEditing(null);
+          }}
           onDelete={async () => {
             await removeItem(editing.mealId, editing.index, editing.item.name);
             setEditing(null);
           }}
+        />
+      )}
+
+      {moving && (
+        <MealPickerSheet
+          open
+          intent="move"
+          date={selectedDate}
+          currentSlot={moving.from}
+          title={`Move ${moving.label} to`}
+          onPick={runMove}
+          onClose={() => setMoving(null)}
         />
       )}
     </div>
