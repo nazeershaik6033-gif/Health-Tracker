@@ -2,7 +2,7 @@ import { useState } from "react";
 import { scaleNutrients } from "@/lib/nutrition";
 import { BottomSheet } from "./BottomSheet";
 import { Button, Field } from "./ui";
-import { IconStar, IconTrash } from "./icons";
+import { IconMove, IconStar, IconTrash } from "./icons";
 import type { Food, Serving } from "@/types";
 
 /**
@@ -45,6 +45,11 @@ export interface PortionSheetProps {
   favouriteSlotLabel?: string;
   /** Renders the star already filled, for a portion that is pinned. */
   favourited?: boolean;
+  /**
+   * Opens the slot picker to re-file this item under a different meal. Only
+   * meaningful for something already logged, so it is absent while adding.
+   */
+  onMove?: () => void;
 }
 
 export function PortionSheet({
@@ -62,6 +67,7 @@ export function PortionSheet({
   onFavourite,
   favouriteSlotLabel,
   favourited = false,
+  onMove,
 }: PortionSheetProps) {
   const fallback: Serving = servings[0] ?? { label: "100 g", grams: 100 };
   const [servingLabel, setServingLabel] = useState(
@@ -151,18 +157,32 @@ export function PortionSheet({
       }
     >
       <div className="space-y-4 pb-2">
-        <div className="flex items-center gap-2">
-          {brand && <p className="min-w-0 truncate text-[13px] text-secondary">{brand}</p>}
-          {onEditFood && (
-            <button
-              type="button"
-              onClick={onEditFood}
-              className="ml-auto text-[12.5px] font-semibold text-brand-600"
-            >
-              Edit food
-            </button>
-          )}
-        </div>
+        {(brand || onMove || onEditFood) && (
+          <div className="flex items-center gap-3">
+            {brand && <p className="min-w-0 truncate text-[13px] text-secondary">{brand}</p>}
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              {onMove && (
+                <button
+                  type="button"
+                  onClick={onMove}
+                  className="flex items-center gap-1 text-[12.5px] font-semibold text-brand-600"
+                >
+                  <IconMove width={14} height={14} />
+                  Move
+                </button>
+              )}
+              {onEditFood && (
+                <button
+                  type="button"
+                  onClick={onEditFood}
+                  className="text-[12.5px] font-semibold text-brand-600"
+                >
+                  Edit food
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="surface-sunken flex gap-1 rounded-xl p-1">
           {(["serving", "grams"] as const).map((m) => (

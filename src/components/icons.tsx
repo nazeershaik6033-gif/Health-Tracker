@@ -213,6 +213,16 @@ export const IconTrash = (p: P) => (
   </svg>
 );
 
+/** Two arrows swapping — "move this to another meal". */
+export const IconMove = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 8.5h13.5" />
+    <path d="m14.5 5.5 3 3-3 3" />
+    <path d="M20 15.5H6.5" />
+    <path d="m9.5 12.5-3 3 3 3" />
+  </svg>
+);
+
 export const IconSettings = (p: P) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="3.2" />

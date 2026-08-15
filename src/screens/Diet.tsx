@@ -6,6 +6,7 @@ import {
   addFavourite,
   deleteMeal,
   getFood,
+  moveMealItems,
   removeFavourite,
   removeMealItem,
   replaceMealItem,
@@ -23,10 +24,12 @@ import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { DayTotals } from '@/components/DayTotals';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
+import { MealPickerSheet } from '@/components/MealPickerSheet';
 import {
   IconChevronLeft,
   IconChevronRight,
   IconDiet,
+  IconMove,
   IconPlus,
   IconSparkle,
   IconStar,
@@ -53,6 +56,12 @@ export default function Diet() {
     index: number;
     item: MealItem;
     food?: Food;
+  } | null>(null);
+  const [moving, setMoving] = useState<{
+    mealId: string;
+    from: MealSlot;
+    indices: number[];
+    label: string;
   } | null>(null);
 
   /**
@@ -82,6 +91,27 @@ export default function Diet() {
     setPendingSlot(slot);
     navigate('/search');
   };
+
+  /**
+   * Re-files logged food under a different heading, for the dinner entered as
+   * lunch. Undo moves exactly what was moved back, using the positions the
+   * items landed at — they are appended to the target, so they are no longer
+   * where they started.
+   */
+  async function runMove(to: MealSlot) {
+    if (!moving) return;
+    const { mealId, indices, label } = moving;
+    setMoving(null);
+
+    const result = await moveMealItems(mealId, indices, to);
+    if (!result) return;
+
+    showToast({
+      message: `${label} moved to ${MEAL_SLOT_LABEL[to]}`,
+      actionLabel: 'Undo',
+      onAction: () => void moveMealItems(result.mealId, result.indices, result.from),
+    });
+  }
 
   async function removeItem(mealId: string, index: number, name: string) {
     await removeMealItem(mealId, index);
@@ -164,17 +194,39 @@ export default function Diet() {
 
           return (
             <Card key={slot} className="py-3">
-              <div className="flex items-center gap-2 px-1">
-                <h2 className="flex-1 text-[15px] font-bold">{MEAL_SLOT_LABEL[slot]}</h2>
-                <span className="tabular text-[12.5px] text-secondary">
+              <div className="flex items-center gap-1.5 px-1">
+                <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold">
+                  {MEAL_SLOT_LABEL[slot]}
+                </h2>
+                <span className="tabular shrink-0 text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
+                {/* Moves the whole slot at once — a meal logged under the wrong
+                    heading is the usual reason to want this, and repairing it
+                    row by row would be five sheets deep. */}
+                {meal && meal.items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMoving({
+                        mealId: meal.id,
+                        from: slot,
+                        indices: meal.items.map((_, i) => i),
+                        label: MEAL_SLOT_LABEL[slot],
+                      })
+                    }
+                    aria-label={`Move ${MEAL_SLOT_LABEL[slot]} to another meal`}
+                    className="shrink-0 rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+                  >
+                    <IconMove width={15} height={15} />
+                  </button>
+                )}
                 {meal && meal.items.length > 0 && (
                   <button
                     type="button"
                     onClick={() => pinMeal(slot, meal)}
                     aria-label={`Save this ${MEAL_SLOT_LABEL[slot].toLowerCase()} as a favourite`}
-                    className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+                    className="shrink-0 rounded-lg p-1.5 text-muted transition-transform active:scale-90"
                   >
                     <IconStar width={15} height={15} />
                   </button>
@@ -198,7 +250,7 @@ export default function Diet() {
                       showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
                     }}
                     onBlur={() => setConfirmMeal(null)}
-                    className={`rounded-lg p-1.5 ${
+                    className={`shrink-0 rounded-lg p-1.5 ${
                       confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
                     }`}
                   >
@@ -209,7 +261,7 @@ export default function Diet() {
                   type="button"
                   onClick={() => openSlot(slot)}
                   aria-label={`Add to ${MEAL_SLOT_LABEL[slot]}`}
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-500 text-white"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-500 text-white"
                 >
                   <IconPlus width={15} height={15} strokeWidth={2.5} />
                 </button>
@@ -340,10 +392,34 @@ export default function Diet() {
             )
           }
           favouriteSlotLabel={MEAL_SLOT_LABEL[editing.slot]}
+          // Moves the row as it is logged, not the portion currently dialled in
+          // the sheet — an unsaved quantity change is a separate decision, and
+          // silently committing it on the way out would be a surprise.
+          onMove={() => {
+            setMoving({
+              mealId: editing.mealId,
+              from: editing.slot,
+              indices: [editing.index],
+              label: editing.item.name,
+            });
+            setEditing(null);
+          }}
           onDelete={async () => {
             await removeItem(editing.mealId, editing.index, editing.item.name);
             setEditing(null);
           }}
+        />
+      )}
+
+      {moving && (
+        <MealPickerSheet
+          open
+          intent="move"
+          date={selectedDate}
+          currentSlot={moving.from}
+          title={`Move ${moving.label} to`}
+          onPick={runMove}
+          onClose={() => setMoving(null)}
         />
       )}
     </div>

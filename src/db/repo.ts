@@ -226,9 +226,15 @@ export async function updateMeal(id: string, patch: Partial<Meal>): Promise<void
   const meal = await db.meals.get(id);
   if (!meal) return;
   const next = { ...meal, ...patch };
-  // An emptied meal is deleted rather than left as a stray heading.
-  if (next.items.length === 0) await db.meals.delete(id);
-  else await db.meals.put(next);
+  // An emptied meal is deleted rather than left as a stray heading — and its
+  // snap has to be released with it, or the gallery keeps a "Logged" badge
+  // pointing at a meal that is gone.
+  if (next.items.length === 0) {
+    await db.meals.delete(id);
+    await detachSnap(meal);
+  } else {
+    await db.meals.put(next);
+  }
 }
 
 export async function removeMealItem(mealId: string, index: number): Promise<void> {
@@ -254,6 +260,78 @@ export async function replaceMealItem(
     i === index ? { ...item, score: existing.score, note: existing.note } : existing,
   );
   await updateMeal(mealId, { items });
+}
+
+/** Where moved items ended up, so the move can be undone exactly. */
+export interface MoveResult {
+  /** The meal the items now live in. */
+  mealId: string;
+  /** Their positions in that meal. */
+  indices: number[];
+  /** The slot they came from. */
+  from: MealSlot;
+}
+
+/**
+ * Moves logged items from one meal slot to another on the same day.
+ *
+ * Putting food under the wrong heading is the easiest logging mistake to make —
+ * a late dinner entered as an evening snack, a whole breakfast logged while the
+ * screen still said Lunch. Until now the only repair was to delete each row and
+ * re-enter it, portion and all.
+ *
+ * Items are appended to whatever is already in the target slot, because the app
+ * keeps one meal row per (date, slot) and the Diet screen groups on that.
+ */
+export async function moveMealItems(
+  mealId: string,
+  indices: number[],
+  targetSlot: MealSlot,
+): Promise<MoveResult | undefined> {
+  return db.transaction('rw', db.meals, db.snaps, async () => {
+    const meal = await db.meals.get(mealId);
+    if (!meal || meal.slot === targetSlot) return undefined;
+
+    const picked = [...new Set(indices)].sort((a, b) => a - b).filter((i) => meal.items[i]);
+    if (picked.length === 0) return undefined;
+
+    const taken = new Set(picked);
+    const moving = picked.map((i) => meal.items[i]);
+    const remaining = meal.items.filter((_, i) => !taken.has(i));
+    const target = await db.meals.where('[date+slot]').equals([meal.date, targetSlot]).first();
+
+    // Everything moved and there is nothing to merge with: the meal row itself
+    // changes slot. Its photo and AI score survive, because they still describe
+    // exactly these items — only the heading was wrong.
+    if (remaining.length === 0 && !target) {
+      await db.meals.put({ ...meal, slot: targetSlot });
+      return { mealId: meal.id, indices: meal.items.map((_, i) => i), from: meal.slot };
+    }
+
+    // Any other shape changes what a meal contains, so a score written for the
+    // old contents no longer describes either side and is dropped rather than
+    // left over-claiming.
+    const landedAt = target ? target.items.length : 0;
+    const next: Meal = target
+      ? { ...target, items: [...target.items, ...moving], healthScore: undefined, aiNote: undefined }
+      : {
+          id: uid('meal_'),
+          date: meal.date,
+          slot: targetSlot,
+          items: moving,
+          createdAt: Date.now(),
+        };
+    await db.meals.put(next);
+
+    if (remaining.length > 0) {
+      await db.meals.put({ ...meal, items: remaining, healthScore: undefined, aiNote: undefined });
+    } else {
+      await db.meals.delete(meal.id);
+      await detachSnap(meal);
+    }
+
+    return { mealId: next.id, indices: moving.map((_, i) => landedAt + i), from: meal.slot };
+  });
 }
 
 /* ------------------------------ favourites ------------------------------- */
@@ -454,9 +532,18 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
 export async function deleteMeal(id: string): Promise<void> {
   const meal = await db.meals.get(id);
   await db.meals.delete(id);
+  await detachSnap(meal);
+}
+
+/**
+ * Releases the snap a meal was logged from, once that meal no longer exists.
+ * Shared by every path that removes one, so a photo can never be left pointing
+ * at a missing meal.
+ */
+async function detachSnap(meal: Meal | undefined): Promise<void> {
   if (!meal?.snapId) return;
   const snap = await db.snaps.get(meal.snapId);
-  if (snap?.mealId === id) {
+  if (snap?.mealId === meal.id) {
     await db.snaps.put({ ...snap, mealId: undefined, status: 'ready', autoTracked: false });
   }
 }

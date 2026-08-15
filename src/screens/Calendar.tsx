@@ -6,6 +6,7 @@ import {
   dayBundle,
   deleteMeal,
   deleteWorkout,
+  moveMealItems,
   removeMealItem,
   replaceMealItem,
   summariseRange,
@@ -30,6 +31,7 @@ import {
 import { RingProgress } from '@/components/RingProgress';
 import { DayTotals } from '@/components/DayTotals';
 import { PortionSheet } from '@/components/PortionSheet';
+import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { Button, Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import {
   IconChevronLeft,
@@ -37,11 +39,19 @@ import {
   IconDroplet,
   IconDumbbell,
   IconMoon,
+  IconMove,
   IconScale,
   IconSteps,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, ZERO_NUTRIENTS, type Food, type MealItem } from '@/types';
+import {
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  ZERO_NUTRIENTS,
+  type Food,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 
 /**
  * Month view of everything logged, and a full summary of whichever day is
@@ -62,9 +72,16 @@ export default function CalendarScreen() {
   const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
+    slot: MealSlot;
     index: number;
     item: MealItem;
     food?: Food;
+  } | null>(null);
+  const [moving, setMoving] = useState<{
+    mealId: string;
+    from: MealSlot;
+    indices: number[];
+    label: string;
   } | null>(null);
 
   const kcalTarget = profile?.targets.kcal ?? 2000;
@@ -107,11 +124,11 @@ export default function CalendarScreen() {
 
   /* ------------------------------- editing ------------------------------- */
 
-  async function openEdit(mealId: string, index: number, item: MealItem) {
+  async function openEdit(mealId: string, slot: MealSlot, index: number, item: MealItem) {
     // The food row carries the serving list; a logged item only remembers the
     // one serving it used, so without this you could not switch units.
     const food = item.foodId ? await getFood(item.foodId) : undefined;
-    setEditing({ mealId, index, item, food });
+    setEditing({ mealId, slot, index, item, food });
   }
 
   async function saveEdit(qty: number, servingLabel: string, grams?: number) {
@@ -129,6 +146,22 @@ export default function CalendarScreen() {
     await replaceMealItem(mealId, index, next);
     setEditing(null);
     showToast({ message: `${next.name} updated` });
+  }
+
+  /** Same re-filing the Diet screen offers, for any day the calendar can reach. */
+  async function runMove(to: MealSlot) {
+    if (!moving) return;
+    const { mealId, indices, label } = moving;
+    setMoving(null);
+
+    const result = await moveMealItems(mealId, indices, to);
+    if (!result) return;
+
+    showToast({
+      message: `${label} moved to ${MEAL_SLOT_LABEL[to]}`,
+      actionLabel: 'Undo',
+      onAction: () => void moveMealItems(result.mealId, result.indices, result.from),
+    });
   }
 
   async function deleteEdited() {
@@ -282,29 +315,46 @@ export default function CalendarScreen() {
                 <Card key={slot} className="space-y-1">
                   <SectionTitle
                     action={
-                      <button
-                        type="button"
-                        aria-label={
-                          confirmMeal === meal.id
-                            ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
-                            : `Remove ${MEAL_SLOT_LABEL[slot]}`
-                        }
-                        onClick={async () => {
-                          if (confirmMeal !== meal.id) {
-                            setConfirmMeal(meal.id);
-                            return;
+                      <span className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMoving({
+                              mealId: meal.id,
+                              from: slot,
+                              indices: meal.items.map((_, i) => i),
+                              label: MEAL_SLOT_LABEL[slot],
+                            })
                           }
-                          await deleteMeal(meal.id);
-                          setConfirmMeal(null);
-                          showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
-                        }}
-                        onBlur={() => setConfirmMeal(null)}
-                        className={`rounded-lg p-1.5 text-[11px] font-semibold ${
-                          confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
-                        }`}
-                      >
-                        {confirmMeal === meal.id ? 'Tap to confirm' : <IconTrash width={14} height={14} />}
-                      </button>
+                          aria-label={`Move ${MEAL_SLOT_LABEL[slot]} to another meal`}
+                          className="rounded-lg p-1.5 text-muted"
+                        >
+                          <IconMove width={14} height={14} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={
+                            confirmMeal === meal.id
+                              ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
+                              : `Remove ${MEAL_SLOT_LABEL[slot]}`
+                          }
+                          onClick={async () => {
+                            if (confirmMeal !== meal.id) {
+                              setConfirmMeal(meal.id);
+                              return;
+                            }
+                            await deleteMeal(meal.id);
+                            setConfirmMeal(null);
+                            showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
+                          }}
+                          onBlur={() => setConfirmMeal(null)}
+                          className={`rounded-lg p-1.5 text-[11px] font-semibold ${
+                            confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
+                          }`}
+                        >
+                          {confirmMeal === meal.id ? 'Tap to confirm' : <IconTrash width={14} height={14} />}
+                        </button>
+                      </span>
                     }
                   >
                     {MEAL_SLOT_LABEL[slot]}
@@ -313,7 +363,7 @@ export default function CalendarScreen() {
                     <button
                       key={`${meal.id}-${i}`}
                       type="button"
-                      onClick={() => openEdit(meal.id, i, item)}
+                      onClick={() => openEdit(meal.id, slot, i, item)}
                       className="flex w-full items-center gap-3 border-b border-[var(--surface-border)] py-2.5 text-left last:border-0"
                     >
                       <div className="min-w-0 flex-1">
@@ -456,7 +506,28 @@ export default function CalendarScreen() {
           }
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
+          onMove={() => {
+            setMoving({
+              mealId: editing.mealId,
+              from: editing.slot,
+              indices: [editing.index],
+              label: editing.item.name,
+            });
+            setEditing(null);
+          }}
           onDelete={deleteEdited}
+        />
+      )}
+
+      {moving && (
+        <MealPickerSheet
+          open
+          intent="move"
+          date={selectedDate}
+          currentSlot={moving.from}
+          title={`Move ${moving.label} to`}
+          onPick={runMove}
+          onClose={() => setMoving(null)}
         />
       )}
     </div>
