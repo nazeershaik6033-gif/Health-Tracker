@@ -32,6 +32,7 @@ import { RingProgress } from '@/components/RingProgress';
 import { DayTotals } from '@/components/DayTotals';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
+import { MacroStrip } from '@/components/MacroStrip';
 import { Button, Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import {
   IconChevronLeft,
@@ -83,6 +84,10 @@ export default function CalendarScreen() {
     indices: number[];
     label: string;
   } | null>(null);
+  // Same per-row macro reveal as Diet, scoped to whichever date is selected —
+  // it resets when you pick a different day rather than following you across
+  // the calendar.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   const kcalTarget = profile?.targets.kcal ?? 2000;
 
@@ -186,6 +191,20 @@ export default function CalendarScreen() {
     [bundle?.workouts],
   );
   const targets = profile?.targets ?? ZERO_NUTRIENTS;
+
+  const allKeys = useMemo(
+    () => bundle?.meals.flatMap((m) => m.items.map((_, i) => `${m.id}-${i}`)) ?? [],
+    [bundle?.meals],
+  );
+  const allExpanded = allKeys.length > 0 && allKeys.every((k) => expanded.has(k));
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div className="pb-28">
@@ -307,6 +326,19 @@ export default function CalendarScreen() {
             {/* The same card the Diet screen shows for today, for any day you
                 pick — calories, and where each macro actually landed. */}
             <DayTotals totals={dayTotals} targets={targets} burned={dayBurned} compact />
+
+            {allKeys.length > 0 && (
+              <div className="flex justify-end px-1">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(allExpanded ? new Set() : new Set(allKeys))}
+                  className="text-[12.5px] font-semibold text-brand-600"
+                >
+                  {allExpanded ? 'Collapse all' : 'Expand all'}
+                </button>
+              </div>
+            )}
+
             {/* Meals */}
             {MEAL_SLOTS.map((slot) => {
               const meal = bundle.meals.find((m) => m.slot === slot);
@@ -359,25 +391,69 @@ export default function CalendarScreen() {
                   >
                     {MEAL_SLOT_LABEL[slot]}
                   </SectionTitle>
-                  {meal.items.map((item, i) => (
-                    <button
-                      key={`${meal.id}-${i}`}
-                      type="button"
-                      onClick={() => openEdit(meal.id, slot, i, item)}
-                      className="flex w-full items-center gap-3 border-b border-[var(--surface-border)] py-2.5 text-left last:border-0"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14px] font-semibold">{item.name}</p>
-                        <p className="text-[12px] text-muted">
-                          {formatPortion(item.qty, item.servingLabel)}
-                        </p>
+                  {meal.items.map((item, i) => {
+                    const key = `${meal.id}-${i}`;
+                    return (
+                      <div
+                        key={key}
+                        className="border-b border-[var(--surface-border)] py-2.5 last:border-0"
+                      >
+                        {/* Three targets for one edit action, same split as Diet:
+                            a button cannot nest inside another, so the Expand
+                            chip could not sit beside the name otherwise. */}
+                        <div className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(meal.id, slot, i, item)}
+                                className="min-w-0 truncate text-left text-[14px] font-semibold"
+                              >
+                                {item.name}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(key)}
+                                aria-expanded={expanded.has(key)}
+                                aria-label={`${expanded.has(key) ? 'Hide' : 'Show'} macros for ${item.name}`}
+                                className="hairline shrink-0 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-secondary"
+                              >
+                                {expanded.has(key) ? 'Hide' : 'Expand'}
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              aria-hidden="true"
+                              onClick={() => openEdit(meal.id, slot, i, item)}
+                              className="block w-full truncate text-left text-[12px] text-muted"
+                            >
+                              {formatPortion(item.qty, item.servingLabel)}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            onClick={() => openEdit(meal.id, slot, i, item)}
+                            className="tabular shrink-0 text-[13px] font-bold"
+                          >
+                            {Math.round(item.nutrients.kcal)}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(meal.id, slot, i, item)}
+                            aria-label={`Edit ${item.name}`}
+                            className="shrink-0 p-0.5 text-muted"
+                          >
+                            <IconChevronRight width={14} height={14} />
+                          </button>
+                        </div>
+
+                        {expanded.has(key) && <MacroStrip nutrients={item.nutrients} />}
                       </div>
-                      <span className="tabular text-[13px] font-bold">
-                        {Math.round(item.nutrients.kcal)}
-                      </span>
-                      <IconChevronRight width={14} height={14} className="shrink-0 text-muted" />
-                    </button>
-                  ))}
+                    );
+                  })}
                 </Card>
               );
             })}
