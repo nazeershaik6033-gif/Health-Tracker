@@ -261,8 +261,12 @@ export default function Scan() {
 
   /* -------------------------------- render ----------------------------- */
 
+  // svh with a hard overflow clip, matching Snap: `min-h-dvh` let this column
+  // grow past the screen, which pushed the guide box and the manual-entry
+  // button below the fold on shorter phones — you had to scroll a camera
+  // viewfinder to reach its own controls. Each phase below owns its scrolling.
   return (
-    <div className="flex min-h-dvh flex-col bg-black">
+    <div className="flex h-svh flex-col overflow-hidden bg-black">
       <PageHeader
         title="Scan a code"
         back={() => navigate(-1)}
@@ -282,8 +286,10 @@ export default function Scan() {
       />
 
       {phase === 'scanning' && (
-        <div className="relative flex flex-1 flex-col">
-          <div className="relative flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* min-h-0 so the preview yields space to the bar below rather than
+              shoving it off the bottom. */}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             <video
               ref={camera.videoRef}
               playsInline
@@ -315,7 +321,7 @@ export default function Scan() {
             )}
           </div>
 
-          <div className="bg-black px-6 pt-4 pb-safe">
+          <div className="bg-black px-6 pt-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
             <p className="text-center text-[12.5px] text-white/60">
               Line the barcode or QR up inside the box. Hold steady — it confirms across two
               reads.
@@ -338,7 +344,7 @@ export default function Scan() {
       )}
 
       {phase === 'looking-up' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[var(--surface-canvas)] px-8 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto bg-[var(--surface-canvas)] px-8 text-center">
           <IconBarcode width={30} height={30} className="animate-pulse text-brand-600" />
           <p className="tabular text-[15px] font-bold">{code}</p>
           <p className="text-[13px] text-secondary">Looking it up…</p>
@@ -346,7 +352,7 @@ export default function Scan() {
       )}
 
       {phase === 'found' && food && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
           <Card className="space-y-3">
             <div>
               <h2 className="text-[17px] leading-snug font-bold tracking-tight">{food.name}</h2>
@@ -414,7 +420,7 @@ export default function Scan() {
       )}
 
       {phase === 'not-found' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-canvas)] px-8 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
           <IconWarning width={30} height={30} className="text-amber-500" />
           <div>
             <p className="text-[15px] font-bold">Not in the database</p>
