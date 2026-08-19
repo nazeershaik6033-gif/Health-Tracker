@@ -1,13 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/stores/useApp';
-import { addChat, chatHistory, clearChat, dayBundle, updateChat } from '@/db/repo';
-import { coachReply, dayContext } from '@/ai/service';
+import {
+  addChat,
+  addMealItems,
+  allFoods,
+  chatHistory,
+  clearChat,
+  dayBundle,
+  updateChat,
+} from '@/db/repo';
+import { coachReply, dayContext, parseSpokenMeal } from '@/ai/service';
 import { hasKey } from '@/ai/registry';
 import { describeError, type ChatTurn } from '@/ai/types';
-import { Button, PageHeader } from '@/components/ui';
-import { IconClose, IconSend, IconSparkle, IconTrash } from '@/components/icons';
-import type { ChatMessage } from '@/types';
+import {
+  describeSlots,
+  parseMealText,
+  resolveGroups,
+  type ResolvedGroup,
+} from '@/lib/mealText';
+import { formatPortion } from '@/lib/nutrition';
+import { Button, Card, PageHeader } from '@/components/ui';
+import { IconClose, IconPlus, IconSend, IconSparkle, IconTrash, IconWarning } from '@/components/icons';
+import { MEAL_SLOT_LABEL, type ChatMessage } from '@/types';
 
 const SUGGESTIONS = [
   'Summarise my day and tell me what to fix',
@@ -16,16 +32,33 @@ const SUGGESTIONS = [
   'Why has my weight stalled?',
 ];
 
+/** Shown alongside the questions, because the syntax has to be discovered. */
+const LOG_EXAMPLES = [
+  'breakfast: idly 2, coconut chutney 2 tbsp',
+  'lunch: rice 1 katori, dal fry 1 katori',
+];
+
 /** Keeps the request bounded — older turns fall out rather than growing forever. */
 const HISTORY_TURNS = 12;
 
 export default function Coach() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { profile, settings, selectedDate } = useApp();
+  const { profile, settings, selectedDate, showToast } = useApp();
   const keyed = hasKey(settings);
+  // The whole food table, for the typed-log resolver. One read, cached by
+  // Dexie's live query, and it is the reason a typed meal costs no API call.
+  const foods = useLiveQuery(() => allFoods(), []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  /**
+   * A typed meal waiting for confirmation. Deliberately not a chat message:
+   * nothing in this app writes food without showing the numbers first, and a
+   * chat box that silently logged on a false trigger would be the worst
+   * possible place to break that rule.
+   */
+  const [pendingLog, setPendingLog] = useState<ResolvedGroup[] | null>(null);
+  const [logBusy, setLogBusy] = useState(false);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -52,7 +85,25 @@ export default function Coach() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || busy || !keyed) return;
+    if (!trimmed || busy) return;
+
+    // Decided in code, not by the model: a slot word followed by a colon is a
+    // log, anything else is a question. That keeps "I had 2 idlis, is that
+    // enough protein?" a question, and it costs no round trip to work out.
+    const parsed = parseMealText(trimmed);
+    if (parsed && foods) {
+      setInput('');
+      setError('');
+      const userMsg = await addChat({ role: 'user', content: trimmed, createdAt: Date.now() });
+      setMessages((prev) => [...prev, userMsg]);
+      setPendingLog(resolveGroups(foods, parsed));
+      return;
+    }
+
+    if (!keyed) {
+      setError('Ria needs an AI key to answer questions. Typed meal logs work without one.');
+      return;
+    }
 
     setInput('');
     setError('');
@@ -121,6 +172,65 @@ export default function Coach() {
     }
   }
 
+  /** Writes the confirmed meal, one call per slot, then says so in the thread. */
+  async function commitLog() {
+    if (!pendingLog || logBusy) return;
+    setLogBusy(true);
+    try {
+      let count = 0;
+      for (const group of pendingLog) {
+        const items = group.items.map((r) => r.item).filter((i): i is NonNullable<typeof i> => Boolean(i));
+        if (!items.length) continue;
+        await addMealItems(selectedDate, group.slot, items);
+        count += items.length;
+      }
+      if (!count) return;
+
+      const where = describeSlots(pendingLog.filter((g) => g.items.some((r) => r.item)));
+      setPendingLog(null);
+      const note = await addChat({
+        role: 'assistant',
+        content: `Logged ${count} item${count === 1 ? '' : 's'} to ${where}.`,
+        createdAt: Date.now(),
+      });
+      setMessages((prev) => [...prev, note]);
+      showToast({ message: `${count} item${count === 1 ? '' : 's'} added to ${where}` });
+    } finally {
+      setLogBusy(false);
+    }
+  }
+
+  /**
+   * Sends only the items the food table could not place to the model, and folds
+   * what comes back into the same preview. The rows that already resolved are
+   * left exactly as they are — there is no reason to pay for, or risk
+   * re-estimating, food whose numbers are already known.
+   */
+  async function estimateMissing() {
+    if (!pendingLog || logBusy) return;
+    const missing = pendingLog.flatMap((g) => g.items.filter((r) => !r.item).map((r) => r.parsed.raw));
+    if (!missing.length) return;
+
+    setLogBusy(true);
+    setError('');
+    try {
+      const analysis = await parseSpokenMeal(settings, missing.join(', '));
+      const queue = [...analysis.items];
+      setPendingLog((prev) =>
+        prev?.map((group) => ({
+          ...group,
+          items: group.items.map((row) =>
+            row.item || !queue.length ? row : { ...row, item: queue.shift() },
+          ),
+        })) ?? null,
+      );
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setLogBusy(false);
+    }
+  }
+
   // A chip tapped on the Home insight card arrives as ?q=
   useEffect(() => {
     const q = params.get('q');
@@ -130,26 +240,6 @@ export default function Coach() {
     void send(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params, loaded, keyed]);
-
-  if (!keyed) {
-    return (
-      <div className="min-h-dvh">
-        <PageHeader title="Ria" back={() => navigate(-1)} />
-        <div className="flex flex-col items-center gap-4 px-8 pt-24 text-center">
-          <div className="flex h-16 w-16 items-center justify-center accent-card">
-            <IconSparkle width={30} height={30} />
-          </div>
-          <p className="text-[15px] font-semibold">Meet Ria, your AI coach</p>
-          <p className="max-w-xs text-[13px] leading-relaxed text-secondary">
-            Ria reads what you&apos;ve logged and answers with your actual numbers — what to eat
-            tonight, whether your protein is on track, why the scale has stalled. She needs an AI
-            key to run.
-          </p>
-          <Button onClick={() => navigate('/settings')}>Add an API key</Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-dvh flex-col">
@@ -187,6 +277,28 @@ export default function Coach() {
                 She can see today&apos;s log, your targets and your recent trends.
               </p>
             </div>
+            <p className="mb-1.5 px-1 text-[11.5px] font-semibold tracking-wide text-muted uppercase">
+              Log a meal
+            </p>
+            <div className="mb-4 space-y-1.5">
+              {LOG_EXAMPLES.map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setInput(example)}
+                  className="hairline w-full rounded-xl border px-3.5 py-3 text-left font-mono text-[12.5px]"
+                >
+                  {example}
+                </button>
+              ))}
+              <p className="px-1 pt-0.5 text-[11.5px] text-muted">
+                Name the meal, then the food — no AI key needed.
+              </p>
+            </div>
+
+            <p className="mb-1.5 px-1 text-[11.5px] font-semibold tracking-wide text-muted uppercase">
+              Ask Ria
+            </p>
             <div className="space-y-1.5">
               {SUGGESTIONS.map((s) => (
                 <button
@@ -199,12 +311,35 @@ export default function Coach() {
                 </button>
               ))}
             </div>
+            {!keyed && (
+              <p className="mt-3 px-1 text-center text-[12px] text-muted">
+                Questions need an AI key.{' '}
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings')}
+                  className="font-semibold text-brand-600"
+                >
+                  Add one
+                </button>
+              </p>
+            )}
           </div>
         )}
 
         {messages.map((msg) => (
           <Bubble key={msg.id} message={msg} />
         ))}
+
+        {pendingLog && (
+          <LogPreview
+            groups={pendingLog}
+            busy={logBusy}
+            canEstimate={keyed}
+            onConfirm={commitLog}
+            onCancel={() => setPendingLog(null)}
+            onEstimate={estimateMissing}
+          />
+        )}
 
         {error && (
           <p className="px-1 text-center text-[12px] text-red-600" role="alert">
@@ -231,7 +366,7 @@ export default function Coach() {
               }
             }}
             rows={1}
-            placeholder="Ask about your day…"
+            placeholder="Ask a question, or log “breakfast: idly 2”"
             className="hairline max-h-30 flex-1 resize-none rounded-2xl border bg-transparent px-3.5 py-2.5 text-[15px] outline-none focus:border-brand-500"
           />
           {busy ? (
@@ -260,6 +395,100 @@ export default function Coach() {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The confirmation step for a typed meal.
+ *
+ * Shows every row with the numbers it would log, and marks the ones the food
+ * table could not place rather than dropping them silently — a missing item is
+ * the user's decision to make, not something to hide behind a total.
+ */
+function LogPreview({
+  groups,
+  busy,
+  canEstimate,
+  onConfirm,
+  onCancel,
+  onEstimate,
+}: {
+  groups: ResolvedGroup[];
+  busy: boolean;
+  canEstimate: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onEstimate: () => void;
+}) {
+  const rows = groups.flatMap((g) => g.items);
+  const resolved = rows.filter((r) => r.item);
+  const missing = rows.length - resolved.length;
+  const kcal = Math.round(resolved.reduce((sum, r) => sum + (r.item?.nutrients.kcal ?? 0), 0));
+
+  return (
+    <Card className="space-y-3">
+      {groups.map((group, gi) => (
+        <div key={`${group.slot}-${gi}`} className="space-y-1">
+          <p className="flex items-center gap-1.5 text-[12px] font-semibold text-secondary">
+            {MEAL_SLOT_LABEL[group.slot]}
+            {group.inferredSlot && (
+              <span className="text-[11px] font-normal text-muted">· guessed from the time</span>
+            )}
+          </p>
+          <ul>
+            {group.items.map((row, i) => (
+              <li
+                key={`${row.parsed.raw}-${i}`}
+                className="flex items-center gap-2 border-b border-[var(--surface-border)] py-1.5 last:border-0"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] font-medium">
+                    {row.item?.name ?? row.parsed.name}
+                  </span>
+                  <span className="block truncate text-[11.5px] text-secondary">
+                    {row.item
+                      ? formatPortion(row.item.qty, row.item.servingLabel)
+                      : `“${row.parsed.raw}” — not in your foods`}
+                  </span>
+                </span>
+                {row.item ? (
+                  <span className="tabular shrink-0 text-[13px] font-semibold">
+                    {Math.round(row.item.nutrients.kcal)}
+                  </span>
+                ) : (
+                  <IconWarning width={15} height={15} className="shrink-0 text-amber-500" />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+
+      {missing > 0 && (
+        <p className="text-[12px] text-secondary">
+          {missing} item{missing === 1 ? '' : 's'} not found.{' '}
+          {canEstimate
+            ? 'Estimate them with AI, or log the rest and add them by hand.'
+            : 'Add an AI key to estimate them, or log the rest and add them by hand.'}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        {missing > 0 && canEstimate && (
+          <Button variant="secondary" onClick={onEstimate} disabled={busy}>
+            <IconSparkle width={15} height={15} />
+            {busy ? '…' : 'Estimate'}
+          </Button>
+        )}
+        <Button full onClick={onConfirm} disabled={busy || resolved.length === 0}>
+          <IconPlus width={15} height={15} />
+          Log {kcal} Cal
+        </Button>
+      </div>
+    </Card>
   );
 }
 

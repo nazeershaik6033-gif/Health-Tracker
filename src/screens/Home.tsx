@@ -54,10 +54,12 @@ export default function Home() {
   const units = profile?.units ?? 'metric';
   const eaten = day.totals.kcal;
   const target = day.targets.kcal || 1;
-  // What a workout actually earns you. Home showed calories eaten against the
+  // What moving actually earns you. Home showed calories eaten against the
   // target and nothing else, so an hour in the gym changed no number on the
-  // screen the user looks at most.
-  const burned = day.workoutKcal;
+  // screen the user looks at most — and walking changed nothing anywhere.
+  // Workouts plus steps; the workout tile below keeps its own figure, because
+  // that one is measured against the workout goal.
+  const burned = day.burnedKcal;
   const net = eaten - burned;
   const lostKg = profile ? profile.startWeightKg - (latestWeight?.kg ?? profile.startWeightKg) : 0;
 

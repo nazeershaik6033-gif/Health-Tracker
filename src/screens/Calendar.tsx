@@ -26,6 +26,7 @@ import {
   formatPortion,
   per100gFromItem,
   rescaleMealItem,
+  stepKcal,
   totalNutrients,
 } from '@/lib/nutrition';
 import { RingProgress } from '@/components/RingProgress';
@@ -187,8 +188,10 @@ export default function CalendarScreen() {
     [bundle?.meals],
   );
   const dayBurned = useMemo(
-    () => (bundle?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0),
-    [bundle?.workouts],
+    () =>
+      (bundle?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0) +
+      stepKcal(bundle?.steps.count ?? 0, bundle?.weight?.kg ?? profile?.startWeightKg ?? 70),
+    [bundle?.workouts, bundle?.steps, bundle?.weight, profile?.startWeightKg],
   );
   const targets = profile?.targets ?? ZERO_NUTRIENTS;
 
