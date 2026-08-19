@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from './useApp';
 import { addDays, rangeDays, today } from '@/lib/date';
-import { estimateWorkoutKcal, totalNutrients } from '@/lib/nutrition';
+import { estimateWorkoutKcal, stepKcal, totalNutrients } from '@/lib/nutrition';
 import {
   MEAL_SLOTS,
   ZERO_NUTRIENTS,
@@ -27,15 +27,19 @@ export function useDay(dateOverride?: string) {
   const date = dateOverride ?? selectedDate;
 
   const data = useLiveQuery(async () => {
-    const [meals, water, sleep, weight, steps, workouts] = await Promise.all([
+    const [meals, water, sleep, weight, steps, workouts, lastWeight] = await Promise.all([
       db.meals.where('date').equals(date).toArray(),
       db.water.get(date),
       db.sleep.get(date),
       db.weight.get(date),
       db.steps.get(date),
       db.workouts.where('date').equals(date).toArray(),
+      // The most recent weigh-in on or before this day — what the step and
+      // workout burn estimates are scaled by. A day with no weigh-in of its own
+      // should still use a real figure rather than the starting weight.
+      db.weight.where('date').belowOrEqual(date).last(),
     ]);
-    return { meals, water, sleep, weight, steps, workouts };
+    return { meals, water, sleep, weight, steps, workouts, lastWeight };
   }, [date]);
 
   const meals = data?.meals ?? EMPTY_MEALS;
@@ -63,6 +67,13 @@ export function useDay(dateOverride?: string) {
     [workouts],
   );
 
+  const bodyWeightKg =
+    data?.lastWeight?.kg ?? profile?.startWeightKg ?? 70;
+  const stepCount = data?.steps?.count ?? 0;
+  // Walking was tracked but never counted: only workouts reached the day's
+  // burn, so ten thousand steps moved the ring by nothing at all.
+  const stepsKcal = stepKcal(stepCount, bodyWeightKg);
+
   return {
     date,
     loading: data === undefined,
@@ -71,6 +82,10 @@ export function useDay(dateOverride?: string) {
     totals,
     workouts,
     workoutKcal,
+    stepsKcal,
+    /** Everything burned today: deliberate exercise plus walking. */
+    burnedKcal: workoutKcal + stepsKcal,
+    bodyWeightKg,
     water: data?.water,
     sleep: data?.sleep,
     weight: data?.weight,
@@ -79,7 +94,7 @@ export function useDay(dateOverride?: string) {
     waterGoal: data?.water?.goalGlasses ?? profile?.waterGoalGlasses ?? 9,
     glasses: data?.water?.glasses ?? 0,
     stepGoal: data?.steps?.goal ?? profile?.stepGoal ?? 8000,
-    stepCount: data?.steps?.count ?? 0,
+    stepCount,
   };
 }
 

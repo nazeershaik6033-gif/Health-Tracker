@@ -254,7 +254,7 @@ export default function Diet() {
 
       {/* Day totals */}
       <div className="mb-3">
-        <DayTotals totals={day.totals} targets={day.targets} burned={day.workoutKcal} />
+        <DayTotals totals={day.totals} targets={day.targets} burned={day.burnedKcal} />
       </div>
 
       {/* One switch for the whole day, because the question "where did today's
