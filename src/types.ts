@@ -437,4 +437,12 @@ export interface Settings {
   lastBackupAt?: number;
   /** Days before the overdue nudge appears. 0 disables it. */
   backupRemindDays?: number;
+  /**
+   * Whether walking counts toward the day's calories burned.
+   *
+   * On by default, but switchable because the app cannot tell a logged walking
+   * workout apart from the steps that same walk produced. Anyone who logs both
+   * is counting one walk twice, and only they know which they meant.
+   */
+  countStepKcal?: boolean;
 }

@@ -5,6 +5,7 @@ import { useApp } from '@/stores/useApp';
 import {
   addChat,
   addMealItems,
+  allFavourites,
   allFoods,
   chatHistory,
   clearChat,
@@ -49,6 +50,9 @@ export default function Coach() {
   // The whole food table, for the typed-log resolver. One read, cached by
   // Dexie's live query, and it is the reason a typed meal costs no API call.
   const foods = useLiveQuery(() => allFoods(), []);
+  // Pinned portions take priority over the catalog: "breakfast: usual" should
+  // reach the meal the user pinned, at the amounts they pinned it at.
+  const favourites = useLiveQuery(() => allFavourites(), []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   /**
@@ -96,7 +100,7 @@ export default function Coach() {
       setError('');
       const userMsg = await addChat({ role: 'user', content: trimmed, createdAt: Date.now() });
       setMessages((prev) => [...prev, userMsg]);
-      setPendingLog(resolveGroups(foods, parsed));
+      setPendingLog(resolveGroups(foods, parsed, favourites ?? []));
       return;
     }
 

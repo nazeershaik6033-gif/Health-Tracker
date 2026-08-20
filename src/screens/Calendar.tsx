@@ -65,7 +65,8 @@ import {
  */
 export default function CalendarScreen() {
   const navigate = useNavigate();
-  const { profile, selectedDate, setSelectedDate, showToast } = useApp();
+  const { profile, settings, selectedDate, setSelectedDate, showToast } = useApp();
+  const countStepKcal = settings.countStepKcal !== false;
 
   const [cursor, setCursor] = useState(() => {
     const d = fromISODate(selectedDate);
@@ -190,8 +191,10 @@ export default function CalendarScreen() {
   const dayBurned = useMemo(
     () =>
       (bundle?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0) +
-      stepKcal(bundle?.steps.count ?? 0, bundle?.weight?.kg ?? profile?.startWeightKg ?? 70),
-    [bundle?.workouts, bundle?.steps, bundle?.weight, profile?.startWeightKg],
+      (countStepKcal
+        ? stepKcal(bundle?.steps.count ?? 0, bundle?.weight?.kg ?? profile?.startWeightKg ?? 70)
+        : 0),
+    [bundle?.workouts, bundle?.steps, bundle?.weight, profile?.startWeightKg, countStepKcal],
   );
   const targets = profile?.targets ?? ZERO_NUTRIENTS;
 

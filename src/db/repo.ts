@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   onboardingDone: false,
   backupRemindDays: 14,
+  countStepKcal: true,
 };
 
 /**

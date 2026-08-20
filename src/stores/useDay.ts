@@ -24,6 +24,7 @@ const EMPTY_WORKOUTS: WorkoutEntry[] = [];
 export function useDay(dateOverride?: string) {
   const selectedDate = useApp((s) => s.selectedDate);
   const profile = useApp((s) => s.profile);
+  const countStepKcal = useApp((s) => s.settings.countStepKcal !== false);
   const date = dateOverride ?? selectedDate;
 
   const data = useLiveQuery(async () => {
@@ -71,8 +72,10 @@ export function useDay(dateOverride?: string) {
     data?.lastWeight?.kg ?? profile?.startWeightKg ?? 70;
   const stepCount = data?.steps?.count ?? 0;
   // Walking was tracked but never counted: only workouts reached the day's
-  // burn, so ten thousand steps moved the ring by nothing at all.
-  const stepsKcal = stepKcal(stepCount, bodyWeightKg);
+  // burn, so ten thousand steps moved the ring by nothing at all. Switchable,
+  // because a logged walking workout and the steps it produced are the same
+  // walk and the app has no way to tell.
+  const stepsKcal = countStepKcal ? stepKcal(stepCount, bodyWeightKg) : 0;
 
   return {
     date,

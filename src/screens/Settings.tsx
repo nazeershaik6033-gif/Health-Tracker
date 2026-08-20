@@ -520,6 +520,41 @@ export default function Settings() {
           )}
         </Card>
 
+        {/* ------------------------ Calories burned --------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.countStepKcal !== false}
+                aria-label="Count steps toward calories burned"
+                onClick={() => setSettings({ countStepKcal: settings.countStepKcal === false })}
+                className={`relative h-6 w-10 rounded-full transition-colors ${
+                  settings.countStepKcal !== false ? 'bg-brand-500' : 'bg-[var(--surface-border)]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    settings.countStepKcal !== false ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            }
+          >
+            Count steps as calories
+          </SectionTitle>
+
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Walking is counted toward the calories you burn, net of resting energy, so it does not
+            double up with the activity level already built into your target.
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Turn it off if you log walks as workouts too — the app cannot tell a logged walk apart
+            from the steps that same walk produced, and would count it twice.
+          </p>
+        </Card>
+
         {/* -------------------------- Appearance ------------------------ */}
         <Card className="space-y-3">
           <SectionTitle>Theme</SectionTitle>
