@@ -1,4 +1,11 @@
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
+import {
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  type Favourite,
+  type Food,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 import { buildMealItem, buildMealItemFromGrams } from './nutrition';
 import { normalise } from './search';
 
@@ -301,6 +308,45 @@ export interface ResolvedItem {
   /** Absent when nothing in the food table matched. */
   item?: MealItem;
   food?: Food;
+  /** Set when the row came from a pinned portion rather than the food table. */
+  favourite?: Favourite;
+}
+
+/**
+ * Matches a typed name against the portions pinned to this slot.
+ *
+ * Checked before the food table, and it is the one lookup that can answer with
+ * more than one item: a favourite is a saved *portion* — "2 roti + dal + curd"
+ * — so "breakfast: usual" expands to everything that usual contains, at the
+ * amounts that were pinned. "usual" and "same" are treated as naming the
+ * slot's only pinned portion, which is what people reach for when they have
+ * just one.
+ */
+function findFavourite(
+  favourites: Favourite[],
+  slot: MealSlot,
+  typed: string,
+): Favourite | undefined {
+  const forSlot = favourites.filter((f) => f.slot === slot);
+  if (!forSlot.length) return undefined;
+
+  const name = canonicalName(typed);
+  if (!name) return undefined;
+
+  if ((name === 'usual' || name === 'same' || name === 'my usual') && forSlot.length === 1) {
+    return forSlot[0];
+  }
+
+  const labelled = forSlot.map((f) => ({
+    favourite: f,
+    key: canonicalName(f.label?.trim() || f.items.map((i) => i.name).join(' ')),
+  }));
+
+  return (
+    labelled.find((f) => f.key === name)?.favourite ??
+    labelled.find((f) => f.key.startsWith(name))?.favourite ??
+    labelled.find((f) => f.key.includes(name))?.favourite
+  );
 }
 
 /**
@@ -349,11 +395,32 @@ export interface ResolvedGroup {
   items: ResolvedItem[];
 }
 
-export function resolveGroups(foods: Food[], groups: ParsedGroup[]): ResolvedGroup[] {
+/**
+ * Resolves every parsed item, pinned portions first.
+ *
+ * Favourites lead because they are the most specific thing the app knows: a
+ * portion the user pinned themselves, at a quantity they chose, beats anything
+ * inferred from a catalog row. A favourite holding several foods expands into
+ * a row each, so the preview still shows what is about to be logged rather
+ * than one opaque line.
+ */
+export function resolveGroups(
+  foods: Food[],
+  groups: ParsedGroup[],
+  favourites: Favourite[] = [],
+): ResolvedGroup[] {
   return groups.map((group) => ({
     slot: group.slot,
     inferredSlot: group.inferredSlot,
-    items: group.items.map((parsed) => resolveItem(foods, parsed)),
+    items: group.items.flatMap((parsed) => {
+      const favourite = findFavourite(favourites, group.slot, parsed.name);
+      if (!favourite) return [resolveItem(foods, parsed)];
+      return favourite.items.map((item) => ({
+        parsed,
+        favourite,
+        item: { ...item, nutrients: { ...item.nutrients } },
+      }));
+    }),
   }));
 }
 
