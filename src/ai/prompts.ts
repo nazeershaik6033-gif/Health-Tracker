@@ -75,6 +75,31 @@ export function profileContext(profile: Profile | undefined): string {
   ].join('\n');
 }
 
+/**
+ * "What should I have for lunch?" — answered from what has already been logged.
+ *
+ * The remaining budget is computed locally and passed in rather than left for
+ * the model to derive, because a suggestion that quietly busts the calorie
+ * target is worse than no suggestion at all.
+ */
+export function nextMealPrompt(
+  slotLabel: string,
+  remaining: { kcal: number; protein: number; fibre: number },
+): string {
+  return `Suggest what this user should eat for ${slotLabel} today.
+
+They have ${Math.round(remaining.kcal)} kcal, ${Math.round(remaining.protein)} g of protein and ${Math.round(remaining.fibre)} g of fibre left against today's targets. Numbers can be negative — if they are already over, say so and suggest something light rather than pretending there is room.
+
+Rules:
+- Give two or three options, each a real dish with a real portion, that together with what they have already eaten lands the day close to target.
+- Keep every option within the calories left. If almost nothing is left, suggest the smallest sensible thing, not a full meal.
+- Read their log below: suggest foods in the same cuisine and style they actually eat. Reuse dishes already in their history where they fit.
+- Lead the headline with the gap that matters most today, quoting the number.
+- The tip is one sentence about the rest of the day.
+
+--- Their day so far ---`;
+}
+
 export const INSIGHT_PROMPT = `Write one short insight card for the user's day, in the style of a coach glancing at their log.
 
 Rules:

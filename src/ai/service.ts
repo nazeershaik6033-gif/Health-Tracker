@@ -8,6 +8,7 @@ import {
   FOOD_GENERATION_SCHEMA,
   INSIGHT_SCHEMA,
   MEAL_ANALYSIS_SCHEMA,
+  MEAL_SUGGESTION_SCHEMA,
   PLAN_SCHEMA,
   SESSION_SCHEMA,
   WORKOUT_PLAN_SCHEMA,
@@ -22,6 +23,7 @@ import {
   SNAP_PROMPT,
   VOICE_PROMPT,
   foodGenerationPrompt,
+  nextMealPrompt,
   profileContext,
 } from './prompts';
 import { AIError, UNREPAIRABLE, type ChatTurn, type ImagePart } from './types';
@@ -335,6 +337,75 @@ export async function generateInsight(
       };
     },
     600,
+  );
+}
+
+/* ---------------------------- meal suggestions --------------------------- */
+
+export interface MealOption {
+  name: string;
+  portion: string;
+  kcal: number;
+  protein: number;
+  why: string;
+}
+
+export interface MealSuggestion {
+  headline: string;
+  options: MealOption[];
+  tip: string;
+}
+
+/**
+ * What to eat next, given what has already been logged today.
+ *
+ * `remaining` is computed by the caller from the day's own totals rather than
+ * left to the model: the whole value of this over a generic meal plan is that
+ * it fits the calories actually left, and a model doing that arithmetic in
+ * prose gets it wrong often enough to matter.
+ */
+export async function suggestNextMeal(
+  settings: Settings,
+  context: string,
+  slot: MealSlot,
+  remaining: { kcal: number; protein: number; fibre: number },
+  signal?: AbortSignal,
+): Promise<MealSuggestion> {
+  const adapter = getAdapter(settings);
+  const prompt = `${nextMealPrompt(MEAL_SLOT_LABEL[slot], remaining)}\n${context}`;
+
+  return withRepair(
+    (extra, maxTokens) =>
+      adapter.extract(prompt + extra, {
+        system: COACH_SYSTEM,
+        schema: MEAL_SUGGESTION_SCHEMA,
+        schemaName: 'meal_suggestion',
+        maxTokens,
+        light: true,
+        signal,
+      }),
+    (raw) => {
+      const parsed = parseJSON<{
+        headline?: string;
+        options?: { name?: string; portion?: string; kcal?: number; protein?: number; why?: string }[];
+        tip?: string;
+      }>(raw);
+      return {
+        headline: (parsed.headline ?? '').trim(),
+        options: (parsed.options ?? [])
+          .filter((o) => o.name)
+          .slice(0, 3)
+          .map((o) => ({
+            name: String(o.name).trim(),
+            portion: (o.portion ?? '').trim(),
+            kcal: Math.round(num(o.kcal)),
+            protein: Math.round(num(o.protein)),
+            why: (o.why ?? '').trim(),
+          })),
+        tip: (parsed.tip ?? '').trim(),
+      };
+    },
+    900,
   );
 }
 

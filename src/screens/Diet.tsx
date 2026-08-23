@@ -10,6 +10,8 @@ import {
   removeFavourite,
   removeMealItem,
   replaceMealItem,
+  restoreMeal,
+  restoreMealItem,
 } from '@/db/repo';
 import {
   buildMealItem,
@@ -26,6 +28,8 @@ import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { MacroStrip } from '@/components/MacroStrip';
+import { NextMealCard } from '@/components/NextMealCard';
+import type { MacroKey } from '@/lib/macroBreakdown';
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -49,14 +53,20 @@ import {
 interface RowActions {
   edit: (mealId: string, slot: MealSlot, index: number, item: MealItem) => void;
   toggleExpand: (key: string) => void;
-  remove: (mealId: string, index: number, name: string) => void;
+  remove: (
+    mealId: string,
+    slot: MealSlot,
+    index: number,
+    item: MealItem,
+    /** Runs only once the delete happens, so cancelling leaves callers alone. */
+    onDone?: () => void,
+  ) => void;
   moveItem: (mealId: string, slot: MealSlot, index: number, name: string) => void;
 }
 
 interface SlotActions {
   add: (slot: MealSlot) => void;
   pin: (slot: MealSlot, meal: Meal) => void;
-  armMeal: (id: string | null) => void;
   clearMeal: (slot: MealSlot, meal: Meal) => void;
   moveMeal: (slot: MealSlot, meal: Meal) => void;
 }
@@ -71,9 +81,9 @@ export default function Diet() {
   const setSelectedDate = useApp((s) => s.setSelectedDate);
   const setPendingSlot = useApp((s) => s.setPendingSlot);
   const showToast = useApp((s) => s.showToast);
+  const showConfirm = useApp((s) => s.showConfirm);
 
   const day = useDay();
-  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
     slot: MealSlot;
@@ -158,14 +168,24 @@ export default function Diet() {
           if (!next.delete(key)) next.add(key);
           return next;
         }),
-      remove: async (mealId, index, name) => {
-        await removeMealItem(mealId, index);
-        showToast({ message: `${name} removed` });
-      },
+      remove: (mealId, slot, index, item, onDone) =>
+        showConfirm({
+          title: `Delete ${item.name}?`,
+          body: `${formatPortion(item.qty, item.servingLabel)} · ${Math.round(item.nutrients.kcal)} Cal will come off ${MEAL_SLOT_LABEL[slot]}.`,
+          onConfirm: async () => {
+            await removeMealItem(mealId, index);
+            onDone?.();
+            showToast({
+              message: `${item.name} removed`,
+              actionLabel: 'Undo',
+              onAction: () => restoreMealItem(selectedDate, slot, index, item),
+            });
+          },
+        }),
       moveItem: (mealId, slot, index, name) =>
         setMoving({ mealId, from: slot, indices: [index], label: name }),
     }),
-    [openEdit, showToast],
+    [openEdit, showToast, showConfirm, selectedDate],
   );
 
   const slotActions = useMemo<SlotActions>(
@@ -196,12 +216,22 @@ export default function Diet() {
           onAction: () => removeFavourite(favourite.id),
         });
       },
-      armMeal: setConfirmMeal,
-      clearMeal: async (slot, meal) => {
-        await deleteMeal(meal.id);
-        setConfirmMeal(null);
-        showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
-      },
+      clearMeal: (slot, meal) =>
+        showConfirm({
+          title: `Clear ${MEAL_SLOT_LABEL[slot]}?`,
+          body: `All ${meal.items.length} item${
+            meal.items.length === 1 ? '' : 's'
+          } logged here will be deleted.`,
+          confirmLabel: 'Clear',
+          onConfirm: async () => {
+            await deleteMeal(meal.id);
+            showToast({
+              message: `${MEAL_SLOT_LABEL[slot]} removed`,
+              actionLabel: 'Undo',
+              onAction: () => restoreMeal(meal),
+            });
+          },
+        }),
       moveMeal: (slot, meal) =>
         setMoving({
           mealId: meal.id,
@@ -210,7 +240,12 @@ export default function Diet() {
           label: MEAL_SLOT_LABEL[slot],
         }),
     }),
-    [navigate, setPendingSlot, showToast],
+    [navigate, setPendingSlot, showToast, showConfirm],
+  );
+
+  const macroLink = useCallback(
+    (key: MacroKey) => `/macro/${key}?date=${selectedDate}`,
+    [selectedDate],
   );
 
   /** Pins one already-logged item, at exactly the portion it was logged at. */
@@ -252,10 +287,18 @@ export default function Diet() {
         </button>
       </div>
 
-      {/* Day totals */}
+      {/* Day totals. Every figure drills into the items behind it — a number
+          you cannot interrogate is the one you end up not trusting. */}
       <div className="mb-3">
-        <DayTotals totals={day.totals} targets={day.targets} burned={day.burnedKcal} />
+        <DayTotals
+          totals={day.totals}
+          targets={day.targets}
+          burned={day.burnedKcal}
+          macroHref={macroLink}
+        />
       </div>
+
+      <NextMealCard date={selectedDate} />
 
       {/* One switch for the whole day, because the question "where did today's
           carbs come from" is asked of every row at once, not one at a time. */}
@@ -279,7 +322,6 @@ export default function Diet() {
             slot={slot}
             meal={day.bySlot[slot]}
             target={slotTarget(profile, slot)}
-            confirming={Boolean(day.bySlot[slot] && confirmMeal === day.bySlot[slot]!.id)}
             expanded={expanded}
             actions={slotActions}
             rowActions={rowActions}
@@ -342,10 +384,13 @@ export default function Diet() {
             );
             setEditing(null);
           }}
-          onDelete={async () => {
-            await rowActions.remove(editing.mealId, editing.index, editing.item.name);
-            setEditing(null);
-          }}
+          // The prompt opens over the sheet; the sheet closes only once the
+          // delete actually happens, so cancelling leaves you where you were.
+          onDelete={() =>
+            rowActions.remove(editing.mealId, editing.slot, editing.index, editing.item, () =>
+              setEditing(null),
+            )
+          }
         />
       )}
 
@@ -376,7 +421,6 @@ const SlotCard = memo(function SlotCard({
   slot,
   meal,
   target,
-  confirming,
   expanded,
   actions,
   rowActions,
@@ -384,7 +428,6 @@ const SlotCard = memo(function SlotCard({
   slot: MealSlot;
   meal: Meal | undefined;
   target: number;
-  confirming: boolean;
   expanded: ReadonlySet<string>;
   actions: SlotActions;
   rowActions: RowActions;
@@ -425,22 +468,13 @@ const SlotCard = memo(function SlotCard({
             <IconStar width={14} height={14} />
           </button>
         )}
-        {/* Clearing a whole slot used to mean deleting every item. */}
+        {/* Clearing a whole slot deletes every item in it, so it asks first. */}
         {filled && (
           <button
             type="button"
-            aria-label={
-              confirming
-                ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
-                : `Remove ${MEAL_SLOT_LABEL[slot]}`
-            }
-            onClick={() =>
-              confirming ? actions.clearMeal(slot, meal!) : actions.armMeal(meal!.id)
-            }
-            onBlur={() => actions.armMeal(null)}
-            className={`shrink-0 rounded-lg p-1 ${
-              confirming ? 'tint-soft tint-danger' : 'text-muted'
-            }`}
+            aria-label={`Remove ${MEAL_SLOT_LABEL[slot]}`}
+            onClick={() => actions.clearMeal(slot, meal!)}
+            className="shrink-0 rounded-lg p-1 text-muted transition-transform active:scale-90"
           >
             <IconTrash width={14} height={14} />
           </button>
@@ -524,12 +558,6 @@ const ItemRow = memo(function ItemRow({
   expanded: boolean;
   actions: RowActions;
 }) {
-  // The delete confirm is the row's own business. Held here rather than in the
-  // screen because a single shared `confirmDelete` string meant arming one row
-  // changed a prop on all five slot cards, so every card re-rendered and
-  // reconciled every row to show one icon turning red.
-  const [confirming, setConfirming] = useState(false);
-
   return (
     <li className="border-t border-[var(--surface-border)] px-1 py-2.5">
       <div className="flex items-center gap-1.5">
@@ -588,25 +616,15 @@ const ItemRow = memo(function ItemRow({
         >
           <IconMove width={14} height={14} />
         </button>
+        {/* One tap opens the prompt. The row no longer holds an armed flag,
+            which also removes the hazard that came with it: row keys are
+            index-based, so a deleted item hands its key — and this very
+            component instance — to the next one along. */}
         <button
           type="button"
-          onClick={() => {
-            if (!confirming) {
-              setConfirming(true);
-              return;
-            }
-            // Cleared before the write, not after: row keys are index-based, so
-            // once this item goes the next one inherits this key and this very
-            // component instance. Leaving the flag set would hand it a delete
-            // that already looks armed.
-            setConfirming(false);
-            void actions.remove(mealId, index, item.name);
-          }}
-          onBlur={() => setConfirming(false)}
-          aria-label={confirming ? `Confirm remove ${item.name}` : `Remove ${item.name}`}
-          className={`shrink-0 rounded-lg p-1 ${
-            confirming ? 'tint-soft tint-danger' : 'text-muted'
-          }`}
+          onClick={() => actions.remove(mealId, slot, index, item)}
+          aria-label={`Remove ${item.name}`}
+          className="shrink-0 rounded-lg p-1 text-muted transition-transform active:scale-90"
         >
           <IconTrash width={14} height={14} />
         </button>

@@ -514,6 +514,9 @@
 .animate-route-in {
   animation: route-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
 }
+.animate-rise-in {
+  animation: rise-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
 
 /* ---------------------------------------------------------------- stagger
    Children rise in one after another. The index comes from a `--i` custom

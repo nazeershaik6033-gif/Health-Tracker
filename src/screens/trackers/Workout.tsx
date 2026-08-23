@@ -8,6 +8,7 @@ import {
   addWorkout,
   deleteWorkout,
   markExercisesUsed,
+  restoreWorkout,
   saveProfile,
   updateWorkout,
   workoutsForRange,
@@ -20,7 +21,7 @@ import { SetsSheet } from '@/components/SetsSheet';
 import { RingProgress } from '@/components/RingProgress';
 import { TrendChart } from '@/components/TrendChart';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
-import { IconChevronRight, IconDumbbell, IconPlus, IconTrash } from '@/components/icons';
+import { IconChevronRight, IconDumbbell, IconEdit, IconPlus, IconTrash } from '@/components/icons';
 import type { Exercise, LoggedExercise, WorkoutEntry } from '@/types';
 
 /**
@@ -33,7 +34,7 @@ import type { Exercise, LoggedExercise, WorkoutEntry } from '@/types';
  * array and still render, via the fallback in `SessionCard`.
  */
 export default function Workout() {
-  const { profile, selectedDate, refreshProfile } = useApp();
+  const { profile, selectedDate, refreshProfile, showToast, showConfirm } = useApp();
   const day = useDay();
   const history = useHistory(14);
   const [params, setParams] = useSearchParams();
@@ -109,13 +110,38 @@ export default function Workout() {
     setEditing(null);
   }
 
-  async function removeExercise(workoutId: string, index: number) {
+  function removeExercise(workoutId: string, index: number) {
     const workout = sessions.find((w) => w.id === workoutId);
     if (!workout?.exercises) return;
+    const removed = workout.exercises[index];
     const next = workout.exercises.filter((_, i) => i !== index);
-    // An emptied session is deleted rather than left as a stray heading.
-    if (next.length === 0) await deleteWorkout(workoutId);
-    else await updateWorkout(workoutId, { ...summariseSession(next), exercises: next });
+
+    showConfirm({
+      title: `Delete ${removed.name}?`,
+      body:
+        next.length === 0
+          ? 'It is the only exercise here, so the whole session goes with it.'
+          : `${describeSets(removed)} · ${Math.round(removed.kcal)} cal will come off this session.`,
+      onConfirm: async () => {
+        // An emptied session is deleted rather than left as a stray heading.
+        if (next.length === 0) await deleteWorkout(workoutId);
+        else await updateWorkout(workoutId, { ...summariseSession(next), exercises: next });
+
+        showToast({
+          message: `${removed.name} removed`,
+          actionLabel: 'Undo',
+          // Restoring the whole row covers both cases: an emptied session was
+          // deleted outright, so there is nothing left to patch back into.
+          onAction: () => restoreWorkout(workout),
+        });
+      },
+    });
+  }
+
+  /** Renames the session heading — "Workout" says nothing, "Push Day" does. */
+  async function renameSession(workoutId: string, title: string) {
+    const trimmed = title.trim();
+    await updateWorkout(workoutId, { title: trimmed || undefined });
   }
 
   async function saveGoal() {
@@ -155,7 +181,21 @@ export default function Workout() {
             workout={workout}
             onEdit={(index, logged) => setEditing({ workoutId: workout.id, index, logged })}
             onRemove={(index) => removeExercise(workout.id, index)}
-            onDeleteLegacy={() => deleteWorkout(workout.id)}
+            onRename={(title) => renameSession(workout.id, title)}
+            onDeleteLegacy={() =>
+              showConfirm({
+                title: `Delete ${workout.type}?`,
+                body: `${workout.durationMin} min and ${Math.round(workout.kcal)} cal burned will come off this day.`,
+                onConfirm: async () => {
+                  await deleteWorkout(workout.id);
+                  showToast({
+                    message: `${workout.type} removed`,
+                    actionLabel: 'Undo',
+                    onAction: () => restoreWorkout(workout),
+                  });
+                },
+              })
+            }
           />
         ))}
 
@@ -295,6 +335,59 @@ function EditSheet({
   );
 }
 
+/**
+ * The session heading, editable in place.
+ *
+ * Kept as local state while typing and committed on blur or Enter: writing
+ * every keystroke to Dexie would round-trip through the live query and fight
+ * the cursor.
+ */
+function SessionTitle({ value, onSave }: { value: string; onSave: (title: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}
+        aria-label={`Rename session, currently ${value}`}
+        className="flex min-w-0 items-center gap-1.5 text-left transition-transform active:scale-[0.99]"
+      >
+        <span className="truncate text-[14px] font-bold tracking-tight capitalize">{value}</span>
+        <IconEdit width={13} height={13} className="shrink-0 text-muted" />
+      </button>
+    );
+  }
+
+  function commit() {
+    setEditing(false);
+    if (draft.trim() !== value) onSave(draft);
+  }
+
+  return (
+    <input
+      value={draft}
+      autoFocus
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          setDraft(value);
+          setEditing(false);
+        }
+      }}
+      aria-label="Session name"
+      placeholder="Name this session"
+      className="hairline min-w-0 flex-1 rounded-lg border bg-transparent px-2 py-1 text-[14px] font-bold outline-none focus:border-brand-500"
+    />
+  );
+}
+
 function describeSets(logged: LoggedExercise): string {
   const sets = logged.sets ?? [];
   // Strength is described by its sets; everything else by its duration. Both
@@ -316,11 +409,13 @@ function SessionCard({
   workout,
   onEdit,
   onRemove,
+  onRename,
   onDeleteLegacy,
 }: {
   workout: WorkoutEntry;
   onEdit: (index: number, logged: LoggedExercise) => void;
   onRemove: (index: number) => void;
+  onRename: (title: string) => void;
   onDeleteLegacy: () => void;
 }) {
   // Pre-session rows have no exercise breakdown. They stay exactly as they
@@ -353,8 +448,11 @@ function SessionCard({
   return (
     <Card className="space-y-1 py-3">
       <div className="flex items-baseline justify-between gap-2 pb-1">
-        <p className="text-[14px] font-bold tracking-tight">{workout.title ?? workout.type}</p>
-        <p className="tabular text-[12px] text-secondary">
+        <SessionTitle
+          value={workout.title ?? workout.type}
+          onSave={onRename}
+        />
+        <p className="tabular shrink-0 text-[12px] text-secondary">
           {workout.durationMin} min · {workout.kcal} cal
         </p>
       </div>

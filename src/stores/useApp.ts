@@ -10,6 +10,23 @@ interface ToastState {
   onAction?: () => void | Promise<void>;
 }
 
+/**
+ * A prompt the user has to answer before something irreversible happens.
+ *
+ * Global like the toast rather than local to each screen: deletes live on five
+ * screens and inside two sheets, and a per-screen dialog would mean six copies
+ * of the same state and markup.
+ */
+export interface ConfirmState {
+  id: number;
+  title: string;
+  body?: string;
+  confirmLabel?: string;
+  /** Paints the confirm button red. On by default — these are deletes. */
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
+
 interface AppState {
   ready: boolean;
   profile?: Profile;
@@ -17,6 +34,7 @@ interface AppState {
   /** The day every screen is currently showing. */
   selectedDate: string;
   toast?: ToastState;
+  confirm?: ConfirmState;
   /** Slot pre-selected when the user came from the meal picker. */
   pendingSlot?: MealSlot;
 
@@ -28,9 +46,12 @@ interface AppState {
   setPendingSlot: (slot?: MealSlot) => void;
   showToast: (t: Omit<ToastState, 'id'>) => void;
   dismissToast: () => void;
+  showConfirm: (c: Omit<ConfirmState, 'id'>) => void;
+  dismissConfirm: () => void;
 }
 
 let toastSeq = 0;
+let confirmSeq = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 /** Shared across concurrent init() calls so startup work runs exactly once. */
 let initPromise: Promise<void> | undefined;
@@ -104,6 +125,14 @@ export const useApp = create<AppState>((set, get) => ({
   dismissToast() {
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast: undefined });
+  },
+
+  showConfirm(c) {
+    set({ confirm: { ...c, id: ++confirmSeq } });
+  },
+
+  dismissConfirm() {
+    set({ confirm: undefined });
   },
 }));
 
