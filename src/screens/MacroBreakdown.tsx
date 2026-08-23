@@ -43,7 +43,7 @@ export default function MacroBreakdown() {
   const navigate = useNavigate();
   const { key } = useParams<{ key: string }>();
   const [params] = useSearchParams();
-  const { selectedDate, showToast } = useApp();
+  const { selectedDate, showToast, showConfirm } = useApp();
 
   // The date travels in the query string so the screen can be opened for any
   // day (from Calendar) without moving the app's selected date underneath it.
@@ -101,13 +101,20 @@ export default function MacroBreakdown() {
     showToast({ message: `${next.name} updated` });
   }
 
-  async function deleteRow(slot: MealSlot, mealId: string, index: number, item: MealItem) {
-    await removeMealItem(mealId, index);
-    setEditing(null);
-    showToast({
-      message: `${item.name} removed`,
-      actionLabel: 'Undo',
-      onAction: () => restoreMealItem(date, slot, index, item),
+  /** Asks first — the same prompt the Diet screen shows. */
+  function deleteRow(slot: MealSlot, mealId: string, index: number, item: MealItem) {
+    showConfirm({
+      title: `Delete ${item.name}?`,
+      body: `${formatPortion(item.qty, item.servingLabel)} · ${Math.round(item.nutrients.kcal)} Cal will come off ${MEAL_SLOT_LABEL[slot]}.`,
+      onConfirm: async () => {
+        await removeMealItem(mealId, index);
+        setEditing(null);
+        showToast({
+          message: `${item.name} removed`,
+          actionLabel: 'Undo',
+          onAction: () => restoreMealItem(date, slot, index, item),
+        });
+      },
     });
   }
 

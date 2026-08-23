@@ -18,8 +18,7 @@ import { Link } from 'react-router-dom';
 export default function MealScore() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { showToast } = useApp();
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { showToast, showConfirm } = useApp();
 
   const meal = useLiveQuery(async () => (id ? db.meals.get(id) : undefined), [id]);
   const snap = useLiveQuery(
@@ -149,21 +148,27 @@ export default function MealScore() {
         {/* Removing the whole meal was previously impossible from here: the
             only route was deleting each item on the Diet screen one by one. */}
         <Button
-          variant={confirmDelete ? 'danger' : 'secondary'}
+          variant="secondary"
           full
-          onClick={async () => {
-            if (!confirmDelete) {
-              setConfirmDelete(true);
-              return;
-            }
-            await deleteMeal(meal.id);
-            showToast({ message: 'Meal removed' });
-            navigate('/diet', { replace: true });
-          }}
-          onBlur={() => setConfirmDelete(false)}
+          onClick={() =>
+            showConfirm({
+              title: 'Remove this meal?',
+              body: `All ${meal.items.length} item${
+                meal.items.length === 1 ? '' : 's'
+              } in it will be deleted.${
+                meal.snapId ? ' The photo stays in your Snap Gallery.' : ''
+              }`,
+              confirmLabel: 'Remove',
+              onConfirm: async () => {
+                await deleteMeal(meal.id);
+                showToast({ message: 'Meal removed' });
+                navigate('/diet', { replace: true });
+              },
+            })
+          }
         >
           <IconTrash width={15} height={15} />
-          {confirmDelete ? 'Tap again to remove this meal' : 'Remove this meal'}
+          Remove this meal
         </Button>
 
         {meal.snapId && (

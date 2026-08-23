@@ -38,7 +38,8 @@ import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } 
 
 export default function Diet() {
   const navigate = useNavigate();
-  const { profile, selectedDate, setSelectedDate, setPendingSlot, showToast } = useApp();
+  const { profile, selectedDate, setSelectedDate, setPendingSlot, showToast, showConfirm } =
+    useApp();
   const day = useDay();
   const [editing, setEditing] = useState<{
     mealId: string;
@@ -79,20 +80,34 @@ export default function Diet() {
   const macroLink = (key: MacroKey) => `/macro/${key}?date=${selectedDate}`;
 
   /**
-   * Deleting is one tap, not two.
+   * The first tap asks; nothing is deleted until the prompt is answered.
    *
-   * This used to arm on the first tap and delete on the second, which cost a
-   * tap every time and — because focus loss disarmed it — silently threw the
-   * first one away often enough to feel like three. Undo in the toast is both
-   * fewer taps and a better safety net, since it survives the mistake instead
-   * of trying to predict it.
+   * The trash icon used to arm silently on the first tap and delete on the
+   * second, and disarmed itself on focus loss — so the question was never
+   * stated and the first tap was often thrown away. Undo stays in the toast
+   * behind the prompt, for the confirm that was itself a mistake.
    */
-  async function removeItem(slot: MealSlot, mealId: string, index: number, item: MealItem) {
-    await removeMealItem(mealId, index);
-    showToast({
-      message: `${item.name} removed`,
-      actionLabel: 'Undo',
-      onAction: () => restoreMealItem(selectedDate, slot, index, item),
+  function removeItem(
+    slot: MealSlot,
+    mealId: string,
+    index: number,
+    item: MealItem,
+    // Runs only once the delete actually happens, so cancelling from inside
+    // the portion sheet leaves that sheet open rather than closing it too.
+    onDone?: () => void,
+  ) {
+    showConfirm({
+      title: `Delete ${item.name}?`,
+      body: `${formatPortion(item.qty, item.servingLabel)} · ${Math.round(item.nutrients.kcal)} Cal will come off ${MEAL_SLOT_LABEL[slot]}.`,
+      onConfirm: async () => {
+        await removeMealItem(mealId, index);
+        onDone?.();
+        showToast({
+          message: `${item.name} removed`,
+          actionLabel: 'Undo',
+          onAction: () => restoreMealItem(selectedDate, slot, index, item),
+        });
+      },
     });
   }
 
@@ -208,13 +223,22 @@ export default function Diet() {
                   <button
                     type="button"
                     aria-label={`Remove ${MEAL_SLOT_LABEL[slot]}`}
-                    onClick={async () => {
+                    onClick={() => {
                       const snapshot = meal;
-                      await deleteMeal(meal.id);
-                      showToast({
-                        message: `${MEAL_SLOT_LABEL[slot]} removed`,
-                        actionLabel: 'Undo',
-                        onAction: () => restoreMeal(snapshot),
+                      showConfirm({
+                        title: `Clear ${MEAL_SLOT_LABEL[slot]}?`,
+                        body: `All ${snapshot.items.length} item${
+                          snapshot.items.length === 1 ? '' : 's'
+                        } logged here will be deleted.`,
+                        confirmLabel: 'Clear',
+                        onConfirm: async () => {
+                          await deleteMeal(snapshot.id);
+                          showToast({
+                            message: `${MEAL_SLOT_LABEL[slot]} removed`,
+                            actionLabel: 'Undo',
+                            onAction: () => restoreMeal(snapshot),
+                          });
+                        },
                       });
                     }}
                     className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
@@ -333,10 +357,11 @@ export default function Diet() {
           }
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
-          onDelete={async () => {
-            await removeItem(editing.slot, editing.mealId, editing.index, editing.item);
-            setEditing(null);
-          }}
+          onDelete={() =>
+            removeItem(editing.slot, editing.mealId, editing.index, editing.item, () =>
+              setEditing(null),
+            )
+          }
         />
       )}
     </div>

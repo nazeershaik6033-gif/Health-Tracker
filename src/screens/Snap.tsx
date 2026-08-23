@@ -35,7 +35,7 @@ type Phase = 'capture' | 'analysing' | 'result' | 'error';
 export default function Snap() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { settings, selectedDate, showToast } = useApp();
+  const { settings, selectedDate, showToast, showConfirm } = useApp();
   // Two inputs, because `capture` is a one-way door: with it the OS opens the
   // camera and the photo library is unreachable, without it the library. One
   // input cannot serve both affordances.
@@ -50,10 +50,6 @@ export default function Snap() {
   const [error, setError] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
-  // Two-tap confirm rather than window.confirm, which a standalone PWA on iOS
-  // renders as a jarring system dialog over the app.
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
   const keyed = hasKey(settings);
   const camera = useCamera({ autoStart: phase === 'capture' && keyed });
 
@@ -577,25 +573,24 @@ export default function Snap() {
           {snap && (
             <button
               type="button"
-              onClick={async () => {
-                if (!confirmDelete) {
-                  setConfirmDelete(true);
-                  return;
-                }
-                await deleteSnap(snap.id);
-                showToast({ message: 'Photo deleted' });
-                setConfirmDelete(false);
-                reset();
-              }}
+              onClick={() =>
+                showConfirm({
+                  title: 'Delete this photo?',
+                  body: 'It is removed from your Snap Gallery and cannot be analysed again.',
+                  onConfirm: async () => {
+                    await deleteSnap(snap.id);
+                    showToast({ message: 'Photo deleted' });
+                    reset();
+                  },
+                })
+              }
               // The accessible name has to contain the visible text, or voice
               // control cannot activate what the button says it is (WCAG 2.5.3).
-              aria-label={confirmDelete ? 'Tap again to delete photo' : 'Delete photo'}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
-                confirmDelete ? 'bg-red-600 text-white' : 'text-muted'
-              }`}
+              aria-label="Delete photo"
+              className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold text-muted transition-transform active:scale-95"
             >
               <IconTrash width={15} height={15} />
-              {confirmDelete ? 'Tap again to delete' : 'Delete photo'}
+              Delete photo
             </button>
           )}
         </div>

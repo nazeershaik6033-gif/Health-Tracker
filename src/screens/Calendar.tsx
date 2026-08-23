@@ -57,7 +57,7 @@ import { MEAL_SLOTS, MEAL_SLOT_LABEL, ZERO_NUTRIENTS, type Food, type MealItem, 
  */
 export default function CalendarScreen() {
   const navigate = useNavigate();
-  const { profile, selectedDate, setSelectedDate, showToast } = useApp();
+  const { profile, selectedDate, setSelectedDate, showToast, showConfirm } = useApp();
 
   const [cursor, setCursor] = useState(() => {
     const d = fromISODate(selectedDate);
@@ -136,15 +136,21 @@ export default function CalendarScreen() {
     showToast({ message: `${next.name} updated` });
   }
 
-  async function deleteEdited() {
+  function deleteEdited() {
     if (!editing) return;
     const { mealId, slot, index, item } = editing;
-    await removeMealItem(mealId, index);
-    setEditing(null);
-    showToast({
-      message: `${item.name} removed`,
-      actionLabel: 'Undo',
-      onAction: () => restoreMealItem(selectedDate, slot, index, item),
+    showConfirm({
+      title: `Delete ${item.name}?`,
+      body: `${formatPortion(item.qty, item.servingLabel)} · ${Math.round(item.nutrients.kcal)} Cal will come off ${MEAL_SLOT_LABEL[slot]}.`,
+      onConfirm: async () => {
+        await removeMealItem(mealId, index);
+        setEditing(null);
+        showToast({
+          message: `${item.name} removed`,
+          actionLabel: 'Undo',
+          onAction: () => restoreMealItem(selectedDate, slot, index, item),
+        });
+      },
     });
   }
 
@@ -325,13 +331,22 @@ export default function CalendarScreen() {
                       <button
                         type="button"
                         aria-label={`Remove ${MEAL_SLOT_LABEL[slot]}`}
-                        onClick={async () => {
+                        onClick={() => {
                           const snapshot = meal;
-                          await deleteMeal(meal.id);
-                          showToast({
-                            message: `${MEAL_SLOT_LABEL[slot]} removed`,
-                            actionLabel: 'Undo',
-                            onAction: () => restoreMeal(snapshot),
+                          showConfirm({
+                            title: `Clear ${MEAL_SLOT_LABEL[slot]}?`,
+                            body: `All ${snapshot.items.length} item${
+                              snapshot.items.length === 1 ? '' : 's'
+                            } logged here will be deleted.`,
+                            confirmLabel: 'Clear',
+                            onConfirm: async () => {
+                              await deleteMeal(snapshot.id);
+                              showToast({
+                                message: `${MEAL_SLOT_LABEL[slot]} removed`,
+                                actionLabel: 'Undo',
+                                onAction: () => restoreMeal(snapshot),
+                              });
+                            },
                           });
                         }}
                         className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
@@ -438,14 +453,20 @@ export default function CalendarScreen() {
                     <button
                       type="button"
                       aria-label={`Remove ${w.type}`}
-                      onClick={async () => {
-                        await deleteWorkout(w.id);
-                        showToast({
-                          message: `${w.type} removed`,
-                          actionLabel: 'Undo',
-                          onAction: () => restoreWorkout(w),
-                        });
-                      }}
+                      onClick={() =>
+                        showConfirm({
+                          title: `Delete ${w.title ?? w.type}?`,
+                          body: `${formatDuration(w.durationMin)} and ${Math.round(w.kcal)} cal burned will come off this day.`,
+                          onConfirm: async () => {
+                            await deleteWorkout(w.id);
+                            showToast({
+                              message: `${w.type} removed`,
+                              actionLabel: 'Undo',
+                              onAction: () => restoreWorkout(w),
+                            });
+                          },
+                        })
+                      }
                       className="shrink-0 p-1 text-red-600 transition-transform active:scale-90"
                     >
                       <IconTrash width={15} height={15} />

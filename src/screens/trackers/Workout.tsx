@@ -34,7 +34,7 @@ import type { Exercise, LoggedExercise, WorkoutEntry } from '@/types';
  * array and still render, via the fallback in `SessionCard`.
  */
 export default function Workout() {
-  const { profile, selectedDate, refreshProfile, showToast } = useApp();
+  const { profile, selectedDate, refreshProfile, showToast, showConfirm } = useApp();
   const day = useDay();
   const history = useHistory(14);
   const [params, setParams] = useSearchParams();
@@ -110,21 +110,31 @@ export default function Workout() {
     setEditing(null);
   }
 
-  async function removeExercise(workoutId: string, index: number) {
+  function removeExercise(workoutId: string, index: number) {
     const workout = sessions.find((w) => w.id === workoutId);
     if (!workout?.exercises) return;
     const removed = workout.exercises[index];
     const next = workout.exercises.filter((_, i) => i !== index);
-    // An emptied session is deleted rather than left as a stray heading.
-    if (next.length === 0) await deleteWorkout(workoutId);
-    else await updateWorkout(workoutId, { ...summariseSession(next), exercises: next });
 
-    showToast({
-      message: `${removed.name} removed`,
-      actionLabel: 'Undo',
-      // Restoring the whole row covers both cases: an emptied session was
-      // deleted outright, so there is nothing left to patch back into.
-      onAction: () => restoreWorkout(workout),
+    showConfirm({
+      title: `Delete ${removed.name}?`,
+      body:
+        next.length === 0
+          ? 'It is the only exercise here, so the whole session goes with it.'
+          : `${describeSets(removed)} · ${Math.round(removed.kcal)} cal will come off this session.`,
+      onConfirm: async () => {
+        // An emptied session is deleted rather than left as a stray heading.
+        if (next.length === 0) await deleteWorkout(workoutId);
+        else await updateWorkout(workoutId, { ...summariseSession(next), exercises: next });
+
+        showToast({
+          message: `${removed.name} removed`,
+          actionLabel: 'Undo',
+          // Restoring the whole row covers both cases: an emptied session was
+          // deleted outright, so there is nothing left to patch back into.
+          onAction: () => restoreWorkout(workout),
+        });
+      },
     });
   }
 
@@ -172,14 +182,20 @@ export default function Workout() {
             onEdit={(index, logged) => setEditing({ workoutId: workout.id, index, logged })}
             onRemove={(index) => removeExercise(workout.id, index)}
             onRename={(title) => renameSession(workout.id, title)}
-            onDeleteLegacy={async () => {
-              await deleteWorkout(workout.id);
-              showToast({
-                message: `${workout.type} removed`,
-                actionLabel: 'Undo',
-                onAction: () => restoreWorkout(workout),
-              });
-            }}
+            onDeleteLegacy={() =>
+              showConfirm({
+                title: `Delete ${workout.type}?`,
+                body: `${workout.durationMin} min and ${Math.round(workout.kcal)} cal burned will come off this day.`,
+                onConfirm: async () => {
+                  await deleteWorkout(workout.id);
+                  showToast({
+                    message: `${workout.type} removed`,
+                    actionLabel: 'Undo',
+                    onAction: () => restoreWorkout(workout),
+                  });
+                },
+              })
+            }
           />
         ))}
 

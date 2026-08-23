@@ -4,6 +4,7 @@ import { useApp } from '@/stores/useApp';
 import { useTheme } from '@/lib/theme';
 import { BottomNav } from '@/components/BottomNav';
 import { Toast } from '@/components/Toast';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Skeleton } from '@/components/ui';
 
 // The daily-use path is eager so the first paint after launch is immediate.
@@ -136,6 +137,7 @@ export default function App() {
       </main>
 
       <Toast />
+      <ConfirmDialog />
       {!fullscreen && <BottomNav />}
     </div>
   );
