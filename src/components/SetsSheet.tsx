@@ -31,10 +31,38 @@ interface Props {
   onConfirm: (logged: LoggedExercise) => void;
 }
 
-function blankSets(exercise: Exercise): ExerciseSet[] {
+/**
+ * A set plus the raw text of its two number fields.
+ *
+ * The drafts are the point. Both inputs used to be bound straight to numbers,
+ * so a keystroke round-tripped through `Number()` before it was rendered back:
+ * typing "7." produced `Number("7.") === 7`, which re-rendered as "7" and ate
+ * the decimal point on the way in. A half-kilo plate was literally unenterable.
+ * Clearing the reps field had the same shape of problem, snapping it to "0"
+ * instead of leaving it empty to retype.
+ */
+interface DraftSet extends ExerciseSet {
+  repsDraft: string;
+  weightDraft: string;
+}
+
+const toDraft = (set: ExerciseSet): DraftSet => ({
+  ...set,
+  repsDraft: String(set.reps),
+  weightDraft: set.weightKg === undefined ? '' : String(set.weightKg),
+});
+
+/** Keeps at most one decimal point, so "7.5.2" can never be typed. */
+function sanitiseDecimal(raw: string): string {
+  const cleaned = raw.replace(/[^0-9.]/g, '');
+  const [head, ...rest] = cleaned.split('.');
+  return rest.length ? `${head}.${rest.join('')}` : head;
+}
+
+function blankSets(exercise: Exercise): DraftSet[] {
   const count = exercise.defaultSets ?? 3;
   const reps = exercise.defaultReps ?? 10;
-  return Array.from({ length: count }, () => ({ reps }));
+  return Array.from({ length: count }, () => toDraft({ reps }));
 }
 
 /**
@@ -53,7 +81,7 @@ export function SetsSheet({
   const isStrength = exercise?.kind === 'strength';
   const heldInSeconds = exercise?.repUnit === 'sec';
 
-  const [sets, setSets] = useState<ExerciseSet[]>([]);
+  const [sets, setSets] = useState<DraftSet[]>([]);
   const [minutes, setMinutes] = useState('');
   const [intensity, setIntensity] = useState<WorkoutIntensity>('moderate');
   const [kcalOverride, setKcalOverride] = useState('');
@@ -63,7 +91,7 @@ export function SetsSheet({
   // Reset whenever a different exercise opens the sheet.
   useEffect(() => {
     if (!open || !exercise) return;
-    setSets(initial?.sets ?? (exercise.kind === 'strength' ? blankSets(exercise) : []));
+    setSets(initial?.sets?.map(toDraft) ?? (exercise.kind === 'strength' ? blankSets(exercise) : []));
     setMinutes(String(initial?.durationMin ?? exercise.defaultDurationMin ?? 20));
     setIntensity(initial?.intensity ?? 'moderate');
     setKcalOverride('');
@@ -94,20 +122,24 @@ export function SetsSheet({
 
   if (!exercise) return null;
 
-  function patchSet(index: number, patch: Partial<ExerciseSet>) {
+  function patchSet(index: number, patch: Partial<DraftSet>) {
     setSets((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }
 
   function addSet() {
     setSets((prev) => {
       const last = prev[prev.length - 1];
-      return [...prev, last ? { ...last } : { reps: exercise?.defaultReps ?? 10 }];
+      return [...prev, last ? { ...last } : toDraft({ reps: exercise?.defaultReps ?? 10 })];
     });
   }
 
   function confirm() {
     if (!exercise) return;
-    const usable = isStrength ? sets.filter((s) => s.reps > 0) : [];
+    const usable: ExerciseSet[] = isStrength
+      ? sets
+          .filter((s) => s.reps > 0)
+          .map(({ repsDraft: _r, weightDraft: _w, ...set }) => set)
+      : [];
     if (isStrength && usable.length === 0) return;
     if (!isStrength && durationMin <= 0) return;
 
@@ -180,17 +212,27 @@ export function SetsSheet({
               <div key={i} className="flex items-center gap-2">
                 <span className="tabular w-8 text-[13px] font-semibold text-secondary">{i + 1}</span>
                 <input
-                  value={String(set.reps)}
-                  onChange={(e) => patchSet(i, { reps: Number(e.target.value.replace(/\D/g, '')) || 0 })}
+                  value={set.repsDraft}
+                  onChange={(e) => {
+                    const repsDraft = e.target.value.replace(/\D/g, '');
+                    patchSet(i, { repsDraft, reps: Number(repsDraft) || 0 });
+                  }}
                   inputMode="numeric"
                   aria-label={`Set ${i + 1} ${repLabel.toLowerCase()}`}
                   className="hairline tabular w-full flex-1 rounded-xl border bg-transparent px-3 py-2 text-[15px] outline-none focus:border-brand-500"
                 />
                 <input
-                  value={set.weightKg === undefined ? '' : String(set.weightKg)}
+                  value={set.weightDraft}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9.]/g, '');
-                    patchSet(i, { weightKg: raw === '' ? undefined : Number(raw) });
+                    const weightDraft = sanitiseDecimal(e.target.value);
+                    // "7." parses to 7 and stays on screen as "7.", so the next
+                    // keystroke can make it 7.5.
+                    const parsed = Number(weightDraft);
+                    patchSet(i, {
+                      weightDraft,
+                      weightKg:
+                        weightDraft === '' || !Number.isFinite(parsed) ? undefined : parsed,
+                    });
                   }}
                   inputMode="decimal"
                   placeholder="—"

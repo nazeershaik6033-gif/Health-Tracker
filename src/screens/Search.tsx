@@ -1,18 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
-import { addMealItems, createFood, removeMealItem } from '@/db/repo';
+import {
+  addFavourite,
+  addMealItems,
+  createFood,
+  favouriteLabel,
+  favouritesForSlot,
+  logFavourite,
+  removeFavourite,
+  removeMealItem,
+  updateMeal,
+} from '@/db/repo';
 import { searchFoods, frequentFoods } from '@/lib/foodSearch';
 import { searchRemote } from '@/lib/foodLookup';
 import { fatSecretReady, type FoodDraft } from '@/lib/fatsecret';
 import { STARTER_FREQUENT } from '@/data/foods.seed';
-import { buildMealItem, buildMealItemFromGrams } from '@/lib/nutrition';
+import {
+  buildMealItem,
+  buildMealItemFromGrams,
+  per100gFromItem,
+  rescaleMealItem,
+  roundNutrients,
+  scaleNutrients,
+} from '@/lib/nutrition';
 import { draftToFood, generateFood } from '@/ai/service';
 import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
 import { FoodRow } from '@/components/FoodRow';
+import { FavouritesSection } from '@/components/FavouritesSection';
 import { BottomSheet } from '@/components/BottomSheet';
 import { PortionSheet } from '@/components/PortionSheet';
 import { Button, EmptyState, PageHeader } from '@/components/ui';
@@ -23,7 +41,14 @@ import {
   IconSearch,
   IconSparkle,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
+import {
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  type Favourite,
+  type Food,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 
 /** Marks a row that lives only in the current search result, not IndexedDB. */
 const REMOTE_PREFIX = 'fatsecret:';
@@ -40,6 +65,7 @@ export default function Search() {
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '');
   const [slotOpen, setSlotOpen] = useState(false);
   const [detail, setDetail] = useState<Food | null>(null);
+  const [favDetail, setFavDetail] = useState<Favourite | null>(null);
   const [addedIds, setAddedIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState('');
@@ -50,10 +76,24 @@ export default function Search() {
 
   const foods = useLiveQuery(async () => db.foods.toArray(), []);
 
+  // Re-reads only when the slot changes or something in this slot is pinned,
+  // renamed, reordered or removed.
+  const favourites = useLiveQuery(() => favouritesForSlot(slot), [slot], [] as Favourite[]);
+
+  /**
+   * Filtering runs against a deferred copy of the query, so a keystroke paints
+   * the input immediately and React re-runs the (interruptible) list render
+   * behind it. Scoring every food synchronously on each keystroke is what made
+   * typing here feel like it was catching.
+   */
+  const deferredQuery = useDeferredValue(query);
+
   const results = useMemo(() => {
     if (!foods) return [];
-    return query.trim() ? searchFoods(foods, query) : frequentFoods(foods, STARTER_FREQUENT);
-  }, [foods, query]);
+    return deferredQuery.trim()
+      ? searchFoods(foods, deferredQuery)
+      : frequentFoods(foods, STARTER_FREQUENT);
+  }, [foods, deferredQuery]);
 
   useEffect(() => () => setPendingSlot(undefined), [setPendingSlot]);
 
@@ -138,6 +178,57 @@ export default function Search() {
     });
   }
 
+  /* ------------------------------ favourites ----------------------------- */
+
+  /** Pins the portion currently dialled into the sheet to the selected slot. */
+  async function pinFood(food: Food, qty: number, servingLabel: string, grams?: number) {
+    const real = await materialise(food);
+    const item =
+      grams !== undefined
+        ? buildMealItemFromGrams(real, grams)
+        : buildMealItem(real, servingLabel, qty);
+    const favourite = await addFavourite({ slot, items: [item] });
+    setDetail(null);
+
+    showToast({
+      message: `${item.name} pinned to ${MEAL_SLOT_LABEL[slot]}`,
+      actionLabel: 'Undo',
+      onAction: () => removeFavourite(favourite.id),
+    });
+  }
+
+  async function logFav(favourite: Favourite) {
+    const meal = await logFavourite(selectedDate, favourite, slot);
+    const count = favourite.items.length;
+
+    showToast({
+      message: `${favouriteLabel(favourite)} added`,
+      actionLabel: 'Undo',
+      onAction: async () => {
+        // Favourites append to the end of the slot, so the items just added are
+        // the last `count` of them however many were already there.
+        const fresh = await db.meals.get(meal.id);
+        if (fresh) await updateMeal(meal.id, { items: fresh.items.slice(0, -count) });
+      },
+    });
+  }
+
+  /**
+   * A single-item favourite reopens the portion sheet so the saved quantity can
+   * be overridden for one meal without disturbing what is pinned. A combo has
+   * no single portion to edit, so tapping it just logs it.
+   */
+  function openFav(favourite: Favourite) {
+    if (favourite.items.length === 1) setFavDetail(favourite);
+    else void logFav(favourite);
+  }
+
+  async function logFavItem(item: MealItem) {
+    await addMealItems(selectedDate, slot, [item]);
+    setFavDetail(null);
+    showToast({ message: `${item.name} added` });
+  }
+
   async function generate() {
     const q = query.trim();
     if (!q || generating) return;
@@ -206,6 +297,17 @@ export default function Search() {
       </div>
 
       <div className="flex-1 px-4 pb-28">
+        {/* Pinned first, and only when browsing: while searching, the thing
+            being searched for is what should be at the top of the screen. */}
+        {!query.trim() && (
+          <FavouritesSection
+            slot={slot}
+            favourites={favourites ?? []}
+            onLog={logFav}
+            onOpen={openFav}
+          />
+        )}
+
         <h2 className="mt-4 mb-1 text-[13px] font-bold text-secondary">
           {query.trim() ? 'Results' : 'Frequently Tracked Foods'}
         </h2>
@@ -351,12 +453,47 @@ export default function Search() {
           servings={detail.servings}
           onClose={() => setDetail(null)}
           onConfirm={(qty, label, grams) => add(detail, qty, label, grams)}
+          onFavourite={(qty, label, grams) => pinFood(detail, qty, label, grams)}
+          favouriteSlotLabel={MEAL_SLOT_LABEL[slot]}
           onEditFood={
             // A FatSecret stub has no row to edit until it is used.
             detail.id.startsWith(REMOTE_PREFIX)
               ? undefined
               : () => navigate(`/food/${detail.id}/edit`)
           }
+        />
+      )}
+
+      {/* One-off override of a pinned portion. What is saved stays saved. */}
+      {favDetail && favDetail.items[0] && (
+        <PortionSheet
+          title={favouriteLabel(favDetail)}
+          per100g={per100gFromItem(favDetail.items[0])}
+          servings={[
+            {
+              label: favDetail.items[0].servingLabel,
+              grams: favDetail.items[0].grams / (favDetail.items[0].qty || 1),
+            },
+          ]}
+          initialQty={favDetail.items[0].qty}
+          initialServingLabel={favDetail.items[0].servingLabel}
+          onClose={() => setFavDetail(null)}
+          onConfirm={(qty, label, grams) => {
+            const base = favDetail.items[0];
+            const item =
+              grams !== undefined
+                ? {
+                    ...base,
+                    qty: 1,
+                    servingLabel: label,
+                    grams,
+                    nutrients: roundNutrients(
+                      scaleNutrients(per100gFromItem(base), grams / 100),
+                    ),
+                  }
+                : rescaleMealItem(base, qty, label);
+            void logFavItem(item);
+          }}
         />
       )}
     </div>
