@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
@@ -32,9 +32,12 @@ export default function Search() {
   const navigate = useNavigate();
   const { selectedDate, pendingSlot, setPendingSlot, showToast } = useApp();
   const settings = useApp((s) => s.settings);
+  const [searchParams] = useSearchParams();
 
   const [slot, setSlot] = useState<MealSlot>(pendingSlot ?? guessSlot());
-  const [query, setQuery] = useState('');
+  // Prefilled by anything that already knows what you're looking for — today
+  // the AI meal suggestions, which would otherwise be read-only advice.
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '');
   const [slotOpen, setSlotOpen] = useState(false);
   const [detail, setDetail] = useState<Food | null>(null);
   const [addedIds, setAddedIds] = useState<string[]>([]);

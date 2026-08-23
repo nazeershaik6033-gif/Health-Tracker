@@ -237,6 +237,51 @@ export async function removeMealItem(mealId: string, index: number): Promise<voi
 }
 
 /**
+ * Puts a removed item back where it was.
+ *
+ * Deleting the last item of a meal deletes the meal row itself, so an undo
+ * cannot assume the row still exists — it is addressed by (date, slot) and
+ * recreated when gone. Splicing at the original index means undo restores the
+ * order too, not just the item.
+ */
+export async function restoreMealItem(
+  date: string,
+  slot: MealSlot,
+  index: number,
+  item: MealItem,
+): Promise<void> {
+  const meal = await db.meals.where('[date+slot]').equals([date, slot]).first();
+  if (!meal) {
+    await addMealItems(date, slot, [item]);
+    return;
+  }
+  const items = [...meal.items];
+  items.splice(Math.min(Math.max(0, index), items.length), 0, item);
+  await db.meals.put({ ...meal, items });
+}
+
+/**
+ * Puts a deleted meal back, id and all.
+ *
+ * `deleteMeal` also detaches the snap that produced the meal, so this reattaches
+ * it — otherwise undo leaves the gallery showing a photo as un-logged while its
+ * meal is back on the Diet screen.
+ */
+export async function restoreMeal(meal: Meal): Promise<void> {
+  await db.meals.put(meal);
+  if (!meal.snapId) return;
+  const snap = await db.snaps.get(meal.snapId);
+  if (snap && !snap.mealId) {
+    await db.snaps.put({ ...snap, mealId: meal.id, status: 'logged' });
+  }
+}
+
+/** Puts a deleted workout session back, id and all. */
+export async function restoreWorkout(entry: WorkoutEntry): Promise<void> {
+  await db.workouts.put(entry);
+}
+
+/**
  * Replaces one logged item in place — the "I ate two rotis, not one" fix.
  * Editing rather than delete-and-re-add keeps the item's position in the meal
  * and any AI score attached to it.

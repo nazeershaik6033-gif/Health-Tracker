@@ -58,6 +58,7 @@ export function SetsSheet({
   const [intensity, setIntensity] = useState<WorkoutIntensity>('moderate');
   const [kcalOverride, setKcalOverride] = useState('');
   const [note, setNote] = useState('');
+  const [name, setName] = useState('');
 
   // Reset whenever a different exercise opens the sheet.
   useEffect(() => {
@@ -67,6 +68,7 @@ export function SetsSheet({
     setIntensity(initial?.intensity ?? 'moderate');
     setKcalOverride('');
     setNote(initial?.note ?? '');
+    setName(initial?.name ?? exercise.name);
   }, [open, exercise, initial]);
 
   const durationMin = useMemo(() => {
@@ -112,7 +114,10 @@ export function SetsSheet({
     haptic(anyPR ? HAPTIC.success : HAPTIC.tap);
     onConfirm({
       exerciseId: exercise.id,
-      name: exercise.name,
+      // The logged name is already a snapshot rather than a lookup, so editing
+      // it here renames this entry alone — the catalog keeps its name, and
+      // every other log that used it keeps the name it was logged under.
+      name: name.trim() || exercise.name,
       kind: exercise.kind,
       met: exercise.met,
       sets: isStrength ? usable : undefined,
@@ -133,7 +138,7 @@ export function SetsSheet({
     <BottomSheet
       open={open}
       onClose={onClose}
-      title={exercise.name}
+      title={name.trim() || exercise.name}
       maxHeight="88vh"
       footer={
         <Button full size="lg" onClick={confirm} disabled={!canConfirm}>
@@ -146,6 +151,21 @@ export function SetsSheet({
           {exercise.muscles.map((m) => MUSCLE_LABEL[m]).join(', ')} ·{' '}
           {EQUIPMENT_LABEL[exercise.equipment]}
         </p>
+
+        {/* Renaming matters most for variations the catalog does not carry:
+            "Bench Press" logged on an incline, a machine whose name differs at
+            your gym. It is per-entry, so the catalog stays clean. */}
+        <Field
+          label="Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={exercise.name}
+          hint={
+            name.trim() && name.trim() !== exercise.name
+              ? `Saved as "${name.trim()}" on this entry only — the catalog still says "${exercise.name}".`
+              : undefined
+          }
+        />
 
         {isStrength ? (
           <div className="space-y-2">

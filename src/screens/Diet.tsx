@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
-import { deleteMeal, getFood, removeMealItem, replaceMealItem } from '@/db/repo';
+import {
+  deleteMeal,
+  getFood,
+  removeMealItem,
+  replaceMealItem,
+  restoreMeal,
+  restoreMealItem,
+} from '@/db/repo';
 import {
   buildMealItem,
   buildMealItemFromGrams,
@@ -17,6 +24,8 @@ import { RingProgress } from '@/components/RingProgress';
 import { MacroBar } from '@/components/MacroBar';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
+import { NextMealCard } from '@/components/NextMealCard';
+import type { MacroKey } from '@/lib/macroBreakdown';
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -31,10 +40,9 @@ export default function Diet() {
   const navigate = useNavigate();
   const { profile, selectedDate, setSelectedDate, setPendingSlot, showToast } = useApp();
   const day = useDay();
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
+    slot: MealSlot;
     index: number;
     item: MealItem;
     food?: Food;
@@ -44,9 +52,9 @@ export default function Diet() {
    * The logged item only remembers the one serving it used; the food row
    * carries the full list, so it is fetched to allow switching units.
    */
-  async function openEdit(mealId: string, index: number, item: MealItem) {
+  async function openEdit(mealId: string, slot: MealSlot, index: number, item: MealItem) {
     const food = item.foodId ? await getFood(item.foodId) : undefined;
-    setEditing({ mealId, index, item, food });
+    setEditing({ mealId, slot, index, item, food });
   }
 
   async function saveEdit(qty: number, servingLabel: string, grams?: number) {
@@ -68,10 +76,24 @@ export default function Diet() {
     navigate('/search');
   };
 
-  async function removeItem(mealId: string, index: number, name: string) {
+  const macroLink = (key: MacroKey) => `/macro/${key}?date=${selectedDate}`;
+
+  /**
+   * Deleting is one tap, not two.
+   *
+   * This used to arm on the first tap and delete on the second, which cost a
+   * tap every time and — because focus loss disarmed it — silently threw the
+   * first one away often enough to feel like three. Undo in the toast is both
+   * fewer taps and a better safety net, since it survives the mistake instead
+   * of trying to predict it.
+   */
+  async function removeItem(slot: MealSlot, mealId: string, index: number, item: MealItem) {
     await removeMealItem(mealId, index);
-    setConfirmDelete(null);
-    showToast({ message: `${name} removed` });
+    showToast({
+      message: `${item.name} removed`,
+      actionLabel: 'Undo',
+      onAction: () => restoreMealItem(selectedDate, slot, index, item),
+    });
   }
 
   return (
@@ -98,15 +120,19 @@ export default function Diet() {
         </button>
       </div>
 
-      {/* Day totals */}
+      {/* Day totals. Every figure here drills into the items behind it — a
+          number you cannot interrogate is the one you end up not trusting. */}
       <Card className="mb-3 space-y-3.5">
-        <div className="flex items-center gap-3">
+        <Link
+          to={macroLink('kcal')}
+          aria-label={`${Math.round(day.totals.kcal)} calories eaten. See what contributed.`}
+          className="flex items-center gap-3 rounded-xl transition-transform active:scale-[0.99]"
+        >
           <RingProgress
             value={day.totals.kcal / (day.targets.kcal || 1)}
             size={56}
             stroke={4.5}
             color="var(--color-ring-calorie)"
-            label={`${Math.round(day.totals.kcal)} of ${day.targets.kcal} calories`}
           >
             <div className="text-center leading-none">
               <p className="tabular text-[13px] font-extrabold">{Math.round(day.totals.kcal)}</p>
@@ -122,7 +148,8 @@ export default function Diet() {
               {day.workoutKcal > 0 && ` · ${day.workoutKcal} burned`}
             </p>
           </div>
-        </div>
+          <IconChevronRight width={16} height={16} className="shrink-0 text-muted" />
+        </Link>
         <div className="hairline grid grid-cols-2 gap-x-5 gap-y-3 border-t pt-3.5">
           <MacroBar
             label="Protein"
@@ -130,6 +157,7 @@ export default function Diet() {
             target={day.targets.protein}
             color="var(--color-macro-protein)"
             asPercent={false}
+            to={macroLink('protein')}
           />
           <MacroBar
             label="Fats"
@@ -137,6 +165,7 @@ export default function Diet() {
             target={day.targets.fat}
             color="var(--color-macro-fat)"
             asPercent={false}
+            to={macroLink('fat')}
           />
           <MacroBar
             label="Carbs"
@@ -144,6 +173,7 @@ export default function Diet() {
             target={day.targets.carbs}
             color="var(--color-macro-carb)"
             asPercent={false}
+            to={macroLink('carbs')}
           />
           <MacroBar
             label="Fibre"
@@ -151,9 +181,12 @@ export default function Diet() {
             target={day.targets.fibre}
             color="var(--color-macro-fibre)"
             asPercent={false}
+            to={macroLink('fibre')}
           />
         </div>
       </Card>
+
+      <NextMealCard date={selectedDate} />
 
       {/* Slots */}
       <div className="space-y-3">
@@ -169,28 +202,22 @@ export default function Diet() {
                 <span className="tabular text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
-                {/* Clearing a whole slot used to mean deleting every item. */}
+                {/* Clearing a whole slot means deleting every item, so this one
+                    is worth an undo even more than a single row is. */}
                 {meal && meal.items.length > 0 && (
                   <button
                     type="button"
-                    aria-label={
-                      confirmMeal === meal.id
-                        ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
-                        : `Remove ${MEAL_SLOT_LABEL[slot]}`
-                    }
+                    aria-label={`Remove ${MEAL_SLOT_LABEL[slot]}`}
                     onClick={async () => {
-                      if (confirmMeal !== meal.id) {
-                        setConfirmMeal(meal.id);
-                        return;
-                      }
+                      const snapshot = meal;
                       await deleteMeal(meal.id);
-                      setConfirmMeal(null);
-                      showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
+                      showToast({
+                        message: `${MEAL_SLOT_LABEL[slot]} removed`,
+                        actionLabel: 'Undo',
+                        onAction: () => restoreMeal(snapshot),
+                      });
                     }}
-                    onBlur={() => setConfirmMeal(null)}
-                    className={`rounded-lg p-1.5 ${
-                      confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
-                    }`}
+                    className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
                   >
                     <IconTrash width={14} height={14} />
                   </button>
@@ -219,7 +246,7 @@ export default function Diet() {
                             only way to fix a quantity was delete and re-add. */}
                         <button
                           type="button"
-                          onClick={() => openEdit(meal.id, i, item)}
+                          onClick={() => openEdit(meal.id, slot, i, item)}
                           aria-label={`Edit ${item.name}`}
                           className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                         >
@@ -237,20 +264,9 @@ export default function Diet() {
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            confirmDelete === key
-                              ? removeItem(meal.id, i, item.name)
-                              : setConfirmDelete(key)
-                          }
-                          onBlur={() => setConfirmDelete(null)}
-                          aria-label={
-                            confirmDelete === key ? `Confirm remove ${item.name}` : `Remove ${item.name}`
-                          }
-                          className={`shrink-0 rounded-lg p-1.5 transition-colors ${
-                            confirmDelete === key
-                              ? 'tint-soft tint-danger'
-                              : 'text-muted hover:text-red-600'
-                          }`}
+                          onClick={() => removeItem(slot, meal.id, i, item)}
+                          aria-label={`Remove ${item.name}`}
+                          className="shrink-0 rounded-lg p-1.5 text-muted transition-transform active:scale-90 hover:text-red-600"
                         >
                           <IconTrash width={15} height={15} />
                         </button>
@@ -318,7 +334,7 @@ export default function Diet() {
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
           onDelete={async () => {
-            await removeItem(editing.mealId, editing.index, editing.item.name);
+            await removeItem(editing.slot, editing.mealId, editing.index, editing.item);
             setEditing(null);
           }}
         />

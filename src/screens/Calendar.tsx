@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '@/stores/useApp';
 import {
@@ -8,6 +8,9 @@ import {
   deleteWorkout,
   removeMealItem,
   replaceMealItem,
+  restoreMeal,
+  restoreMealItem,
+  restoreWorkout,
   summariseRange,
   getFood,
 } from '@/db/repo';
@@ -25,8 +28,11 @@ import {
   formatPortion,
   per100gFromItem,
   rescaleMealItem,
+  totalNutrients,
 } from '@/lib/nutrition';
+import type { MacroKey } from '@/lib/macroBreakdown';
 import { RingProgress } from '@/components/RingProgress';
+import { MacroBar } from '@/components/MacroBar';
 import { PortionSheet } from '@/components/PortionSheet';
 import { Button, Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import {
@@ -39,7 +45,7 @@ import {
   IconSteps,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem } from '@/types';
+import { MEAL_SLOTS, MEAL_SLOT_LABEL, ZERO_NUTRIENTS, type Food, type MealItem, type MealSlot } from '@/types';
 
 /**
  * Month view of everything logged, and a full summary of whichever day is
@@ -57,15 +63,16 @@ export default function CalendarScreen() {
     const d = fromISODate(selectedDate);
     return { year: d.getFullYear(), month: d.getMonth() };
   });
-  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
+    slot: MealSlot;
     index: number;
     item: MealItem;
     food?: Food;
   } | null>(null);
 
   const kcalTarget = profile?.targets.kcal ?? 2000;
+  const targets = profile?.targets ?? ZERO_NUTRIENTS;
 
   /* ------------------------------ month grid ----------------------------- */
 
@@ -105,11 +112,11 @@ export default function CalendarScreen() {
 
   /* ------------------------------- editing ------------------------------- */
 
-  async function openEdit(mealId: string, index: number, item: MealItem) {
+  async function openEdit(mealId: string, slot: MealSlot, index: number, item: MealItem) {
     // The food row carries the serving list; a logged item only remembers the
     // one serving it used, so without this you could not switch units.
     const food = item.foodId ? await getFood(item.foodId) : undefined;
-    setEditing({ mealId, index, item, food });
+    setEditing({ mealId, slot, index, item, food });
   }
 
   async function saveEdit(qty: number, servingLabel: string, grams?: number) {
@@ -131,22 +138,22 @@ export default function CalendarScreen() {
 
   async function deleteEdited() {
     if (!editing) return;
-    await removeMealItem(editing.mealId, editing.index);
-    const name = editing.item.name;
+    const { mealId, slot, index, item } = editing;
+    await removeMealItem(mealId, index);
     setEditing(null);
-    showToast({ message: `${name} removed` });
+    showToast({
+      message: `${item.name} removed`,
+      actionLabel: 'Undo',
+      onAction: () => restoreMealItem(selectedDate, slot, index, item),
+    });
   }
+
+  const macroLink = (key: MacroKey) => `/macro/${key}?date=${selectedDate}`;
 
   /* -------------------------------- render ------------------------------- */
 
-  const dayKcal = bundle
-    ? Math.round(
-        bundle.meals.reduce(
-          (sum, m) => sum + m.items.reduce((s, i) => s + i.nutrients.kcal, 0),
-          0,
-        ),
-      )
-    : 0;
+  const dayTotals = bundle?.meals.length ? totalNutrients(bundle.meals) : ZERO_NUTRIENTS;
+  const dayKcal = Math.round(dayTotals.kcal);
 
   return (
     <div className="pb-28">
@@ -254,13 +261,59 @@ export default function CalendarScreen() {
           <h2 className="text-[16px] font-bold tracking-tight">
             {relativeDayLabel(selectedDate)}
           </h2>
-          <span className="tabular text-[13px] font-semibold text-secondary">
+          <Link
+            to={macroLink('kcal')}
+            className="tabular flex items-center gap-0.5 text-[13px] font-semibold text-secondary"
+          >
             {dayKcal} / {kcalTarget} Cal
-          </span>
+            <IconChevronRight width={13} height={13} className="text-muted" />
+          </Link>
         </div>
 
         {bundle && (
           <>
+            {/* The same drill-down the Diet screen has, for whichever past day
+                is selected — that is where "why was my fibre so low on
+                Tuesday" actually gets asked. */}
+            {bundle.meals.length > 0 && (
+              <Card>
+                <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+                  <MacroBar
+                    label="Protein"
+                    value={dayTotals.protein}
+                    target={targets.protein}
+                    color="var(--color-macro-protein)"
+                    asPercent={false}
+                    to={macroLink('protein')}
+                  />
+                  <MacroBar
+                    label="Fats"
+                    value={dayTotals.fat}
+                    target={targets.fat}
+                    color="var(--color-macro-fat)"
+                    asPercent={false}
+                    to={macroLink('fat')}
+                  />
+                  <MacroBar
+                    label="Carbs"
+                    value={dayTotals.carbs}
+                    target={targets.carbs}
+                    color="var(--color-macro-carb)"
+                    asPercent={false}
+                    to={macroLink('carbs')}
+                  />
+                  <MacroBar
+                    label="Fibre"
+                    value={dayTotals.fibre}
+                    target={targets.fibre}
+                    color="var(--color-macro-fibre)"
+                    asPercent={false}
+                    to={macroLink('fibre')}
+                  />
+                </div>
+              </Card>
+            )}
+
             {/* Meals */}
             {MEAL_SLOTS.map((slot) => {
               const meal = bundle.meals.find((m) => m.slot === slot);
@@ -271,26 +324,19 @@ export default function CalendarScreen() {
                     action={
                       <button
                         type="button"
-                        aria-label={
-                          confirmMeal === meal.id
-                            ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
-                            : `Remove ${MEAL_SLOT_LABEL[slot]}`
-                        }
+                        aria-label={`Remove ${MEAL_SLOT_LABEL[slot]}`}
                         onClick={async () => {
-                          if (confirmMeal !== meal.id) {
-                            setConfirmMeal(meal.id);
-                            return;
-                          }
+                          const snapshot = meal;
                           await deleteMeal(meal.id);
-                          setConfirmMeal(null);
-                          showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
+                          showToast({
+                            message: `${MEAL_SLOT_LABEL[slot]} removed`,
+                            actionLabel: 'Undo',
+                            onAction: () => restoreMeal(snapshot),
+                          });
                         }}
-                        onBlur={() => setConfirmMeal(null)}
-                        className={`rounded-lg p-1.5 text-[11px] font-semibold ${
-                          confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
-                        }`}
+                        className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
                       >
-                        {confirmMeal === meal.id ? 'Tap to confirm' : <IconTrash width={14} height={14} />}
+                        <IconTrash width={14} height={14} />
                       </button>
                     }
                   >
@@ -300,7 +346,7 @@ export default function CalendarScreen() {
                     <button
                       key={`${meal.id}-${i}`}
                       type="button"
-                      onClick={() => openEdit(meal.id, i, item)}
+                      onClick={() => openEdit(meal.id, slot, i, item)}
                       className="flex w-full items-center gap-3 border-b border-[var(--surface-border)] py-2.5 text-left last:border-0"
                     >
                       <div className="min-w-0 flex-1">
@@ -394,9 +440,13 @@ export default function CalendarScreen() {
                       aria-label={`Remove ${w.type}`}
                       onClick={async () => {
                         await deleteWorkout(w.id);
-                        showToast({ message: `${w.type} removed` });
+                        showToast({
+                          message: `${w.type} removed`,
+                          actionLabel: 'Undo',
+                          onAction: () => restoreWorkout(w),
+                        });
                       }}
-                      className="shrink-0 p-1 text-red-600"
+                      className="shrink-0 p-1 text-red-600 transition-transform active:scale-90"
                     >
                       <IconTrash width={15} height={15} />
                     </button>

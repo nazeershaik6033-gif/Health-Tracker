@@ -20,6 +20,8 @@ const Settings = lazy(() => import('@/screens/Settings'));
 // Lazy: it pulls in RingProgress-per-cell and the day bundle, and it is a
 // deliberate navigation rather than part of the launch path.
 const CalendarScreen = lazy(() => import('@/screens/Calendar'));
+// Lazy: reached by tapping a figure on the day summary, never on launch.
+const MacroBreakdown = lazy(() => import('@/screens/MacroBreakdown'));
 const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
 // Lazy: the zip/XML reader is dead weight for everyone who never imports.
 const ImportHealth = lazy(() => import('@/screens/ImportHealth'));
@@ -103,6 +105,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/diet" element={<Diet />} />
             <Route path="/calendar" element={<CalendarScreen />} />
+            <Route path="/macro/:key" element={<MacroBreakdown />} />
             <Route path="/import/health" element={<ImportHealth />} />
             <Route path="/find" element={<GlobalSearch />} />
             <Route path="/food/recipe" element={<RecipeBuilder />} />

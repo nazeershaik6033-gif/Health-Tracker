@@ -98,6 +98,45 @@ export const INSIGHT_SCHEMA = {
   },
 } as const;
 
+/**
+ * Suggestions for the next meal of the day.
+ *
+ * Each option carries its own calories and protein so the card can show what
+ * logging it would do to the day's remaining budget, rather than making the
+ * user guess whether "a bowl of dal" fits in 243 calories.
+ */
+export const MEAL_SUGGESTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['headline', 'options', 'tip'],
+  properties: {
+    headline: {
+      type: 'string',
+      description: 'One sentence naming the gap this meal should close, citing real numbers',
+    },
+    options: {
+      type: 'array',
+      description: 'Two or three concrete things to eat',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'portion', 'kcal', 'protein', 'why'],
+        properties: {
+          name: { type: 'string', description: 'The dish, e.g. "Rajma with brown rice"' },
+          portion: { type: 'string', description: 'e.g. "1 katori rajma + 1 katori rice"' },
+          kcal: { type: 'number' },
+          protein: { type: 'number', description: 'Grams of protein in that portion' },
+          why: { type: 'string', description: 'One short clause on why this one fits' },
+        },
+      },
+    },
+    tip: {
+      type: 'string',
+      description: 'One sentence on the rest of the day, or what to avoid',
+    },
+  },
+} as const;
+
 export const PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
