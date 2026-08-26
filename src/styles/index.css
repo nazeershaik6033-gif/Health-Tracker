@@ -79,6 +79,9 @@
   --tint-danger-bg: #fdeeee;
   --tint-danger-fg: #7f1d1d;
   --tint-danger-rule: #dc2626;
+  --tint-pink-bg: #fdecf3;
+  --tint-pink-fg: #7a1338;
+  --tint-pink-rule: #e8467c;
   /* Pills sitting *on* a tinted card, so they lift off the fill rather than
      the canvas — white on light themes, a sliver of light on dark ones. */
   --tint-pill: rgb(255 255 255 / 0.8);
@@ -114,6 +117,9 @@
   --tint-danger-bg: #f6e0da;
   --tint-danger-fg: #6f2118;
   --tint-danger-rule: #c53030;
+  --tint-pink-bg: #f4dfe2;
+  --tint-pink-fg: #6b2036;
+  --tint-pink-rule: #d43a70;
   --tint-pill: rgb(255 255 255 / 0.62);
   color-scheme: light;
 }
@@ -146,6 +152,9 @@
   --tint-danger-bg: #251313;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
+  --tint-pink-bg: #2a1220;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
   --tint-pill: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
@@ -180,6 +189,9 @@
   --tint-danger-bg: #190d0d;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
+  --tint-pink-bg: #1c0c15;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
   --tint-pill: rgb(255 255 255 / 0.06);
   color-scheme: dark;
 }
@@ -233,6 +245,34 @@
   button,
   [role='button'] {
     touch-action: manipulation;
+  }
+
+  /* Native tap feedback is switched off above, so anything tappable has to
+     supply its own or a press reads as a dead tap. The app has ~125 buttons and
+     only a fifth carried a pressed state, which is much of why it felt
+     unresponsive — the rest gave nothing back at all, and the ones styled only
+     with `hover:` gave nothing on a touchscreen by definition.
+
+     Deliberately in `@layer base`: Tailwind utilities sit in a later layer, so
+     any element that wants a different press — `active:scale-90` on the slot
+     header icons, say — still overrides this by layer order, not by a
+     specificity fight. `:active` also paints the instant a finger lands, before
+     any handler runs, so the feedback stays immediate even when the work behind
+     the tap is not. Disabled controls are excluded; they should not appear to
+     respond to a press they will ignore. */
+  button:not(:disabled),
+  [role='button'],
+  a[href] {
+    transition:
+      transform 90ms ease-out,
+      opacity 90ms ease-out;
+  }
+
+  button:not(:disabled):active,
+  [role='button']:not([aria-disabled='true']):active,
+  a[href]:active {
+    transform: scale(0.97);
+    opacity: 0.8;
   }
 
   /* Respect users who ask for less motion — rings and sheets both animate */
@@ -306,6 +346,14 @@
     --tint-fg: var(--tint-danger-fg);
     --tint-rule: var(--tint-danger-rule);
   }
+  /* Matches --color-ring-workout, so exercise reads as one colour wherever it
+     appears — the tracker ring, the log sheet entry, the Home tile. */
+  .accent-pink,
+  .tint-pink {
+    --tint-bg: var(--tint-pink-bg);
+    --tint-fg: var(--tint-pink-fg);
+    --tint-rule: var(--tint-pink-rule);
+  }
 
   .accent-card {
     background: var(--tint-bg);
@@ -340,6 +388,7 @@
   .tint-amber,
   .tint-purple,
   .tint-blue,
+  .tint-pink,
   .tint-danger {
     background: var(--tint-bg);
     color: var(--tint-fg);
@@ -464,6 +513,9 @@
 }
 .animate-route-in {
   animation: route-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-rise-in {
+  animation: rise-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ---------------------------------------------------------------- stagger

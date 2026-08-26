@@ -31,7 +31,7 @@ import { THEMES, type FatSecretConfig, type ProviderId, type Settings as Setting
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { profile, settings, setSettings, refreshProfile, showToast } = useApp();
+  const { profile, settings, setSettings, refreshProfile, showToast, showConfirm } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [keyDraft, setKeyDraft] = useState('');
@@ -63,28 +63,28 @@ export default function Settings() {
     setUpdating(null);
   }
 
-  const [confirmForce, setConfirmForce] = useState(false);
-
-  async function runForceReload() {
-    // Two taps, because this is the one control that can leave the app
+  function runForceReload() {
+    // Asks first, because this is the one control that can leave the app
     // unopenable — it deletes the offline copy and depends on the server
     // having one to replace it with.
-    if (!confirmForce) {
-      setConfirmForce(true);
-      setUpdateMessage('');
-      return;
-    }
-    setConfirmForce(false);
-    setUpdating('force');
-    setUpdateMessage(describeStage('checking'));
-    try {
-      // Rebuilding the shell takes a few seconds on a slow connection. Naming
-      // the stage as it changes is what keeps that from reading as a hang.
-      await forceReload((stage) => setUpdateMessage(describeStage(stage)));
-    } catch (err) {
-      setUpdateMessage(err instanceof Error ? err.message : 'Could not clear the cache.');
-      setUpdating(null);
-    }
+    showConfirm({
+      title: 'Rebuild the offline copy?',
+      body: 'The cached app is deleted and fetched again. If you are offline or the server is down, Healthify may not open until you have a connection.',
+      confirmLabel: 'Rebuild',
+      onConfirm: async () => {
+        setUpdating('force');
+        setUpdateMessage(describeStage('checking'));
+        try {
+          // Rebuilding the shell takes a few seconds on a slow connection.
+          // Naming the stage as it changes is what keeps that from reading
+          // as a hang.
+          await forceReload((stage) => setUpdateMessage(describeStage(stage)));
+        } catch (err) {
+          setUpdateMessage(err instanceof Error ? err.message : 'Could not clear the cache.');
+          setUpdating(null);
+        }
+      },
+    });
   }
 
   // Only so the System swatch can say which way it currently resolves.
@@ -520,6 +520,41 @@ export default function Settings() {
           )}
         </Card>
 
+        {/* ------------------------ Calories burned --------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.countStepKcal !== false}
+                aria-label="Count steps toward calories burned"
+                onClick={() => setSettings({ countStepKcal: settings.countStepKcal === false })}
+                className={`relative h-6 w-10 rounded-full transition-colors ${
+                  settings.countStepKcal !== false ? 'bg-brand-500' : 'bg-[var(--surface-border)]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    settings.countStepKcal !== false ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            }
+          >
+            Count steps as calories
+          </SectionTitle>
+
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Walking is counted toward the calories you burn, net of resting energy, so it does not
+            double up with the activity level already built into your target.
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Turn it off if you log walks as workouts too — the app cannot tell a logged walk apart
+            from the steps that same walk produced, and would count it twice.
+          </p>
+        </Card>
+
         {/* -------------------------- Appearance ------------------------ */}
         <Card className="space-y-3">
           <SectionTitle>Theme</SectionTitle>
@@ -711,16 +746,11 @@ export default function Settings() {
               {updating === 'check' ? 'Checking…' : 'Check for updates'}
             </Button>
             <Button
-              variant={confirmForce ? 'danger' : 'secondary'}
+              variant="secondary"
               onClick={runForceReload}
-              onBlur={() => setConfirmForce(false)}
               disabled={updating !== null}
             >
-              {updating === 'force'
-                ? 'Rebuilding…'
-                : confirmForce
-                  ? 'Tap again to rebuild the offline copy'
-                  : 'Force reload'}
+              {updating === 'force' ? 'Rebuilding…' : 'Force reload'}
             </Button>
           </div>
 
