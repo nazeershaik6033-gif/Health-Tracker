@@ -125,7 +125,7 @@ export const PROVIDER_META: Record<
       'openai/gpt-4o-mini',
       'meta-llama/llama-4-maverick',
     ],
-    defaultModel: 'anthropic/claude-sonnet-4.5',
+    defaultModel: 'stealth/ox-alpha',
   },
 };
 
