@@ -119,6 +119,7 @@ export const PROVIDER_META: Record<
     keyPrefix: 'sk-or-',
     keyShape: 'OpenRouter keys start with sk-or-v1- followed by a long hex string',
     models: [
+      'stealth/ox-alpha',
       'anthropic/claude-sonnet-4.5',
       'google/gemini-2.5-flash',
       'openai/gpt-4o-mini',
