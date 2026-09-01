@@ -17,6 +17,29 @@ import { MEAL_SLOT_LABEL, ZERO_NUTRIENTS, type Food, type MealSlot } from '@/typ
 interface Ingredient {
   food: Food;
   grams: number;
+  /**
+   * The raw text of the grams field.
+   *
+   * The input was bound straight to `grams`, so every keystroke round-tripped
+   * through `Number()` before being rendered back: typing "12." produced
+   * `Number("12.") === 12`, which re-rendered as "12" and ate the decimal point
+   * on the way in. Same defect the set-weight field had, and the same fix —
+   * hold the text, parse alongside it.
+   */
+  draft: string;
+}
+
+const makeIngredient = (food: Food, grams: number): Ingredient => ({
+  food,
+  grams,
+  draft: String(grams),
+});
+
+/** Digits and at most one decimal point, so "1.2.5" can never be typed. */
+function sanitiseDecimal(raw: string): string {
+  const cleaned = raw.replace(/[^0-9.]/g, '');
+  const [head, ...rest] = cleaned.split('.');
+  return rest.length ? `${head}.${rest.join('')}` : head;
 }
 
 /**
@@ -69,14 +92,21 @@ export default function RecipeBuilder() {
     setIngredients((prev) =>
       prev.some((i) => i.food.id === food.id)
         ? prev
-        : [...prev, { food, grams: food.servings[0]?.grams ?? 100 }],
+        : [...prev, makeIngredient(food, food.servings[0]?.grams ?? 100)],
     );
     setAddOpen(false);
     setQuery('');
   }
 
-  function setGrams(index: number, grams: number) {
-    setIngredients((prev) => prev.map((i, j) => (j === index ? { ...i, grams } : i)));
+  function setGrams(index: number, draft: string) {
+    const grams = Number(draft);
+    setIngredients((prev) =>
+      prev.map((i, j) =>
+        j === index
+          ? { ...i, draft, grams: draft === '' || !Number.isFinite(grams) ? 0 : grams }
+          : i,
+      ),
+    );
   }
 
   function removeIngredient(index: number) {
@@ -175,11 +205,8 @@ export default function RecipeBuilder() {
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={ing.grams}
-                      onChange={(e) => {
-                        const n = Number(e.target.value.replace(/[^0-9.]/g, ''));
-                        setGrams(i, Number.isFinite(n) ? n : 0);
-                      }}
+                      value={ing.draft}
+                      onChange={(e) => setGrams(i, sanitiseDecimal(e.target.value))}
                       aria-label={`${ing.food.name} quantity in grams`}
                       className="hairline w-16 rounded-lg border bg-transparent px-2 py-1.5 text-right text-[13px] tabular"
                     />

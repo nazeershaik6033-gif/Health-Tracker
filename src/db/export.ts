@@ -13,13 +13,18 @@ import { DEFAULT_FATSECRET, type Snap } from '@/types';
  */
 
 /**
- * 3 adds the `exercises` table. Older bundles import unchanged — the restore
- * loop skips table keys a file doesn't carry, and the guard below only rejects
- * files from a *newer* version than this build understands.
+ * 3 adds the `exercises` table; 4 adds `favourites`. Older bundles import
+ * unchanged — the restore loop skips table keys a file doesn't carry, and the
+ * guard below only rejects files from a *newer* version than this build
+ * understands.
+ *
+ * The on-disk shape of a snap did not change when full images moved to their
+ * own table: a bundle still carries one object per photo with both encodings
+ * on it, and the import splits them back apart.
  */
-export const EXPORT_VERSION = 3;
+export const EXPORT_VERSION = 4;
 
-interface SerialisedSnap extends Omit<Snap, 'blob' | 'thumb'> {
+interface SerialisedSnap extends Omit<Snap, 'thumb'> {
   blob?: string;
   thumb?: string;
   blobType?: string;
@@ -54,6 +59,7 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     insights,
     plans,
     exercises,
+    favourites,
   ] = await Promise.all([
     db.profile.toArray(),
     db.settings.toArray(),
@@ -72,17 +78,22 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     // Same reasoning as foods: the seed catalog ships with the app, so only
     // custom entries and ones actually used are worth carrying.
     db.exercises.filter((e) => e.source !== 'seed' || e.useCount > 0).toArray(),
+    db.favourites.toArray(),
   ]);
 
+  // Full images are fetched per snap rather than read as one table: with photos
+  // switched off nothing pulls them out of IndexedDB at all.
   const serialisedSnaps: SerialisedSnap[] = await Promise.all(
     snaps.map(async (snap) => {
-      const { blob, thumb, ...rest } = snap;
+      const { thumb, ...rest } = snap;
       if (!includePhotos) return rest;
+      const full = (await db.snapImages.get(snap.id))?.blob;
+      if (!full) return rest;
       return {
         ...rest,
-        blob: await blobToBase64(blob),
+        blob: await blobToBase64(full),
         thumb: await blobToBase64(thumb),
-        blobType: blob.type || 'image/jpeg',
+        blobType: full.type || 'image/jpeg',
       };
     }),
   );
@@ -116,6 +127,7 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
       insights,
       plans,
       exercises,
+      favourites,
     },
   };
 }
@@ -152,6 +164,7 @@ export async function importData(bundle: unknown): Promise<ImportSummary> {
     insights: db.insights,
     plans: db.plans,
     exercises: db.exercises,
+    favourites: db.favourites,
   } as never;
 
   for (const [name, table] of Object.entries(tables)) {
@@ -195,7 +208,11 @@ export async function importData(bundle: unknown): Promise<ImportSummary> {
           base64ToBlob(raw.thumb, type),
         ]);
         const { blob: _b, thumb: _t, blobType: _bt, ...meta } = raw;
-        await db.snaps.put({ ...meta, blob, thumb } as never);
+        // Back into the two tables the app now reads.
+        await db.transaction('rw', db.snaps, db.snapImages, async () => {
+          await db.snaps.put({ ...meta, thumb } as never);
+          await db.snapImages.put({ id: meta.id, blob });
+        });
         restored++;
       } catch {
         /* skip the one bad snap rather than failing the whole import */

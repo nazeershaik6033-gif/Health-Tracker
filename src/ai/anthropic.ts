@@ -158,6 +158,17 @@ export function createAnthropic(apiKey: string, model?: string): ProviderAdapter
       .filter((b) => b.type === 'text')
       .map((b) => b.text ?? '')
       .join('');
+
+    // Checked before the empty-text case, and again after: hitting the token
+    // ceiling either returns nothing at all or returns half an object, and
+    // both used to surface as "the reply could not be read" — which sent the
+    // user off checking their key for a problem that was only ever a budget.
+    if (data.stop_reason === 'max_tokens') {
+      throw new AIError(
+        `Reply hit the ${opts.maxTokens ?? 2048} token output limit`,
+        'truncated',
+      );
+    }
     if (!text) throw new AIError('Model returned no text', 'bad-response');
     return text;
   }

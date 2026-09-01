@@ -200,6 +200,39 @@ export function kcalFromMet(
   return Math.round(((met * INTENSITY_FACTOR[intensity] * 3.5 * weightKg) / 200) * minutes);
 }
 
+/* --------------------------------- steps ---------------------------------- */
+
+/**
+ * Steps per minute that counts as moderate walking. The usual cadence
+ * threshold, and what turns a bare step count into the minutes the ACSM
+ * formula needs.
+ */
+const WALKING_CADENCE = 100;
+
+/** MET for walking at that cadence, matching `WORKOUT_METS.Walking`. */
+const WALKING_MET = 3.5;
+
+/**
+ * Calories burned walking, from a step count.
+ *
+ * Returns **net** energy — the cost above simply existing — which is why the
+ * MET has 1 subtracted from it. That correction is the whole reason this is
+ * safe to subtract from the day. A calorie target here is already built on
+ * BMR × an activity factor of 1.2 to 1.9, and that factor is precisely an
+ * allowance for everyday moving about. Counting the gross figure would charge
+ * the day twice for the same walking and quietly hand back a few hundred
+ * calories that were never earned.
+ *
+ * Still an estimate: cadence and stride vary, and a phone in a bag misses
+ * steps a wrist catches. Treat it as the right order of magnitude, not a
+ * measurement — which is what the UI says where it shows up.
+ */
+export function stepKcal(steps: number, weightKg: number): number {
+  if (steps <= 0 || weightKg <= 0) return 0;
+  const minutes = steps / WALKING_CADENCE;
+  return Math.round((((WALKING_MET - 1) * 3.5 * weightKg) / 200) * minutes);
+}
+
 /** Seconds per rep — one concentric plus one eccentric at a standard tempo. */
 const SECONDS_PER_REP = 3;
 /** Default rest between sets, in seconds. */
