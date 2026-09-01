@@ -33,6 +33,8 @@ interface AppState {
   settings: Settings;
   /** The day every screen is currently showing. */
   selectedDate: string;
+  /** What the app last believed the current date to be. See `syncToToday`. */
+  todayDate: string;
   toast?: ToastState;
   confirm?: ConfirmState;
   /** Slot pre-selected when the user came from the meal picker. */
@@ -43,6 +45,7 @@ interface AppState {
   refreshSettings: () => Promise<void>;
   setSettings: (patch: Partial<Settings>) => Promise<void>;
   setSelectedDate: (date: string) => void;
+  syncToToday: () => void;
   setPendingSlot: (slot?: MealSlot) => void;
   showToast: (t: Omit<ToastState, 'id'>) => void;
   dismissToast: () => void;
@@ -60,6 +63,7 @@ export const useApp = create<AppState>((set, get) => ({
   ready: false,
   settings: DEFAULT_SETTINGS,
   selectedDate: today(),
+  todayDate: today(),
 
   async init() {
     // StrictMode invokes the init effect twice in dev, and a user can open two
@@ -106,6 +110,24 @@ export const useApp = create<AppState>((set, get) => ({
 
   setSelectedDate(date) {
     set({ selectedDate: date });
+  },
+
+  /**
+   * Rolls the app onto the new day once the clock has passed midnight.
+   *
+   * Only moves `selectedDate` if it was still pinned to what the app thought
+   * today was. Someone reviewing last Tuesday keeps looking at last Tuesday —
+   * having the screen jump to today underneath them would be worse than the
+   * stale date this fixes.
+   */
+  syncToToday() {
+    const now = today();
+    const { todayDate, selectedDate } = get();
+    if (now === todayDate) return;
+    set({
+      todayDate: now,
+      selectedDate: selectedDate === todayDate ? now : selectedDate,
+    });
   },
 
   setPendingSlot(slot) {

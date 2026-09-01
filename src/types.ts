@@ -491,4 +491,6 @@ export interface Settings {
    * is counting one walk twice, and only they know which they meant.
    */
   countStepKcal?: boolean;
+  /** Shows the frame-rate readout. Off by default; a diagnostic, not a feature. */
+  showFps?: boolean;
 }

@@ -74,7 +74,7 @@ export function ExercisePicker({ open, onClose, onPick, onCreateCustom }: Props)
           />
         </div>
 
-        <div className="no-scrollbar -mx-5 flex gap-1.5 overflow-x-auto px-5">
+        <div className="scroll-x no-scrollbar -mx-5 flex gap-1.5 px-5">
           <Chip active={!muscle} onClick={() => setMuscle(undefined)}>
             All muscles
           </Chip>
@@ -85,7 +85,7 @@ export function ExercisePicker({ open, onClose, onPick, onCreateCustom }: Props)
           ))}
         </div>
 
-        <div className="no-scrollbar -mx-5 flex gap-1.5 overflow-x-auto px-5">
+        <div className="scroll-x no-scrollbar -mx-5 flex gap-1.5 px-5">
           <Chip active={!equipment} onClick={() => setEquipment(undefined)}>
             Any kit
           </Chip>
@@ -118,7 +118,7 @@ export function ExercisePicker({ open, onClose, onPick, onCreateCustom }: Props)
             )}
           </div>
         ) : (
-          <ul className="stagger">
+          <ul className="stagger list-fast">
             {results.map((exercise, i) => (
               <li key={exercise.id} style={{ '--i': i } as React.CSSProperties}>
                 <button

@@ -313,7 +313,10 @@ export default function Search() {
         </h2>
 
         {results.length > 0 ? (
-          <div>
+          // list-fast: the local database runs to hundreds of matches on a
+          // short query, and skipping layout and paint for the rows below the
+          // fold is what keeps the scroll smooth on a high-refresh display.
+          <div className="list-fast">
             {results.map((food) => (
               <FoodRow
                 key={food.id}

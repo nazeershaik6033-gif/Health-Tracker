@@ -6,6 +6,7 @@ import { useApp } from '@/stores/useApp';
 import { useDay, useStreak } from '@/stores/useDay';
 import { TopBar } from '@/components/TopBar';
 import { RingProgress } from '@/components/RingProgress';
+import { CountUp } from '@/components/CountUp';
 import { MacroBar } from '@/components/MacroBar';
 import { TrackerTile, TrackerRow } from '@/components/TrackerTile';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -139,9 +140,14 @@ export default function Home() {
             <Link to="/diet" className="min-w-0 flex-1">
               <p className="text-[16px] font-bold tracking-tight">Track Food</p>
               <p className="tabular text-[13px] text-secondary">
-                {eaten > 0
-                  ? `${formatKcal(net)} of ${formatKcal(target)} Cal Net`
-                  : `Eat ${formatKcal(target)} Cal`}
+                {eaten > 0 ? (
+                  <>
+                    <CountUp value={net} format={formatKcal} /> of {formatKcal(target)} Cal
+                    Net
+                  </>
+                ) : (
+                  `Eat ${formatKcal(target)} Cal`
+                )}
               </p>
               {burned > 0 && (
                 <p className="tabular text-[11.5px] text-muted">
@@ -213,7 +219,7 @@ export default function Home() {
 
         {/* --------------------------- Snaps rail ------------------------ */}
         {snaps && snaps.length > 0 && (
-          <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
+          <div className="scroll-x no-scrollbar -mx-4 flex gap-2 px-4">
             {snaps.map((s) => (
               <SnapThumb key={s.id} snap={s} />
             ))}

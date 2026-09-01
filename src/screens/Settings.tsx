@@ -727,6 +727,42 @@ export default function Settings() {
           )}
         </Card>
 
+        {/* ---------------------------- Motion -------------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(settings.showFps)}
+                aria-label="Show frame rate"
+                onClick={() => setSettings({ showFps: !settings.showFps })}
+                className={`relative h-6 w-10 rounded-full transition-colors ${
+                  settings.showFps ? 'bg-brand-500' : 'bg-[var(--surface-border)]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    settings.showFps ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            }
+          >
+            Frame rate readout
+          </SectionTitle>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Shows a live frames-per-second counter in the corner, with the worst reading since
+            the app opened. Useful for telling a genuinely dropped frame from an animation that
+            just looks slow on your device. Off by default.
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-muted">
+            Screen transitions, sheets and counters all follow your system&apos;s
+            &ldquo;reduce motion&rdquo; setting — turn that on in your OS accessibility settings
+            and the app stops animating.
+          </p>
+        </Card>
+
         {/* -------------------------- Apple Health ---------------------- */}
         <Card className="space-y-3">
           <SectionTitle>Apple Health</SectionTitle>

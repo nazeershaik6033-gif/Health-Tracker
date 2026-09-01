@@ -430,7 +430,7 @@ export default function Snap() {
 
       {/* -------------------------- analysing -------------------------- */}
       {phase === 'analysing' && (
-        <div className="flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-8">
+        <div className="scroll-y flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-8">
           {preview && (
             <img
               src={preview}
@@ -459,7 +459,7 @@ export default function Snap() {
 
       {/* ---------------------------- result --------------------------- */}
       {phase === 'result' && analysis && (
-        <div className="flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
+        <div className="scroll-y flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
           {preview && (
             <img
               src={preview}
@@ -564,7 +564,7 @@ export default function Snap() {
 
       {/* ----------------------------- error --------------------------- */}
       {phase === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
+        <div className="scroll-y flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-canvas)] px-8 py-6 text-center">
           {preview && (
             <img src={preview} alt="" className="h-40 w-40 rounded-2xl object-cover opacity-60" />
           )}

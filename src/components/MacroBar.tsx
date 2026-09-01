@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { CountUp } from './CountUp';
 import { IconChevronRight } from './icons';
 
 interface Props {
@@ -30,7 +31,17 @@ export function MacroBar({ label, value, target, color, unit = 'g', asPercent = 
           {to && <IconChevronRight width={12} height={12} className="text-muted" />}
         </span>
         <span className={`tabular text-[13px] font-semibold ${over ? 'text-red-600' : ''}`}>
-          {asPercent ? `${pct}%` : `${Math.round(value)}/${Math.round(target)} ${unit}`}
+          {/* Counted either way, over the same 560ms the bar beside it takes
+              to grow, so the number and the fill arrive together rather than
+              the digits snapping ahead of the bar. Only the figure that moves
+              is counted — the target it is measured against is fixed. */}
+          {asPercent ? (
+            <CountUp value={pct} format={(n) => `${Math.round(n)}%`} />
+          ) : (
+            <>
+              <CountUp value={value} />/{Math.round(target)} {unit}
+            </>
+          )}
         </span>
       </div>
       <div className="surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full">

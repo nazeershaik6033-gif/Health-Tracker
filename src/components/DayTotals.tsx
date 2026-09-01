@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { RingProgress } from './RingProgress';
+import { CountUp } from './CountUp';
 import { MacroBar } from './MacroBar';
 import { Card } from './ui';
 import { IconChevronRight } from './icons';
@@ -50,15 +51,19 @@ export function DayTotals({
         label={macroHref ? undefined : `${Math.round(net)} of ${targets.kcal} calories`}
       >
         <div className="text-center leading-none">
-          <p className="tabular text-[13px] font-extrabold">{Math.round(net)}</p>
+          <p className="tabular text-[13px] font-extrabold">
+            <CountUp value={net} />
+          </p>
           <p className="text-[8px] text-muted">kcal</p>
         </div>
       </RingProgress>
 
       <div className="flex-1">
-        <p className="text-[15px] font-bold">{left.toLocaleString()} Cal left</p>
+        <p className="tabular text-[15px] font-bold">
+          <CountUp value={left} format={(n) => Math.round(n).toLocaleString()} /> Cal left
+        </p>
         <p className="tabular text-[12.5px] text-secondary">
-          {Math.round(totals.kcal).toLocaleString()} eaten
+          <CountUp value={totals.kcal} format={(n) => Math.round(n).toLocaleString()} /> eaten
           {burned > 0 && ` · ${Math.round(burned)} burned`}
         </p>
       </div>
