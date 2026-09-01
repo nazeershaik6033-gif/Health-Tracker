@@ -1,30 +1,24 @@
 import { MacroBar } from './MacroBar';
-import { periodNutrients, periodTargets } from '@/lib/nutrition';
-import {
-  DAY_PERIOD_LABEL,
-  DAY_PERIOD_SLOTS,
-  MEAL_SLOT_LABEL,
-  type DayPeriod,
-  type Meal,
-  type Profile,
-} from '@/types';
+import { DAY_PERIOD_LABEL, DAY_PERIOD_SLOTS, MEAL_SLOT_LABEL, type DayPeriod, type Nutrients } from '@/types';
 
 interface Props {
   period: DayPeriod;
-  /** Every meal logged on the day — the period picks out its own slots. */
-  meals: Meal[];
-  profile: Profile | undefined;
+  /** Logged across the period's slots, and the share of the day it is allowed. */
+  eaten: Nutrients;
+  targets: Nutrients;
   id?: string;
 }
 
 /**
- * The day card's four macro bars, scoped to one part of the day. Slots on
- * their own only ever showed calories, so a protein or fibre shortfall could
- * only be read against the whole day — too late to fix by dinner.
+ * The day card's four macro bars, scoped to one part of the day.
+ *
+ * Slots on their own only ever showed calories, so a protein or fibre shortfall
+ * could only be read against the whole day — by which point there is no meal
+ * left to fix it with. The figures arrive precomputed because the slot cards
+ * around this are memoised, and deriving them here would hand each card a fresh
+ * object on every render.
  */
-export function PeriodMacros({ period, meals, profile, id }: Props) {
-  const eaten = periodNutrients(meals, period);
-  const targets = periodTargets(profile, period);
+export function PeriodMacros({ period, eaten, targets, id }: Props) {
   const slots = DAY_PERIOD_SLOTS[period].map((slot) => MEAL_SLOT_LABEL[slot]).join(' + ');
 
   return (

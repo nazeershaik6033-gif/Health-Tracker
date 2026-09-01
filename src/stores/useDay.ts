@@ -1,9 +1,21 @@
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from './useApp';
 import { addDays, rangeDays, today } from '@/lib/date';
-import { estimateWorkoutKcal, totalNutrients } from '@/lib/nutrition';
-import { MEAL_SLOTS, ZERO_NUTRIENTS, type Meal, type MealSlot } from '@/types';
+import { estimateWorkoutKcal, stepKcal, totalNutrients } from '@/lib/nutrition';
+import {
+  MEAL_SLOTS,
+  ZERO_NUTRIENTS,
+  type Meal,
+  type MealSlot,
+  type WorkoutEntry,
+} from '@/types';
+
+// Stable identities for the empty case, so the memos below don't invalidate on
+// every render while the day's query is still in flight.
+const EMPTY_MEALS: Meal[] = [];
+const EMPTY_WORKOUTS: WorkoutEntry[] = [];
 
 /**
  * Live view of one day. Everything that renders the day's numbers reads this,
@@ -12,31 +24,58 @@ import { MEAL_SLOTS, ZERO_NUTRIENTS, type Meal, type MealSlot } from '@/types';
 export function useDay(dateOverride?: string) {
   const selectedDate = useApp((s) => s.selectedDate);
   const profile = useApp((s) => s.profile);
+  const countStepKcal = useApp((s) => s.settings.countStepKcal !== false);
   const date = dateOverride ?? selectedDate;
 
   const data = useLiveQuery(async () => {
-    const [meals, water, sleep, weight, steps, workouts] = await Promise.all([
+    const [meals, water, sleep, weight, steps, workouts, lastWeight] = await Promise.all([
       db.meals.where('date').equals(date).toArray(),
       db.water.get(date),
       db.sleep.get(date),
       db.weight.get(date),
       db.steps.get(date),
       db.workouts.where('date').equals(date).toArray(),
+      // The most recent weigh-in on or before this day — what the step and
+      // workout burn estimates are scaled by. A day with no weigh-in of its own
+      // should still use a real figure rather than the starting weight.
+      db.weight.where('date').belowOrEqual(date).last(),
     ]);
-    return { meals, water, sleep, weight, steps, workouts };
+    return { meals, water, sleep, weight, steps, workouts, lastWeight };
   }, [date]);
 
-  const meals = data?.meals ?? [];
-  const totals = meals.length ? totalNutrients(meals) : ZERO_NUTRIENTS;
-  const workoutKcal = (data?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0);
+  const meals = data?.meals ?? EMPTY_MEALS;
+  const workouts = data?.workouts ?? EMPTY_WORKOUTS;
 
-  const bySlot = MEAL_SLOTS.reduce<Record<MealSlot, Meal | undefined>>(
-    (acc, slot) => {
-      acc[slot] = meals.find((m) => m.slot === slot);
-      return acc;
-    },
-    {} as Record<MealSlot, Meal | undefined>,
+  // Derived from the query result, not from render: ten components call this
+  // hook, and several of them re-render on unrelated state (sheets opening,
+  // inputs typing). Recomputing a day's totals on each of those was pure waste.
+  const { totals, bySlot } = useMemo(() => {
+    const byslot = MEAL_SLOTS.reduce<Record<MealSlot, Meal | undefined>>(
+      (acc, slot) => {
+        acc[slot] = meals.find((m) => m.slot === slot);
+        return acc;
+      },
+      {} as Record<MealSlot, Meal | undefined>,
+    );
+    return {
+      totals: meals.length ? totalNutrients(meals) : ZERO_NUTRIENTS,
+      bySlot: byslot,
+    };
+  }, [meals]);
+
+  const workoutKcal = useMemo(
+    () => workouts.reduce((sum, w) => sum + w.kcal, 0),
+    [workouts],
   );
+
+  const bodyWeightKg =
+    data?.lastWeight?.kg ?? profile?.startWeightKg ?? 70;
+  const stepCount = data?.steps?.count ?? 0;
+  // Walking was tracked but never counted: only workouts reached the day's
+  // burn, so ten thousand steps moved the ring by nothing at all. Switchable,
+  // because a logged walking workout and the steps it produced are the same
+  // walk and the app has no way to tell.
+  const stepsKcal = countStepKcal ? stepKcal(stepCount, bodyWeightKg) : 0;
 
   return {
     date,
@@ -44,8 +83,12 @@ export function useDay(dateOverride?: string) {
     meals,
     bySlot,
     totals,
-    workouts: data?.workouts ?? [],
+    workouts,
     workoutKcal,
+    stepsKcal,
+    /** Everything burned today: deliberate exercise plus walking. */
+    burnedKcal: workoutKcal + stepsKcal,
+    bodyWeightKg,
     water: data?.water,
     sleep: data?.sleep,
     weight: data?.weight,
@@ -54,7 +97,7 @@ export function useDay(dateOverride?: string) {
     waterGoal: data?.water?.goalGlasses ?? profile?.waterGoalGlasses ?? 9,
     glasses: data?.water?.glasses ?? 0,
     stepGoal: data?.steps?.goal ?? profile?.stepGoal ?? 8000,
-    stepCount: data?.steps?.count ?? 0,
+    stepCount,
   };
 }
 
@@ -71,16 +114,27 @@ export function useWeightHistory(days = 90) {
  * Consecutive days ending today on which the user logged anything at all.
  * A day counts if it has a meal, a workout, water, sleep or a weigh-in —
  * tracking any dimension keeps the streak alive.
+ *
+ * Every query here is bounded to the streak window by its `date` index. It used
+ * to read all five tables in full, on the Home screen, re-running on any write
+ * to any of them: adding a single glass of water scanned every meal ever
+ * logged, and the cost grew for the life of the install. A streak longer than
+ * the window is not worth a full-table scan to discover.
  */
+const STREAK_WINDOW_DAYS = 400;
+
 export function useStreak() {
+  const from = addDays(today(), -(STREAK_WINDOW_DAYS - 1));
+
   return useLiveQuery(async () => {
-    const window = rangeDays(today(), 400).reverse(); // newest first
+    const window = rangeDays(today(), STREAK_WINDOW_DAYS).reverse(); // newest first
+    const to = today();
     const [meals, workouts, water, sleep, weight] = await Promise.all([
-      db.meals.toArray(),
-      db.workouts.toArray(),
-      db.water.toArray(),
-      db.sleep.toArray(),
-      db.weight.toArray(),
+      db.meals.where('date').between(from, to, true, true).toArray(),
+      db.workouts.where('date').between(from, to, true, true).toArray(),
+      db.water.where('date').between(from, to, true, true).toArray(),
+      db.sleep.where('date').between(from, to, true, true).toArray(),
+      db.weight.where('date').between(from, to, true, true).toArray(),
     ]);
 
     const active = new Set<string>();
@@ -99,7 +153,7 @@ export function useStreak() {
       else break;
     }
     return { streak, activeDays: active };
-  }, []);
+  }, [from]);
 }
 
 /** Rolling calorie/step/water history for charts and AI context. */

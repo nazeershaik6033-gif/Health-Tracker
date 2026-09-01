@@ -51,13 +51,27 @@ export const MEAL_ANALYSIS_SCHEMA = {
   },
 } as const;
 
+/**
+ * `brand` is required despite being optional in practice.
+ *
+ * Strict schema mode — which both Anthropic and OpenRouter enforce, and which
+ * this file's header already commits to — rejects a schema that declares
+ * `additionalProperties: false` while leaving a declared property out of
+ * `required`. That made this schema invalid, so every call carrying it failed
+ * before the model saw it: reading a nutrition label and generating a food with
+ * AI were both broken outright. An empty string is the "no brand" value, and
+ * `toFoodDraft` already maps it back to undefined.
+ */
 export const FOOD_GENERATION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['name', 'per100g', 'servings'],
+  required: ['name', 'brand', 'per100g', 'servings'],
   properties: {
     name: { type: 'string' },
-    brand: { type: 'string' },
+    brand: {
+      type: 'string',
+      description: 'Brand name, or "" for a generic or home-cooked food',
+    },
     per100g: {
       type: 'object',
       additionalProperties: false,
@@ -94,6 +108,45 @@ export const INSIGHT_SCHEMA = {
       type: 'array',
       description: 'Two very short actionable suggestions, three or four words each',
       items: { type: 'string' },
+    },
+  },
+} as const;
+
+/**
+ * Suggestions for the next meal of the day.
+ *
+ * Each option carries its own calories and protein so the card can show what
+ * logging it would do to the day's remaining budget, rather than making the
+ * user guess whether "a bowl of dal" fits in 243 calories.
+ */
+export const MEAL_SUGGESTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['headline', 'options', 'tip'],
+  properties: {
+    headline: {
+      type: 'string',
+      description: 'One sentence naming the gap this meal should close, citing real numbers',
+    },
+    options: {
+      type: 'array',
+      description: 'Two or three concrete things to eat',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'portion', 'kcal', 'protein', 'why'],
+        properties: {
+          name: { type: 'string', description: 'The dish, e.g. "Rajma with brown rice"' },
+          portion: { type: 'string', description: 'e.g. "1 katori rajma + 1 katori rice"' },
+          kcal: { type: 'number' },
+          protein: { type: 'number', description: 'Grams of protein in that portion' },
+          why: { type: 'string', description: 'One short clause on why this one fits' },
+        },
+      },
+    },
+    tip: {
+      type: 'string',
+      description: 'One sentence on the rest of the day, or what to avoid',
     },
   },
 } as const;

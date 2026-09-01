@@ -36,16 +36,40 @@ export interface ProviderAdapter {
   extract(prompt: string, opts?: VisionOpts): Promise<string>;
 }
 
+export type AIErrorKind =
+  | 'no-key'
+  | 'auth'
+  | 'rate-limit'
+  | 'network'
+  | 'refused'
+  /** The model hit its output budget before finishing. Retryable with more. */
+  | 'truncated'
+  | 'bad-response'
+  | 'unknown';
+
 export class AIError extends Error {
   constructor(
     message: string,
-    readonly kind: 'no-key' | 'auth' | 'rate-limit' | 'network' | 'refused' | 'bad-response' | 'unknown' = 'unknown',
+    readonly kind: AIErrorKind = 'unknown',
     readonly status?: number,
   ) {
     super(message);
     this.name = 'AIError';
   }
 }
+
+/**
+ * Errors a second attempt cannot fix. A repair pass on any of these just makes
+ * the user wait twice as long for the same message — the request never reached
+ * a model, or the model deliberately refused.
+ */
+export const UNREPAIRABLE: ReadonlySet<AIErrorKind> = new Set<AIErrorKind>([
+  'no-key',
+  'auth',
+  'refused',
+  'network',
+  'rate-limit',
+]);
 
 const trimPeriod = (s: string) => s.trim().replace(/\.$/, '');
 
@@ -69,6 +93,11 @@ export function describeError(err: unknown): string {
         return 'Could not reach the provider. Check your connection.';
       case 'refused':
         return 'The model declined to answer that.';
+      case 'truncated':
+        // Distinct from bad-response on purpose: this one is not a garbled
+        // reply, it is a complete reply that never finished being written, and
+        // "try again" alone has no reason to do better.
+        return 'The model ran out of room before finishing. Try a simpler photo, or a model with a larger output limit.';
       case 'bad-response':
         return "The model's reply could not be read. Try again.";
       default:
@@ -77,6 +106,27 @@ export function describeError(err: unknown): string {
   }
   if (err instanceof DOMException && err.name === 'AbortError') return 'Cancelled.';
   return err instanceof Error ? err.message : 'Something went wrong.';
+}
+
+/**
+ * The technical detail behind a failure, for the line under the friendly
+ * message.
+ *
+ * `describeError` deliberately says things like "the model's reply could not be
+ * read" — right for the user, useless for working out *why*. Without the
+ * provider, the model id and the HTTP status there is nothing to act on and
+ * nothing to report, which is how a broken Snap stays broken.
+ */
+export function errorDetail(err: unknown, provider: string, model: string): string {
+  const parts = [provider, model];
+  if (err instanceof AIError) {
+    if (err.status) parts.push(`HTTP ${err.status}`);
+    parts.push(err.kind);
+    if (err.message) parts.push(err.message);
+  } else if (err instanceof Error) {
+    parts.push(err.message);
+  }
+  return parts.filter(Boolean).join(' · ');
 }
 
 export const PROVIDER_META: Record<
@@ -119,12 +169,13 @@ export const PROVIDER_META: Record<
     keyPrefix: 'sk-or-',
     keyShape: 'OpenRouter keys start with sk-or-v1- followed by a long hex string',
     models: [
+      'stealth/ox-alpha',
       'anthropic/claude-sonnet-4.5',
       'google/gemini-2.5-flash',
       'openai/gpt-4o-mini',
       'meta-llama/llama-4-maverick',
     ],
-    defaultModel: 'anthropic/claude-sonnet-4.5',
+    defaultModel: 'stealth/ox-alpha',
   },
 };
 

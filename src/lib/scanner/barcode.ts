@@ -21,8 +21,17 @@ export type BarcodeFormat =
   | 'code_128'
   | 'code_39'
   | 'itf'
-  | 'codabar';
+  | 'codabar'
+  | 'qr_code'
+  | 'data_matrix';
 
+/**
+ * `qr_code` and `data_matrix` are here because packaging is moving to them:
+ * a GS1 Digital Link QR carries the same GTIN a printed barcode does, plus a
+ * batch and an expiry, and on many products it is now the only symbol on the
+ * pack. Both decoders read them at no extra cost — the wasm build already
+ * contains the QR reader whether or not it is asked for.
+ */
 export const FORMATS: BarcodeFormat[] = [
   'ean_13',
   'ean_8',
@@ -31,6 +40,8 @@ export const FORMATS: BarcodeFormat[] = [
   'code_128',
   'code_39',
   'itf',
+  'qr_code',
+  'data_matrix',
 ];
 
 export interface DecodeResult {
@@ -110,7 +121,17 @@ async function createWasm(): Promise<Decoder | null> {
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const results = await zxing.readBarcodes(data, {
           tryHarder: true,
-          formats: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E', 'Code128', 'Code39', 'ITF'],
+          formats: [
+            'EAN-13',
+            'EAN-8',
+            'UPC-A',
+            'UPC-E',
+            'Code128',
+            'Code39',
+            'ITF',
+            'QRCode',
+            'DataMatrix',
+          ],
           maxNumberOfSymbols: 1,
         });
         const hit = results.find((r) => r.isValid && r.text.trim());

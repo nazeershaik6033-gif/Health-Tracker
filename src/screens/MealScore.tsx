@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
-import { deleteMeal } from '@/db/repo';
+import { deleteMeal, getSnapImage } from '@/db/repo';
 import { useApp } from '@/stores/useApp';
 import { RingProgress } from '@/components/RingProgress';
 import { Button, Card, EmptyState, PageHeader, ScoreCircle } from '@/components/ui';
@@ -18,8 +18,7 @@ import { Link } from 'react-router-dom';
 export default function MealScore() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { showToast } = useApp();
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { showToast, showConfirm } = useApp();
 
   const meal = useLiveQuery(async () => (id ? db.meals.get(id) : undefined), [id]);
   const snap = useLiveQuery(
@@ -27,12 +26,27 @@ export default function MealScore() {
     [meal?.snapId],
   );
 
+  // The thumbnail paints immediately from the row already in hand; the full
+  // image replaces it once its own table has been read, so the meal photo is
+  // never a blank rectangle while a blob loads.
   const [photo, setPhoto] = useState('');
   useEffect(() => {
     if (!snap) return;
-    const url = URL.createObjectURL(snap.blob);
+    let url = URL.createObjectURL(snap.thumb);
+    let live = true;
     setPhoto(url);
-    return () => URL.revokeObjectURL(url);
+
+    void getSnapImage(snap.id).then((full) => {
+      if (!live || !full) return;
+      URL.revokeObjectURL(url);
+      url = URL.createObjectURL(full);
+      setPhoto(url);
+    });
+
+    return () => {
+      live = false;
+      URL.revokeObjectURL(url);
+    };
   }, [snap]);
 
   if (meal === undefined) {
@@ -149,21 +163,27 @@ export default function MealScore() {
         {/* Removing the whole meal was previously impossible from here: the
             only route was deleting each item on the Diet screen one by one. */}
         <Button
-          variant={confirmDelete ? 'danger' : 'secondary'}
+          variant="secondary"
           full
-          onClick={async () => {
-            if (!confirmDelete) {
-              setConfirmDelete(true);
-              return;
-            }
-            await deleteMeal(meal.id);
-            showToast({ message: 'Meal removed' });
-            navigate('/diet', { replace: true });
-          }}
-          onBlur={() => setConfirmDelete(false)}
+          onClick={() =>
+            showConfirm({
+              title: 'Remove this meal?',
+              body: `All ${meal.items.length} item${
+                meal.items.length === 1 ? '' : 's'
+              } in it will be deleted.${
+                meal.snapId ? ' The photo stays in your Snap Gallery.' : ''
+              }`,
+              confirmLabel: 'Remove',
+              onConfirm: async () => {
+                await deleteMeal(meal.id);
+                showToast({ message: 'Meal removed' });
+                navigate('/diet', { replace: true });
+              },
+            })
+          }
         >
           <IconTrash width={15} height={15} />
-          {confirmDelete ? 'Tap again to remove this meal' : 'Remove this meal'}
+          Remove this meal
         </Button>
 
         {meal.snapId && (
