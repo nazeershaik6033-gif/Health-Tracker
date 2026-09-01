@@ -27,6 +27,47 @@ export const MEAL_SLOT_SHARE: Record<MealSlot, number> = {
   dinner: 0.25,
 };
 
+/**
+ * Parts of the day. Slots roll up into these so macros can be tracked against
+ * a stretch of the day, not only the day as a whole.
+ */
+export type DayPeriod = 'morning' | 'afternoon' | 'night';
+
+export const DAY_PERIODS: DayPeriod[] = ['morning', 'afternoon', 'night'];
+
+export const DAY_PERIOD_LABEL: Record<DayPeriod, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  night: 'Night',
+};
+
+/** Which slots make up each period. Order matches MEAL_SLOTS. */
+export const DAY_PERIOD_SLOTS: Record<DayPeriod, MealSlot[]> = {
+  morning: ['breakfast', 'morning_snack'],
+  afternoon: ['lunch', 'evening_snack'],
+  night: ['dinner'],
+};
+
+/** The slot whose header carries the period's expand button. */
+export const DAY_PERIOD_ANCHOR: Record<DayPeriod, MealSlot> = {
+  morning: 'breakfast',
+  afternoon: 'lunch',
+  night: 'dinner',
+};
+
+/**
+ * Default share of the day's macros per period, summed from the member slots'
+ * calorie shares so the two splits can never drift apart. Overridable per
+ * profile via `Profile.periodShares`.
+ */
+export const DAY_PERIOD_SHARE: Record<DayPeriod, number> = DAY_PERIODS.reduce(
+  (acc, period) => {
+    acc[period] = DAY_PERIOD_SLOTS[period].reduce((sum, slot) => sum + MEAL_SLOT_SHARE[slot], 0);
+    return acc;
+  },
+  {} as Record<DayPeriod, number>,
+);
+
 export interface Nutrients {
   kcal: number;
   protein: number;
@@ -364,6 +405,11 @@ export interface Profile {
   targets: Nutrients;
   /** Set when the user overrides the computed calorie target. */
   targetsManual: boolean;
+  /**
+   * Fraction of the day's targets allotted to each period, as decimals that
+   * add up to 1. Absent means the DAY_PERIOD_SHARE defaults.
+   */
+  periodShares?: Record<DayPeriod, number>;
   units: UnitSystem;
   waterGoalGlasses: number;
   sleepGoalMin: number;

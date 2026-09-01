@@ -19,11 +19,14 @@ import {
   formatPortion,
   mealNutrients,
   per100gFromItem,
+  periodNutrients,
+  periodTargets,
   rescaleMealItem,
   slotTarget,
 } from '@/lib/nutrition';
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { DayTotals } from '@/components/DayTotals';
+import { PeriodMacros } from '@/components/PeriodMacros';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -31,8 +34,10 @@ import { MacroStrip } from '@/components/MacroStrip';
 import { NextMealCard } from '@/components/NextMealCard';
 import type { MacroKey } from '@/lib/macroBreakdown';
 import {
+  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconChevronUp,
   IconDiet,
   IconMove,
   IconPlus,
@@ -41,13 +46,24 @@ import {
   IconTrash,
 } from '@/components/icons';
 import {
+  DAY_PERIODS,
+  DAY_PERIOD_ANCHOR,
+  DAY_PERIOD_LABEL,
   MEAL_SLOTS,
   MEAL_SLOT_LABEL,
+  type DayPeriod,
   type Food,
   type Meal,
   type MealItem,
   type MealSlot,
+  type Nutrients,
 } from '@/types';
+
+/** A period's own eaten-against-target figures, for the expandable panel. */
+interface PeriodMacroData {
+  eaten: Nutrients;
+  targets: Nutrients;
+}
 
 /** What a row needs to call back into the screen, in one stable object. */
 interface RowActions {
@@ -106,6 +122,37 @@ export default function Diet() {
     [day.meals],
   );
   const allExpanded = allKeys.length > 0 && allKeys.every((k) => expanded.has(k));
+
+  // Which parts of the day are showing their macros. Separate from `expanded`
+  // above: that one opens a single item's macros, this one a whole stretch of
+  // the day against its share of the targets.
+  const [openPeriods, setOpenPeriods] = useState<Record<DayPeriod, boolean>>({
+    morning: false,
+    afternoon: false,
+    night: false,
+  });
+
+  const togglePeriod = useCallback(
+    (period: DayPeriod) => setOpenPeriods((open) => ({ ...open, [period]: !open[period] })),
+    [],
+  );
+
+  // Derived here rather than inside each card: the cards are memoised, so a
+  // fresh object per render would undo that.
+  const periodMacros = useMemo(
+    () =>
+      DAY_PERIODS.reduce(
+        (acc, period) => {
+          acc[period] = {
+            eaten: periodNutrients(day.meals, period),
+            targets: periodTargets(profile, period),
+          };
+          return acc;
+        },
+        {} as Record<DayPeriod, PeriodMacroData>,
+      ),
+    [day.meals, profile],
+  );
 
   /**
    * The logged item only remembers the one serving it used; the food row
@@ -316,17 +363,26 @@ export default function Diet() {
 
       {/* Slots */}
       <div className="space-y-3">
-        {MEAL_SLOTS.map((slot) => (
-          <SlotCard
-            key={slot}
-            slot={slot}
-            meal={day.bySlot[slot]}
-            target={slotTarget(profile, slot)}
-            expanded={expanded}
-            actions={slotActions}
-            rowActions={rowActions}
-          />
-        ))}
+        {MEAL_SLOTS.map((slot) => {
+          // Each period hangs its macros off the first slot it covers, so the
+          // snack slots fold into the button above them.
+          const period = DAY_PERIODS.find((p) => DAY_PERIOD_ANCHOR[p] === slot);
+          return (
+            <SlotCard
+              key={slot}
+              slot={slot}
+              meal={day.bySlot[slot]}
+              target={slotTarget(profile, slot)}
+              expanded={expanded}
+              actions={slotActions}
+              rowActions={rowActions}
+              period={period}
+              periodOpen={period ? openPeriods[period] : false}
+              periodMacros={period ? periodMacros[period] : undefined}
+              onTogglePeriod={togglePeriod}
+            />
+          );
+        })}
       </div>
 
       {day.meals.length === 0 && (
@@ -424,6 +480,10 @@ const SlotCard = memo(function SlotCard({
   expanded,
   actions,
   rowActions,
+  period,
+  periodOpen,
+  periodMacros,
+  onTogglePeriod,
 }: {
   slot: MealSlot;
   meal: Meal | undefined;
@@ -431,6 +491,11 @@ const SlotCard = memo(function SlotCard({
   expanded: ReadonlySet<string>;
   actions: SlotActions;
   rowActions: RowActions;
+  /** Set only on the slot that carries a period's expand button. */
+  period?: DayPeriod;
+  periodOpen: boolean;
+  periodMacros?: PeriodMacroData;
+  onTogglePeriod: (period: DayPeriod) => void;
 }) {
   const eaten = meal ? Math.round(mealNutrients(meal).kcal) : 0;
   const filled = Boolean(meal && meal.items.length > 0);
@@ -443,6 +508,30 @@ const SlotCard = memo(function SlotCard({
           drops its unit — the card above states the unit. */}
       <div className="flex items-center gap-1 px-1">
         <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold">{MEAL_SLOT_LABEL[slot]}</h2>
+        {/* Only the three slots that start a period carry this, and all three
+            of those labels are short — the long one, Morning Snack, folds into
+            the Morning button rather than getting one of its own. */}
+        {period && (
+          <button
+            type="button"
+            onClick={() => onTogglePeriod(period)}
+            aria-expanded={periodOpen}
+            aria-controls={`period-macros-${period}`}
+            aria-label={`${periodOpen ? 'Hide' : 'Show'} ${DAY_PERIOD_LABEL[period]} macros`}
+            className="surface-sunken flex shrink-0 items-center gap-0.5 rounded-full px-0.5 py-0.5 text-[10px] font-semibold text-secondary"
+          >
+            {/* The row has room for the period's name on a modern phone but
+                not on a 360px one, where it would eat into the slot name the
+                card is actually about. Below that it drops to the chevron
+                alone; the button keeps its accessible name either way. */}
+            <span className="max-[379px]:hidden">{DAY_PERIOD_LABEL[period]}</span>
+            {periodOpen ? (
+              <IconChevronUp width={10} height={10} />
+            ) : (
+              <IconChevronDown width={10} height={10} />
+            )}
+          </button>
+        )}
         <span className="tabular shrink-0 text-[12.5px] text-secondary">
           {eaten}/{target}
         </span>
@@ -488,6 +577,15 @@ const SlotCard = memo(function SlotCard({
           <IconPlus width={15} height={15} strokeWidth={2.5} />
         </button>
       </div>
+
+      {period && periodOpen && periodMacros && (
+        <PeriodMacros
+          id={`period-macros-${period}`}
+          period={period}
+          eaten={periodMacros.eaten}
+          targets={periodMacros.targets}
+        />
+      )}
 
       {meal && meal.items.length > 0 ? (
         <ul className="mt-2">
