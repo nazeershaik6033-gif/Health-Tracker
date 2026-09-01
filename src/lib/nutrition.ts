@@ -1,5 +1,6 @@
 import type {
   ActivityLevel,
+  DayPeriod,
   Food,
   Goal,
   Meal,
@@ -10,7 +11,7 @@ import type {
   Sex,
   WorkoutIntensity,
 } from '@/types';
-import { MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
+import { DAY_PERIOD_SHARE, DAY_PERIOD_SLOTS, MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
 
 export const ACTIVITY_FACTOR: Record<ActivityLevel, number> = {
   sedentary: 1.2,
@@ -90,6 +91,31 @@ export function computeTargets(p: {
 export function slotTarget(profile: Profile | undefined, slot: MealSlot): number {
   if (!profile) return 0;
   return Math.round(profile.targets.kcal * MEAL_SLOT_SHARE[slot]);
+}
+
+/**
+ * Fraction of the day a period is allotted. The profile's own split wins when
+ * it is set; a share that is missing or not a usable number falls back to the
+ * default rather than silently zeroing the period's targets.
+ */
+export function periodShare(profile: Profile | undefined, period: DayPeriod): number {
+  const override = profile?.periodShares?.[period];
+  return typeof override === 'number' && Number.isFinite(override) && override >= 0
+    ? override
+    : DAY_PERIOD_SHARE[period];
+}
+
+/** The day's macro targets scaled down to one period. */
+export function periodTargets(profile: Profile | undefined, period: DayPeriod): Nutrients {
+  if (!profile) return ZERO_NUTRIENTS;
+  return roundNutrients(scaleNutrients(profile.targets, periodShare(profile, period)));
+}
+
+/** What has actually been eaten in a period, across all of its slots. */
+export function periodNutrients(meals: Meal[], period: DayPeriod): Nutrients {
+  const slots = DAY_PERIOD_SLOTS[period];
+  const inPeriod = meals.filter((m) => slots.includes(m.slot));
+  return inPeriod.length ? totalNutrients(inPeriod) : ZERO_NUTRIENTS;
 }
 
 /* --------------------------------- maths -------------------------------- */

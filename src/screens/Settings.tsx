@@ -13,7 +13,7 @@ import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
 import { keyShapeWarning } from '@/ai/types';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
 import { buildLabel, checkForUpdate, describeStage, forceReload } from '@/lib/appUpdate';
-import { computeTargets, macroTargets } from '@/lib/nutrition';
+import { computeTargets, macroTargets, periodShare } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
 import { describeLastBackup } from '@/lib/backup';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -27,7 +27,18 @@ import {
   IconUpload,
   IconWarning,
 } from '@/components/icons';
-import { THEMES, type FatSecretConfig, type ProviderId, type Settings as SettingsType } from '@/types';
+import {
+  DAY_PERIODS,
+  DAY_PERIOD_LABEL,
+  DAY_PERIOD_SLOTS,
+  MEAL_SLOT_LABEL,
+  THEMES,
+  type DayPeriod,
+  type FatSecretConfig,
+  type Profile,
+  type ProviderId,
+  type Settings as SettingsType,
+} from '@/types';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -155,6 +166,45 @@ export default function Settings() {
     fibre: String(profile?.targets.fibre ?? ''),
   }));
   const [targetsDirty, setTargetsDirty] = useState(false);
+
+  const [shareDraft, setShareDraft] = useState<Record<DayPeriod, string>>(() =>
+    percentDraft(profile),
+  );
+  const [sharesDirty, setSharesDirty] = useState(false);
+  const shareTotal = DAY_PERIODS.reduce((sum, p) => sum + (Number(shareDraft[p]) || 0), 0);
+  // Floating point makes an exact 100 unreachable for splits like 37.5/37.5/25,
+  // so the check has to tolerate the last decimal place.
+  const sharesAddUp = Math.abs(shareTotal - 100) < 0.05;
+
+  function patchShare(period: DayPeriod, value: string) {
+    setShareDraft((d) => ({ ...d, [period]: value.replace(/[^\d.]/g, '') }));
+    setSharesDirty(true);
+  }
+
+  async function saveShares() {
+    if (!profile || !sharesAddUp) return;
+    const periodShares = DAY_PERIODS.reduce(
+      (acc, period) => {
+        acc[period] = (Number(shareDraft[period]) || 0) / 100;
+        return acc;
+      },
+      {} as Record<DayPeriod, number>,
+    );
+    await saveProfile({ periodShares });
+    await refreshProfile();
+    setSharesDirty(false);
+    showToast({ message: 'Meal period split updated' });
+  }
+
+  async function resetShares() {
+    // Dropping the override falls back to the shares derived from the slots.
+    await saveProfile({ periodShares: undefined });
+    await refreshProfile();
+    // With the override gone the defaults are what periodShare() now returns.
+    setShareDraft(percentDraft(undefined));
+    setSharesDirty(false);
+    showToast({ message: 'Meal period split reset' });
+  }
 
   function patchTarget(key: keyof typeof targetDraft, value: string) {
     setTargetDraft((d) => ({ ...d, [key]: value.replace(/\D/g, '') }));
@@ -520,6 +570,72 @@ export default function Settings() {
           )}
         </Card>
 
+        {/* ----------------------- Meal period split --------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                onClick={resetShares}
+                className="text-[12.5px] font-semibold text-brand-600"
+              >
+                Reset
+              </button>
+            }
+          >
+            Meal period split
+          </SectionTitle>
+
+          <p className="text-[12px] leading-relaxed text-secondary">
+            How much of the day each part of the day is allowed. Diet shows these macros behind the
+            expand button on each period's first meal.
+          </p>
+
+          {profile && (
+            <>
+              <div className="space-y-2.5">
+                {DAY_PERIODS.map((period) => {
+                  const pct = (Number(shareDraft[period]) || 0) / 100;
+                  return (
+                    <Field
+                      key={period}
+                      label={`${DAY_PERIOD_LABEL[period]} — ${DAY_PERIOD_SLOTS[period]
+                        .map((slot) => MEAL_SLOT_LABEL[slot])
+                        .join(' + ')}`}
+                      value={shareDraft[period]}
+                      onChange={(e) => patchShare(period, e.target.value)}
+                      inputMode="decimal"
+                      suffix="%"
+                      hint={`${Math.round(profile.targets.kcal * pct)} kcal · ${Math.round(
+                        profile.targets.protein * pct,
+                      )} g protein · ${Math.round(profile.targets.fibre * pct)} g fibre`}
+                    />
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button onClick={saveShares} disabled={!sharesDirty || !sharesAddUp}>
+                  Save split
+                </Button>
+                <span
+                  className={`tabular text-[12.5px] font-semibold ${
+                    sharesAddUp ? 'text-muted' : 'text-red-600'
+                  }`}
+                >
+                  {Math.round(shareTotal * 10) / 10}% of the day
+                </span>
+              </div>
+
+              {!sharesAddUp && (
+                <p className="text-[11.5px] leading-relaxed text-red-600">
+                  The three periods have to add up to 100% before they can be saved.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+
         {/* -------------------------- Appearance ------------------------ */}
         <Card className="space-y-3">
           <SectionTitle>Theme</SectionTitle>
@@ -791,6 +907,17 @@ const PROXY_GUIDE_URL =
  * would mislead. The proxy field is first because it is the only arrangement
  * that reliably works — see the note rendered under it.
  */
+/** The stored fractions as editable percentages, e.g. 0.375 -> "37.5". */
+function percentDraft(profile: Profile | undefined): Record<DayPeriod, string> {
+  return DAY_PERIODS.reduce(
+    (acc, period) => {
+      acc[period] = String(Math.round(periodShare(profile, period) * 1000) / 10);
+      return acc;
+    },
+    {} as Record<DayPeriod, string>,
+  );
+}
+
 function FatSecretCard() {
   const { settings, setSettings, showToast } = useApp();
   const fs = settings.fatsecret;

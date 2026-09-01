@@ -15,17 +15,30 @@ import {
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { RingProgress } from '@/components/RingProgress';
 import { MacroBar } from '@/components/MacroBar';
+import { PeriodMacros } from '@/components/PeriodMacros';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import {
+  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconChevronUp,
   IconDiet,
   IconPlus,
   IconSparkle,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
+import {
+  DAY_PERIODS,
+  DAY_PERIOD_ANCHOR,
+  DAY_PERIOD_LABEL,
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  type DayPeriod,
+  type Food,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 
 export default function Diet() {
   const navigate = useNavigate();
@@ -33,6 +46,11 @@ export default function Diet() {
   const day = useDay();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
+  const [openPeriods, setOpenPeriods] = useState<Record<DayPeriod, boolean>>({
+    morning: false,
+    afternoon: false,
+    night: false,
+  });
   const [editing, setEditing] = useState<{
     mealId: string;
     index: number;
@@ -67,6 +85,9 @@ export default function Diet() {
     setPendingSlot(slot);
     navigate('/search');
   };
+
+  const togglePeriod = (period: DayPeriod) =>
+    setOpenPeriods((open) => ({ ...open, [period]: !open[period] }));
 
   async function removeItem(mealId: string, index: number, name: string) {
     await removeMealItem(mealId, index);
@@ -161,11 +182,33 @@ export default function Diet() {
           const meal = day.bySlot[slot];
           const eaten = meal ? Math.round(mealNutrients(meal).kcal) : 0;
           const target = slotTarget(profile, slot);
+          // Each period hangs its macros off the first slot it covers, so
+          // Morning Snack and Evening Snack fold into the button above them.
+          const period = DAY_PERIODS.find((p) => DAY_PERIOD_ANCHOR[p] === slot);
+          const periodOpen = period ? openPeriods[period] : false;
 
           return (
             <Card key={slot} className="py-3">
               <div className="flex items-center gap-2 px-1">
-                <h2 className="flex-1 text-[15px] font-bold">{MEAL_SLOT_LABEL[slot]}</h2>
+                <h2 className="text-[15px] font-bold">{MEAL_SLOT_LABEL[slot]}</h2>
+                {period && (
+                  <button
+                    type="button"
+                    onClick={() => togglePeriod(period)}
+                    aria-expanded={periodOpen}
+                    aria-controls={`period-macros-${period}`}
+                    aria-label={`${periodOpen ? 'Hide' : 'Show'} ${DAY_PERIOD_LABEL[period]} macros`}
+                    className="surface-sunken flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold text-secondary"
+                  >
+                    {DAY_PERIOD_LABEL[period]}
+                    {periodOpen ? (
+                      <IconChevronUp width={11} height={11} />
+                    ) : (
+                      <IconChevronDown width={11} height={11} />
+                    )}
+                  </button>
+                )}
+                <span className="flex-1" />
                 <span className="tabular text-[12.5px] text-secondary">
                   {eaten}/{target} Cal
                 </span>
@@ -204,6 +247,15 @@ export default function Diet() {
                   <IconPlus width={15} height={15} strokeWidth={2.5} />
                 </button>
               </div>
+
+              {period && periodOpen && (
+                <PeriodMacros
+                  id={`period-macros-${period}`}
+                  period={period}
+                  meals={day.meals}
+                  profile={profile}
+                />
+              )}
 
               {meal && meal.items.length > 0 ? (
                 <ul className="mt-2">
