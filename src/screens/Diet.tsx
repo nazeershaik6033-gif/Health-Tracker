@@ -14,6 +14,7 @@ import {
 } from '@/lib/nutrition';
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { RingProgress } from '@/components/RingProgress';
+import { CountUp } from '@/components/CountUp';
 import { MacroBar } from '@/components/MacroBar';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
@@ -109,16 +110,26 @@ export default function Diet() {
             label={`${Math.round(day.totals.kcal)} of ${day.targets.kcal} calories`}
           >
             <div className="text-center leading-none">
-              <p className="tabular text-[13px] font-extrabold">{Math.round(day.totals.kcal)}</p>
+              <p className="tabular text-[13px] font-extrabold">
+                <CountUp value={day.totals.kcal} />
+              </p>
               <p className="text-[8px] text-muted">kcal</p>
             </div>
           </RingProgress>
           <div className="flex-1">
-            <p className="text-[15px] font-bold">
-              {Math.max(0, day.targets.kcal - day.totals.kcal).toLocaleString()} Cal left
+            <p className="tabular text-[15px] font-bold">
+              <CountUp
+                value={Math.max(0, day.targets.kcal - day.totals.kcal)}
+                format={(n) => Math.round(n).toLocaleString()}
+              />{' '}
+              Cal left
             </p>
             <p className="tabular text-[12.5px] text-secondary">
-              {Math.round(day.totals.kcal).toLocaleString()} eaten
+              <CountUp
+                value={day.totals.kcal}
+                format={(n) => Math.round(n).toLocaleString()}
+              />{' '}
+              eaten
               {day.workoutKcal > 0 && ` · ${day.workoutKcal} burned`}
             </p>
           </div>

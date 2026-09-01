@@ -203,6 +203,32 @@
   --swatch-system-fg: #767b79;
 }
 
+/* ---------------------------------------------------------------------- motion
+   One set of easings for the whole app, so nothing reads as hand-rolled.
+   Ported from the Premium Daily Tracker's motion system, values unchanged:
+
+     --ease-spring   overshoots. Things that should feel physical — taps,
+                     pops, the active-tab indicator.
+     --ease-settle   arrives without overshoot. Things that carry content —
+                     sheets, screen transitions, anything with text on it,
+                     where a bounce makes the copy hard to read on arrival.
+     --ease-standard the plain in-out for colour and opacity, which have no
+                     spatial momentum to imply.
+
+   Durations live here too so a change lands everywhere at once. --dur-screen
+   is the 360ms screen slide; --dur-sheet the 440ms sheet entrance.
+--------------------------------------------------------------------------- */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --dur-screen: 360ms;
+  --dur-sheet: 440ms;
+  --dur-scrim: 300ms;
+  --dur-count: 560ms;
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
@@ -381,10 +407,10 @@
 
 @keyframes sheet-up {
   from {
-    transform: translateY(100%);
+    transform: translate3d(0, 100%, 0);
   }
   to {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes fade-in {
@@ -398,11 +424,11 @@
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(0.75rem);
+    transform: translate3d(0, 0.75rem, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes shimmer {
@@ -412,10 +438,10 @@
 }
 @keyframes sheet-down {
   from {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
   to {
-    transform: translateY(100%);
+    transform: translate3d(0, 100%, 0);
   }
 }
 @keyframes fade-out {
@@ -429,17 +455,17 @@
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(0.5rem);
+    transform: translate3d(0, 0.5rem, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes route-in {
   from {
     opacity: 0;
-    transform: translateY(0.75rem) scale(0.995);
+    transform: translate3d(0, 0.75rem, 0) scale(0.995);
   }
   to {
     opacity: 1;
@@ -447,23 +473,60 @@
   }
 }
 
+/* ------------------------------------------------------- screen transitions
+   Direction follows the bottom-nav tab order: moving right along the bar
+   slides the incoming screen in from the right, moving left from the left.
+   Anything that isn't a tab-to-tab move — a drill-down into a tracker, an
+   editor, a back-out — falls back to `route-in`'s fade-up, which doesn't
+   imply a sideways step the navigation didn't take.
+
+   translate3d rather than translateX: it promotes the element to its own
+   compositor layer, so the whole screen animates off the main thread and the
+   slide holds its frame rate while React is still hydrating a lazy route. */
+@keyframes route-in-right {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes route-in-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .animate-sheet-up {
-  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: sheet-up var(--dur-sheet) var(--ease-settle);
 }
 .animate-fade-in {
-  animation: fade-in 0.2s ease-out;
+  animation: fade-in 0.2s var(--ease-standard);
 }
 .animate-toast-in {
-  animation: toast-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: toast-in 0.24s var(--ease-settle);
 }
 .animate-sheet-down {
   animation: sheet-down 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 .animate-fade-out {
-  animation: fade-out 0.22s ease-in forwards;
+  animation: fade-out 0.22s var(--ease-standard) forwards;
 }
 .animate-route-in {
-  animation: route-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: route-in 0.26s var(--ease-settle);
+}
+.animate-route-right {
+  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+}
+.animate-route-left {
+  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
 }
 
 /* ---------------------------------------------------------------- stagger
@@ -471,7 +534,7 @@
    property set per item; the cap keeps a 60-row list from taking two seconds
    to finish, since anything past the fold is invisible anyway. */
 .stagger > * {
-  animation: rise-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: rise-in 0.32s var(--ease-settle) both;
   animation-delay: calc(min(var(--i, 0), 12) * 22ms);
 }
 
@@ -480,6 +543,39 @@
 .list-fast > * {
   content-visibility: auto;
   contain-intrinsic-size: auto 56px;
+}
+
+/* ------------------------------------------------------------------ scroll
+   Applied to every panel that scrolls independently of the page — sheet
+   bodies, the coach transcript, the horizontal rails.
+
+   `overscroll-behavior: contain` stops a flick that reaches the end of the
+   panel from chaining into the page behind it, which on iOS is what makes a
+   sheet feel like it slid the page underneath. `touch-action` names the one
+   axis the panel scrolls, so the compositor can start scrolling on the first
+   touchmove instead of waiting to find out whether a listener will cancel
+   it — that wait is most of what reads as a "sticky" first frame. */
+.scroll-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A sheet being dragged by a finger. The transition is cleared so the panel
+   tracks the touch exactly, and the layer is promoted for the duration of
+   the gesture — the class is removed on release, so nothing holds it. */
+.sheet-dragging {
+  transition: none !important;
+  animation: none !important;
+  will-change: transform;
 }
 
 /* Skeleton shimmer for AI calls that take a beat */

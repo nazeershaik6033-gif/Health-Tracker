@@ -175,7 +175,7 @@ export default function Coach() {
         }
       />
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="scroll-y flex-1 space-y-3 px-4 py-4">
         {messages.length === 0 && (
           <div className="pt-6">
             <div className="mb-5 flex flex-col items-center gap-2 text-center">

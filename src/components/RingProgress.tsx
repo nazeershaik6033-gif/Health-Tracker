@@ -51,7 +51,7 @@ export function RingProgress({
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={c * (1 - primary)}
-          style={{ transition: 'stroke-dashoffset 500ms cubic-bezier(0.32,0.72,0,1)' }}
+          style={{ transition: 'stroke-dashoffset 500ms var(--ease-settle)' }}
         />
         {overflow > 0 && (
           <circle
@@ -64,7 +64,7 @@ export function RingProgress({
             strokeLinecap="round"
             strokeDasharray={c}
             strokeDashoffset={c * (1 - overflow)}
-            style={{ transition: 'stroke-dashoffset 500ms cubic-bezier(0.32,0.72,0,1)' }}
+            style={{ transition: 'stroke-dashoffset 500ms var(--ease-settle)' }}
           />
         )}
       </svg>

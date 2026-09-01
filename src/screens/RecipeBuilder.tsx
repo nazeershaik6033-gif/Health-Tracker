@@ -264,7 +264,7 @@ export default function RecipeBuilder() {
             body="Not in your food database yet. Add it as a custom food first, then come back here."
           />
         )}
-        <ul className="max-h-[50vh] overflow-y-auto pb-2">
+        <ul className="scroll-y max-h-[50vh] pb-2">
           {results.map((food) => (
             <FoodRow
               key={food.id}

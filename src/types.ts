@@ -399,4 +399,6 @@ export interface Settings {
   lastBackupAt?: number;
   /** Days before the overdue nudge appears. 0 disables it. */
   backupRemindDays?: number;
+  /** Shows the frame-rate readout. Off by default; a diagnostic, not a feature. */
+  showFps?: boolean;
 }

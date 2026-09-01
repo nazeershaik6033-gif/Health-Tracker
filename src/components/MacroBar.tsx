@@ -1,3 +1,5 @@
+import { CountUp } from './CountUp';
+
 interface Props {
   label: string;
   value: number;
@@ -18,7 +20,14 @@ export function MacroBar({ label, value, target, color, unit = 'g', asPercent = 
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[13px] text-secondary">{label}:</span>
         <span className={`tabular text-[13px] font-semibold ${over ? 'text-red-600' : ''}`}>
-          {asPercent ? `${pct}%` : `${Math.round(value)}/${Math.round(target)} ${unit}`}
+          {asPercent ? (
+            // Counts to the new percentage over the same 560ms the bar beside
+            // it takes to grow, so the number and the fill arrive together
+            // rather than the digits snapping ahead of the bar.
+            <CountUp value={pct} format={(n) => `${Math.round(n)}%`} />
+          ) : (
+            `${Math.round(value)}/${Math.round(target)} ${unit}`
+          )}
         </span>
       </div>
       <div className="surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full">
