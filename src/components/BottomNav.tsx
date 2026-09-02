@@ -18,7 +18,12 @@ export function BottomNav() {
   const [left, right] = [ITEMS.slice(0, 2), ITEMS.slice(2)];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--surface-border)] bg-[var(--surface-card)]/95 backdrop-blur">
+    // will-change + translateZ promote this to its own compositor layer.
+    // Without it, iOS Safari re-rasterizes the backdrop-blur against the
+    // document's scroll position on every frame of momentum/rubber-band
+    // scrolling, which reads as the fixed bar visibly shaking and lagging
+    // behind instead of staying pinned to the screen.
+    <nav className="fixed inset-x-0 bottom-0 z-30 [transform:translateZ(0)] will-change-transform border-t border-[var(--surface-border)] bg-[var(--surface-card)]/95 backdrop-blur">
       <div className="mx-auto flex max-w-lg items-stretch justify-between px-2 pt-1.5 pb-safe">
         {left.map((item) => (
           <NavItem key={item.to} {...item} />
