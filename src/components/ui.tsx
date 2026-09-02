@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react';
 import { Link } from 'react-router-dom';
 import { IconSparkle, IconChevronLeft } from './icons';
 
@@ -18,6 +18,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   full?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  /** React 19 takes a ref as an ordinary prop — no forwardRef wrapper needed. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({
@@ -177,7 +179,7 @@ export function PageHeader({
   subtitle?: string;
 }) {
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--surface-border)] bg-[var(--surface-canvas)]/95 px-3 pt-safe pb-2 backdrop-blur">
+    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--surface-border)] chrome-canvas px-3 pt-safe pb-2">
       {typeof back === 'string' ? (
         <Link to={back} aria-label="Back" className="rounded-full p-2 hover:surface-sunken">
           <IconChevronLeft width={22} height={22} />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -6,6 +6,7 @@ import { useApp } from '@/stores/useApp';
 import { useDay, useStreak } from '@/stores/useDay';
 import { TopBar } from '@/components/TopBar';
 import { RingProgress } from '@/components/RingProgress';
+import { CountUp } from '@/components/CountUp';
 import { MacroBar } from '@/components/MacroBar';
 import { TrackerTile, TrackerRow } from '@/components/TrackerTile';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -29,7 +30,7 @@ import { formatDuration, relativeDayLabel } from '@/lib/date';
 import { backupOverdue, describeLastBackup } from '@/lib/backup';
 import { formatKcal, kgToDisplay, weightUnit } from '@/lib/nutrition';
 import { setWater } from '@/db/repo';
-import type { MealSlot } from '@/types';
+import type { MealSlot, Snap as SnapRow } from '@/types';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -54,6 +55,13 @@ export default function Home() {
   const units = profile?.units ?? 'metric';
   const eaten = day.totals.kcal;
   const target = day.targets.kcal || 1;
+  // What moving actually earns you. Home showed calories eaten against the
+  // target and nothing else, so an hour in the gym changed no number on the
+  // screen the user looks at most — and walking changed nothing anywhere.
+  // Workouts plus steps; the workout tile below keeps its own figure, because
+  // that one is measured against the workout goal.
+  const burned = day.burnedKcal;
+  const net = eaten - burned;
   const lostKg = profile ? profile.startWeightKg - (latestWeight?.kg ?? profile.startWeightKg) : 0;
 
   const openSlot = (slot: MealSlot) => {
@@ -115,11 +123,16 @@ export default function Home() {
         <Card className="space-y-3.5">
           <div className="flex items-center gap-3">
             <RingProgress
-              value={eaten / target}
+              // The ring tracks net intake, so it unwinds when you train.
+              value={net / target}
               size={52}
               stroke={4}
               color="var(--color-ring-calorie)"
-              label={`${formatKcal(eaten)} of ${formatKcal(target)} calories`}
+              label={
+                burned > 0
+                  ? `${formatKcal(net)} net of ${formatKcal(target)} calories, ${formatKcal(eaten)} eaten and ${formatKcal(burned)} burned`
+                  : `${formatKcal(eaten)} of ${formatKcal(target)} calories`
+              }
             >
               <IconFlame width={20} height={20} className="text-accent-500" />
             </RingProgress>
@@ -127,10 +140,20 @@ export default function Home() {
             <Link to="/diet" className="min-w-0 flex-1">
               <p className="text-[16px] font-bold tracking-tight">Track Food</p>
               <p className="tabular text-[13px] text-secondary">
-                {eaten > 0
-                  ? `${formatKcal(eaten)} of ${formatKcal(target)} Cal Eaten`
-                  : `Eat ${formatKcal(target)} Cal`}
+                {eaten > 0 ? (
+                  <>
+                    <CountUp value={net} format={formatKcal} /> of {formatKcal(target)} Cal
+                    Net
+                  </>
+                ) : (
+                  `Eat ${formatKcal(target)} Cal`
+                )}
               </p>
+              {burned > 0 && (
+                <p className="tabular text-[11.5px] text-muted">
+                  {formatKcal(eaten)} eaten − {formatKcal(burned)} burned
+                </p>
+              )}
             </Link>
 
             <button
@@ -196,25 +219,9 @@ export default function Home() {
 
         {/* --------------------------- Snaps rail ------------------------ */}
         {snaps && snaps.length > 0 && (
-          <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
+          <div className="scroll-x no-scrollbar -mx-4 flex gap-2 px-4">
             {snaps.map((s) => (
-              <Link
-                key={s.id}
-                to={s.mealId ? `/meal/${s.mealId}` : `/snap?id=${s.id}`}
-                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl"
-              >
-                <img
-                  src={URL.createObjectURL(s.thumb)}
-                  alt={s.analysis?.title ?? 'Meal snap'}
-                  className="h-full w-full object-cover"
-                  onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
-                />
-                {s.autoTracked && (
-                  <span className="absolute top-1 left-1 rounded bg-black/55 px-1 py-0.5 text-[8.5px] font-bold text-white">
-                    ✦ Auto
-                  </span>
-                )}
-              </Link>
+              <SnapThumb key={s.id} snap={s} />
             ))}
           </div>
         )}
@@ -376,7 +383,7 @@ export default function Home() {
       <Link
         to="/coach"
         aria-label="Ask Ria, your AI coach"
-        className="fixed right-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 flex h-13 w-13 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition-transform active:scale-95"
+        className="fixed right-4 bottom-[calc(5.5rem+var(--safe-bottom,0px))] z-30 flex h-13 w-13 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition-transform active:scale-95"
         style={{ height: '3.25rem', width: '3.25rem' }}
       >
         <IconSparkle width={24} height={24} />
@@ -391,6 +398,44 @@ export default function Home() {
     </>
   );
 }
+
+/**
+ * One thumbnail in the snaps rail.
+ *
+ * The URL is minted in an effect keyed on the blob, not during render. Doing it
+ * inline created a fresh object URL on *every* render and revoked it in
+ * `onLoad`, so any re-render — a water tap, a live-query tick — leaked the
+ * previous one for the lifetime of the page.
+ */
+const SnapThumb = memo(function SnapThumb({ snap }: { snap: SnapRow }) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    const next = URL.createObjectURL(snap.thumb);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [snap.thumb]);
+
+  return (
+    <Link
+      to={snap.mealId ? `/meal/${snap.mealId}` : `/snap?id=${snap.id}`}
+      className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl"
+    >
+      {url && (
+        <img
+          src={url}
+          alt={snap.analysis?.title ?? 'Meal snap'}
+          className="h-full w-full object-cover"
+        />
+      )}
+      {snap.autoTracked && (
+        <span className="absolute top-1 left-1 rounded bg-black/55 px-1 py-0.5 text-[8.5px] font-bold text-white">
+          ✦ Auto
+        </span>
+      )}
+    </Link>
+  );
+});
 
 /** Weight-goal ring: 0 at the starting weight, 1 at the target. */
 function clampProgress(start: number, current: number, target: number): number {
