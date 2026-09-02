@@ -12,7 +12,7 @@ export function Toast() {
   if (!toast) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+var(--safe-bottom,0px)+var(--kb-inset,0px))] z-40 flex justify-center px-4">
       <div
         role="status"
         aria-live="polite"

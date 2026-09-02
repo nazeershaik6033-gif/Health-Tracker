@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { scaleNutrients } from "@/lib/nutrition";
 import { BottomSheet } from "./BottomSheet";
 import { Button, Field } from "./ui";
@@ -25,6 +25,13 @@ export interface PortionSheetProps {
   servings: Serving[];
   initialQty?: number;
   initialServingLabel?: string;
+  /**
+   * Grams the entry actually logged. Only meaningful when reopening something
+   * already logged, and only needed when `initialServingLabel` is not one of
+   * `servings` — it is what lets the sheet rebuild the missing serving instead
+   * of quietly substituting another one.
+   */
+  initialGrams?: number;
   confirmLabel?: (kcal: number) => string;
   onClose: () => void;
   /** `grams` is set only when the user typed an exact weight. */
@@ -35,6 +42,16 @@ export interface PortionSheetProps {
   onEditFood?: () => void;
 }
 
+/** A label this sheet itself writes for a weight-mode entry, e.g. "225 g". */
+const WEIGHT_LABEL = /^\s*\d+(\.\d+)?\s*(g|ml)\s*$/i;
+
+/** Keeps a number field to one leading number: "1.2.3" and "-4" never appear. */
+function sanitizeNumeric(raw: string): string {
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+  const [whole, ...rest] = cleaned.split(".");
+  return rest.length ? `${whole}.${rest.join("")}` : whole;
+}
+
 export function PortionSheet({
   title,
   brand,
@@ -42,28 +59,51 @@ export function PortionSheet({
   servings,
   initialQty = 1,
   initialServingLabel,
+  initialGrams,
   confirmLabel,
   onClose,
   onConfirm,
   onDelete,
   onEditFood,
 }: PortionSheetProps) {
-  const fallback: Serving = servings[0] ?? { label: "100 g", grams: 100 };
+  // The serving that was logged is not always one the food still lists — an AI
+  // portion, a weight typed by hand, a food edited since. Without this the
+  // lookup below missed and the sheet silently reset to the food's first
+  // serving, so opening a row to change its quantity changed the amount too.
+  const options: Serving[] = useMemo(() => {
+    const base = servings.length ? servings : [{ label: "100 g", grams: 100 }];
+    if (!initialServingLabel) return base;
+    if (base.some((s) => s.label === initialServingLabel)) return base;
+    // Reconstructable only when the caller said how much was logged.
+    if (!initialGrams) return base;
+    return [
+      { label: initialServingLabel, grams: initialGrams / (initialQty || 1) },
+      ...base,
+    ];
+  }, [servings, initialServingLabel, initialGrams, initialQty]);
+
+  const fallback: Serving = options[0];
   const [servingLabel, setServingLabel] = useState(
     initialServingLabel ?? fallback.label,
   );
   const [qty, setQty] = useState(String(initialQty));
   // Servings cover "one katori"; grams cover "170 g off the kitchen scale".
-  // Neither replaces the other, so both are offered.
-  const [mode, setMode] = useState<"serving" | "grams">("serving");
+  // Neither replaces the other, so both are offered. An entry that was logged
+  // by weight reopens by weight: showing "225 g" as a serving chip and 1 as a
+  // quantity is a worse answer to "what did I log?" than the number itself.
+  const [mode, setMode] = useState<"serving" | "grams">(
+    initialServingLabel && WEIGHT_LABEL.test(initialServingLabel)
+      ? "grams"
+      : "serving",
+  );
 
-  const serving = servings.find((s) => s.label === servingLabel) ?? fallback;
+  const serving = options.find((s) => s.label === servingLabel) ?? fallback;
   const quantity = Math.max(0, Number(qty) || 0);
 
   const [gramsDraft, setGramsDraft] = useState(() =>
     String(
       Math.round(
-        (servings.find((s) => s.label === initialServingLabel)?.grams ??
+        (options.find((s) => s.label === initialServingLabel)?.grams ??
           fallback.grams) * (initialQty || 1),
       ),
     ),
@@ -72,6 +112,25 @@ export function PortionSheet({
   const grams = mode === "grams" ? typedGrams : serving.grams * quantity;
   const n = scaleNutrients(per100g, grams / 100);
   const kcal = Math.round(n.kcal);
+
+  const canConfirm = grams > 0;
+  const confirm = () => {
+    if (!canConfirm) return;
+    if (mode === "grams") {
+      onConfirm(1, `${Math.round(typedGrams * 10) / 10} g`, typedGrams);
+    } else {
+      onConfirm(quantity, servingLabel);
+    }
+  };
+
+  // Enter on a hardware keyboard, "Done" on a phone: both should commit, since
+  // the whole sheet is one decision and the button may be a scroll away.
+  const submitOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    e.currentTarget.blur();
+    confirm();
+  };
 
   return (
     <BottomSheet
@@ -89,20 +148,7 @@ export function PortionSheet({
               <IconTrash width={16} height={16} />
             </Button>
           )}
-          <Button
-            size="lg"
-            full
-            disabled={grams <= 0}
-            onClick={() =>
-              mode === "grams"
-                ? onConfirm(
-                    1,
-                    `${Math.round(typedGrams * 10) / 10} g`,
-                    typedGrams,
-                  )
-                : onConfirm(quantity, servingLabel)
-            }
-          >
+          <Button size="lg" full disabled={!canConfirm} onClick={confirm}>
             {confirmLabel ? confirmLabel(kcal) : `Add ${kcal} Cal`}
           </Button>
         </div>
@@ -150,15 +196,17 @@ export function PortionSheet({
             <Field
               label="Weight"
               value={gramsDraft}
-              onChange={(e) =>
-                setGramsDraft(e.target.value.replace(/[^0-9.]/g, ""))
-              }
+              onChange={(e) => setGramsDraft(sanitizeNumeric(e.target.value))}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={submitOnEnter}
               inputMode="decimal"
+              enterKeyHint="done"
+              autoComplete="off"
               suffix="g"
               hint="Tap a serving below to fill in its weight."
             />
             <div className="mt-2 flex flex-wrap gap-2">
-              {servings.map((s) => (
+              {options.map((s) => (
                 <button
                   key={s.label}
                   type="button"
@@ -177,7 +225,7 @@ export function PortionSheet({
                 Serving
               </span>
               <div className="flex flex-wrap gap-2">
-                {servings.map((s) => (
+                {options.map((s) => (
                   <button
                     key={s.label}
                     type="button"
@@ -198,8 +246,12 @@ export function PortionSheet({
               <Field
                 label="Quantity"
                 value={qty}
-                onChange={(e) => setQty(e.target.value)}
+                onChange={(e) => setQty(sanitizeNumeric(e.target.value))}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={submitOnEnter}
                 inputMode="decimal"
+                enterKeyHint="done"
+                autoComplete="off"
                 suffix={`× ${serving.label}`}
                 className="flex-1"
               />

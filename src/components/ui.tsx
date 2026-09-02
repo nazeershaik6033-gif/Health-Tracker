@@ -177,7 +177,7 @@ export function PageHeader({
   subtitle?: string;
 }) {
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--surface-border)] bg-[var(--surface-canvas)]/95 px-3 pt-safe pb-2 backdrop-blur">
+    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--surface-border)] chrome-canvas px-3 pt-safe pb-2">
       {typeof back === 'string' ? (
         <Link to={back} aria-label="Back" className="rounded-full p-2 hover:surface-sunken">
           <IconChevronLeft width={22} height={22} />

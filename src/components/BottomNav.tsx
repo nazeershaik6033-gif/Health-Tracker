@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { HAPTIC, haptic } from '@/lib/motion';
+import { useKeyboardOpen } from '@/lib/viewport';
 import { IconDiet, IconHome, IconPlans, IconPlus, IconStreak } from './icons';
 
 const ITEMS = [
@@ -17,8 +18,15 @@ export function BottomNav() {
   const navigate = useNavigate();
   const [left, right] = [ITEMS.slice(0, 2), ITEMS.slice(2)];
 
+  // While a field is focused the nav is only in the way: it would either sit
+  // under the keyboard or be pushed over the content the user is typing into.
+  // Every route that shows the nav reaches its inputs through a sheet, which
+  // has its own footer, so nothing is lost by standing down.
+  const keyboardOpen = useKeyboardOpen();
+  if (keyboardOpen) return null;
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--surface-border)] bg-[var(--surface-card)]/95 backdrop-blur">
+    <nav className="dock chrome-surface inset-x-0 z-30 border-t border-[var(--surface-border)]">
       <div className="mx-auto flex max-w-lg items-stretch justify-between px-2 pt-1.5 pb-safe">
         {left.map((item) => (
           <NavItem key={item.to} {...item} />

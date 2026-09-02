@@ -312,7 +312,7 @@ export default function Search() {
         </button>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
+      <div className="dock inset-x-0 z-20 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
         <Button size="lg" full onClick={() => navigate('/diet')}>
           Done — Track For {MEAL_SLOT_LABEL[slot]}
         </Button>

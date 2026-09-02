@@ -360,13 +360,74 @@
     color: var(--text-muted);
   }
 
-  /* Safe-area helpers for the bottom nav and sheets on notched devices */
+  /* Safe-area helpers for the bottom nav and sheets on notched devices.
+     `--safe-bottom` / `--safe-top` are sampled once by lib/viewport.ts and held;
+     `env()` itself is only the fallback for the first paint, because mobile
+     Safari changes it mid-scroll as the toolbars collapse, which resizes every
+     bar padded with it. That resize, against async-scrolled content, is what
+     the bottom nav's jitter was. */
   .pb-safe {
-    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+    padding-bottom: max(var(--safe-bottom, env(safe-area-inset-bottom, 0px)), 0.5rem);
   }
 
   .pt-safe {
-    padding-top: max(env(safe-area-inset-top), 0.5rem);
+    padding-top: max(var(--safe-top, env(safe-area-inset-top, 0px)), 0.5rem);
+  }
+
+  /* ------------------------------------------------------------------ dock
+     Every bar pinned to the bottom of the screen — the nav, and the "Save" /
+     "Add" action bars on the editor screens.
+
+     `bottom` tracks the keyboard so the bar rides above it instead of being
+     buried behind it, which is what made saving impossible on a phone. The
+     inset is published by lib/viewport.ts and is 0 whenever the keyboard is
+     closed, so this costs nothing the rest of the time.
+
+     The layer hints are the other half of the jitter fix: on iOS the page is
+     scrolled off the main thread, and a fixed bar that is not already on its
+     own compositor layer is re-rastered per frame and lags the content.
+     Deliberately no `contain: paint` — the nav's [+] button overhangs the top
+     edge of its bar, and paint containment would clip it off. */
+  .dock {
+    position: fixed;
+    bottom: var(--kb-inset, 0px);
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
+  /* Sitting on the keyboard, not on the home indicator — the safe-area padding
+     is only wasted height there, and height is what is scarce. */
+  [data-keyboard='open'] .dock.pb-safe {
+    padding-bottom: 0.5rem;
+  }
+
+  /* ---------------------------------------------------------------- chrome
+     Translucent bars. `backdrop-filter` has to resample everything behind it
+     every frame, which on a touch device means it visibly trails the content
+     it is blurring. Pointer devices scroll on the main thread and get the
+     frosted look; touch devices get an opaque bar, which is what native tab
+     bars do anyway. */
+  .chrome-surface {
+    background: var(--surface-card);
+  }
+
+  .chrome-canvas {
+    background: var(--surface-canvas);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .chrome-surface {
+      background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .chrome-canvas {
+      background: color-mix(in srgb, var(--surface-canvas) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
   }
 }
 
