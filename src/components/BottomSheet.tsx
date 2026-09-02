@@ -49,12 +49,10 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
   const [dragExit, setDragExit] = useState(false);
   const exitTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // The sheet is `position: fixed`, so without this it is laid out against the
-  // *layout* viewport — which iOS does not shrink for the keyboard. The footer,
-  // holding the only Add/Save button, ended up behind the keyboard with no way
-  // to scroll to it: the sheet could be opened and edited but never confirmed.
-  // Sizing the overlay to the visual viewport keeps the whole sheet, footer
-  // included, inside the part of the screen the user can actually see.
+  // Drives the fit below. iOS does not shrink the layout viewport for the
+  // keyboard, so the footer holding the only Add/Save button ended up behind
+  // it with no way to scroll to it — the sheet could be opened and edited but
+  // never confirmed.
   const viewport = useViewportRect();
 
   useEffect(() => {
@@ -122,35 +120,37 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
     return () => cancelAnimationFrame(id);
   }, [open, keyboard]);
 
-  // Mobile Safari's `position: fixed; inset: 0` can sit short of the true
-  // visible viewport while the browser chrome or the keyboard is animating,
-  // leaving a strip of the page showing below the scrim. Measure the residual
-  // gap against visualViewport and grow the overlay to close it.
+  // Make the overlay's bottom edge land exactly on the visible bottom edge,
+  // whether that is short of `inset: 0` (Safari's chrome mid-animation) or
+  // well above it (the keyboard is up).
   //
-  // Only ever grow, never shrink: visualViewport.height under-reports for
-  // about a second after a sheet opens on iOS, and shrinking on those early
-  // samples eats into the coverage `inset: 0` already had.
+  // Measured, never computed. Browsers disagree about what `position: fixed`
+  // is anchored to — Chromium uses the layout viewport, iOS Safari often uses
+  // the visual one — so any arithmetic from `innerHeight` and `offsetTop` is
+  // right on one and wrong on the other. Reading back where the element truly
+  // landed is correct on both. That is also why the panel is no longer offset
+  // by `visualViewport.offsetTop`: where Safari had already applied it, doing
+  // so again pushed the sheet down and took its footer off the screen.
+  //
+  // Resetting the height before each measurement is what makes this safe to
+  // run on every viewport event: each pass recomputes from the natural size,
+  // so an early bad sample corrects itself instead of accumulating.
   useEffect(() => {
     const el = overlayRef.current;
     const vv = window.visualViewport;
     if (!el || !vv) return;
-    // With the keyboard up the overlay is sized to the visible rect exactly,
-    // below. This measurement only ever grows, by design, so leaving it
-    // running there would undo that sizing the moment the keyboard appeared.
-    if (keyboard > 0) {
-      el.style.height = '';
-      return;
-    }
 
     const sync = () => {
+      el.style.height = '';
       const rect = el.getBoundingClientRect();
-      const gap = vv.height + vv.offsetTop - rect.bottom;
-      if (gap > 0.5) el.style.height = `${el.offsetHeight + gap}px`;
+      const delta = vv.offsetTop + vv.height - rect.bottom;
+      if (Math.abs(delta) > 0.5) el.style.height = `${rect.height + delta}px`;
     };
 
     sync();
-    // iOS settles the viewport over roughly a second after the sheet opens,
-    // and fires no event once it lands — hence the fixed re-measure points.
+    // iOS settles the viewport over roughly a second after the sheet opens or
+    // the keyboard moves, and fires no event once it lands — hence the fixed
+    // re-measure points.
     const timers = [120, 500, 1200].map((ms) => setTimeout(sync, ms));
     vv.addEventListener('resize', sync);
     vv.addEventListener('scroll', sync);
@@ -295,19 +295,7 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
   if (!mounted) return null;
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end justify-center"
-      // Only while the keyboard is up: pin the panel to the strip that is
-      // actually visible, so its footer — the sole Add/Save button — is never
-      // stranded behind the keyboard. The rest of the time this is plain
-      // `inset: 0` and the measurement above owns any residual gap.
-      style={
-        keyboard > 0
-          ? { top: viewport.top, height: viewport.height, bottom: 'auto' }
-          : undefined
-      }
-    >
+    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end justify-center">
       {/* Fixed rather than filling the overlay: with the keyboard up the
           overlay is only the visible strip, and the scrim should still cover
           whatever sits below it. */}
