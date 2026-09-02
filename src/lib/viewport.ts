@@ -62,11 +62,45 @@ const listeners = new Set<() => void>();
 let safeBottom = 0;
 let safeTop = 0;
 
+/**
+ * A zero-sized `position: fixed; bottom: 0` element, kept in the DOM so the
+ * keyboard inset can be *measured* rather than assumed.
+ *
+ * This exists because browsers do not agree on what `fixed` is anchored to.
+ * Chromium anchors it to the layout viewport, so `innerHeight - vv.height`
+ * gives the occluded strip. iOS Safari frequently anchors it to the *visual*
+ * viewport instead, where that arithmetic double-counts and pushes bottom
+ * chrome off the screen rather than onto it. Reading back where a fixed
+ * element genuinely landed is the only answer that holds for both.
+ */
+let probe: HTMLDivElement | null = null;
+
+function fixedBottom(): number | null {
+  if (typeof document === 'undefined' || !document.body) return null;
+  if (!probe) {
+    probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText =
+      'position:fixed;left:0;bottom:0;width:0;height:0;visibility:hidden;pointer-events:none';
+    document.body.appendChild(probe);
+  }
+  return probe.getBoundingClientRect().bottom;
+}
+
 function measure(): ViewportRect {
   const vv = window.visualViewport;
   if (!vv) return { top: 0, height: window.innerHeight, keyboard: 0 };
 
-  const occluded = window.innerHeight - vv.height - vv.offsetTop;
+  // Both in client (layout-viewport) coordinates, so they are comparable
+  // whichever viewport the browser anchored the probe to.
+  const visibleBottom = vv.offsetTop + vv.height;
+  const anchored = fixedBottom();
+  // How far below the visible edge a bottom-pinned element actually sits.
+  // Zero on a browser that already keeps fixed chrome above the keyboard,
+  // which is exactly the case the old arithmetic got wrong.
+  const occluded =
+    anchored === null ? window.innerHeight - visibleBottom : anchored - visibleBottom;
+
   return {
     top: Math.round(vv.offsetTop),
     height: Math.round(vv.height),
