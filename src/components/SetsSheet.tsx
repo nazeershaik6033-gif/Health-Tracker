@@ -134,7 +134,7 @@ export function SetsSheet({
       open={open}
       onClose={onClose}
       title={exercise.name}
-      maxHeight="88vh"
+      maxHeight="88dvh"
       footer={
         <Button full size="lg" onClick={confirm} disabled={!canConfirm}>
           {initial ? 'Save' : 'Add'} · ~{kcal} cal

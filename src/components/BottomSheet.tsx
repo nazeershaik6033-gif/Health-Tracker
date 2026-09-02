@@ -14,7 +14,7 @@ interface Props {
 /** Matches the sheet-down / fade-out durations in styles/index.css. */
 const EXIT_MS = 220;
 
-export function BottomSheet({ open, onClose, title, children, footer, maxHeight = '85vh' }: Props) {
+export function BottomSheet({ open, onClose, title, children, footer, maxHeight = '85dvh' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   // The sheet used to unmount the instant `open` went false, so it vanished
   // with no exit. Rendering through a short closing phase gives it one.
