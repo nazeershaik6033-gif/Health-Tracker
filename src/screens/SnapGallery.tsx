@@ -107,7 +107,7 @@ export default function SnapGallery() {
 
 function SnapTile({ snap }: { snap: Snap }) {
   const [url, setUrl] = useState('');
-  const [confirm, setConfirm] = useState(false);
+  const showConfirm = useApp((s) => s.showConfirm);
 
   useEffect(() => {
     const objectUrl = URL.createObjectURL(snap.thumb);
@@ -140,18 +140,17 @@ function SnapTile({ snap }: { snap: Snap }) {
         <p className="line-clamp-2 flex-1 text-[11.5px] leading-snug font-semibold">{title}</p>
         <button
           type="button"
-          onClick={() => (confirm ? deleteSnap(snap.id) : setConfirm(true))}
-          onBlur={() => setConfirm(false)}
-          aria-label={
-            confirm
-              ? snap.mealId
-                ? 'Confirm delete photo and logged meal'
-                : 'Confirm delete'
-              : snap.mealId
-                ? 'Delete photo and logged meal'
-                : 'Delete snap'
+          onClick={() =>
+            showConfirm({
+              title: snap.mealId ? 'Delete photo and logged meal?' : 'Delete this photo?',
+              body: snap.mealId
+                ? 'The meal it was logged as goes with it.'
+                : 'The photo is removed from your gallery.',
+              onConfirm: () => deleteSnap(snap.id),
+            })
           }
-          className={`shrink-0 rounded p-1 ${confirm ? 'tint-soft tint-danger' : 'text-muted'}`}
+          aria-label={snap.mealId ? 'Delete photo and logged meal' : 'Delete snap'}
+          className="shrink-0 rounded p-1 text-muted transition-transform active:scale-90"
         >
           <IconTrash width={13} height={13} />
         </button>

@@ -6,8 +6,12 @@ import {
   dayBundle,
   deleteMeal,
   deleteWorkout,
+  moveMealItems,
   removeMealItem,
   replaceMealItem,
+  restoreMeal,
+  restoreMealItem,
+  restoreWorkout,
   summariseRange,
   getFood,
 } from '@/db/repo';
@@ -25,9 +29,15 @@ import {
   formatPortion,
   per100gFromItem,
   rescaleMealItem,
+  stepKcal,
+  totalNutrients,
 } from '@/lib/nutrition';
 import { RingProgress } from '@/components/RingProgress';
+import { DayTotals } from '@/components/DayTotals';
+import type { MacroKey } from '@/lib/macroBreakdown';
 import { PortionSheet } from '@/components/PortionSheet';
+import { MealPickerSheet } from '@/components/MealPickerSheet';
+import { MacroStrip } from '@/components/MacroStrip';
 import { Button, Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import {
   IconChevronLeft,
@@ -35,11 +45,19 @@ import {
   IconDroplet,
   IconDumbbell,
   IconMoon,
+  IconMove,
   IconScale,
   IconSteps,
   IconTrash,
 } from '@/components/icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem } from '@/types';
+import {
+  MEAL_SLOTS,
+  MEAL_SLOT_LABEL,
+  ZERO_NUTRIENTS,
+  type Food,
+  type MealItem,
+  type MealSlot,
+} from '@/types';
 
 /**
  * Month view of everything logged, and a full summary of whichever day is
@@ -51,19 +69,31 @@ import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem } from '@/types';
  */
 export default function CalendarScreen() {
   const navigate = useNavigate();
-  const { profile, selectedDate, setSelectedDate, showToast } = useApp();
+  const { profile, settings, selectedDate, setSelectedDate, showToast, showConfirm } =
+    useApp();
+  const countStepKcal = settings.countStepKcal !== false;
 
   const [cursor, setCursor] = useState(() => {
     const d = fromISODate(selectedDate);
     return { year: d.getFullYear(), month: d.getMonth() };
   });
-  const [confirmMeal, setConfirmMeal] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     mealId: string;
+    slot: MealSlot;
     index: number;
     item: MealItem;
     food?: Food;
   } | null>(null);
+  const [moving, setMoving] = useState<{
+    mealId: string;
+    from: MealSlot;
+    indices: number[];
+    label: string;
+  } | null>(null);
+  // Same per-row macro reveal as Diet, scoped to whichever date is selected —
+  // it resets when you pick a different day rather than following you across
+  // the calendar.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   const kcalTarget = profile?.targets.kcal ?? 2000;
 
@@ -105,11 +135,11 @@ export default function CalendarScreen() {
 
   /* ------------------------------- editing ------------------------------- */
 
-  async function openEdit(mealId: string, index: number, item: MealItem) {
+  async function openEdit(mealId: string, slot: MealSlot, index: number, item: MealItem) {
     // The food row carries the serving list; a logged item only remembers the
     // one serving it used, so without this you could not switch units.
     const food = item.foodId ? await getFood(item.foodId) : undefined;
-    setEditing({ mealId, index, item, food });
+    setEditing({ mealId, slot, index, item, food });
   }
 
   async function saveEdit(qty: number, servingLabel: string, grams?: number) {
@@ -129,24 +159,74 @@ export default function CalendarScreen() {
     showToast({ message: `${next.name} updated` });
   }
 
-  async function deleteEdited() {
-    if (!editing) return;
-    await removeMealItem(editing.mealId, editing.index);
-    const name = editing.item.name;
-    setEditing(null);
-    showToast({ message: `${name} removed` });
+  /** Same re-filing the Diet screen offers, for any day the calendar can reach. */
+  async function runMove(to: MealSlot) {
+    if (!moving) return;
+    const { mealId, indices, label } = moving;
+    setMoving(null);
+
+    const result = await moveMealItems(mealId, indices, to);
+    if (!result) return;
+
+    showToast({
+      message: `${label} moved to ${MEAL_SLOT_LABEL[to]}`,
+      actionLabel: 'Undo',
+      onAction: () => void moveMealItems(result.mealId, result.indices, result.from),
+    });
   }
+
+  function deleteEdited() {
+    if (!editing) return;
+    const { mealId, slot, index, item } = editing;
+    showConfirm({
+      title: `Delete ${item.name}?`,
+      body: `${formatPortion(item.qty, item.servingLabel)} · ${Math.round(item.nutrients.kcal)} Cal will come off ${MEAL_SLOT_LABEL[slot]}.`,
+      onConfirm: async () => {
+        await removeMealItem(mealId, index);
+        setEditing(null);
+        showToast({
+          message: `${item.name} removed`,
+          actionLabel: 'Undo',
+          onAction: () => restoreMealItem(selectedDate, slot, index, item),
+        });
+      },
+    });
+  }
+
+  const macroLink = (key: MacroKey) => `/macro/${key}?date=${selectedDate}`;
 
   /* -------------------------------- render ------------------------------- */
 
-  const dayKcal = bundle
-    ? Math.round(
-        bundle.meals.reduce(
-          (sum, m) => sum + m.items.reduce((s, i) => s + i.nutrients.kcal, 0),
-          0,
-        ),
-      )
-    : 0;
+  // Macros come from the meals already stored, so every past date has had this
+  // breakdown all along — the calendar just never showed it, and a bare calorie
+  // count cannot tell a 1900 kcal day that hit its protein from one that didn't.
+  const dayTotals = useMemo(
+    () => (bundle?.meals.length ? totalNutrients(bundle.meals) : ZERO_NUTRIENTS),
+    [bundle?.meals],
+  );
+  const dayBurned = useMemo(
+    () =>
+      (bundle?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0) +
+      (countStepKcal
+        ? stepKcal(bundle?.steps.count ?? 0, bundle?.weight?.kg ?? profile?.startWeightKg ?? 70)
+        : 0),
+    [bundle?.workouts, bundle?.steps, bundle?.weight, profile?.startWeightKg, countStepKcal],
+  );
+  const targets = profile?.targets ?? ZERO_NUTRIENTS;
+
+  const allKeys = useMemo(
+    () => bundle?.meals.flatMap((m) => m.items.map((_, i) => `${m.id}-${i}`)) ?? [],
+    [bundle?.meals],
+  );
+  const allExpanded = allKeys.length > 0 && allKeys.every((k) => expanded.has(k));
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div className="pb-28">
@@ -195,7 +275,11 @@ export default function CalendarScreen() {
                   type="button"
                   disabled={future}
                   onClick={() => setSelectedDate(date)}
-                  aria-label={`${date}${s ? `, ${s.kcal} calories logged` : ', nothing logged'}`}
+                  aria-label={
+                    s
+                      ? `${date}, ${s.kcal} calories, ${s.protein} g protein, ${s.carbs} g carbs, ${s.fat} g fat, ${s.fibre} g fibre`
+                      : `${date}, nothing logged`
+                  }
                   aria-current={active ? 'date' : undefined}
                   className={`relative flex aspect-square flex-col items-center justify-center rounded-xl transition-colors ${
                     active ? 'bg-brand-500 text-white' : future ? 'opacity-25' : 'surface-sunken'
@@ -255,12 +339,34 @@ export default function CalendarScreen() {
             {relativeDayLabel(selectedDate)}
           </h2>
           <span className="tabular text-[13px] font-semibold text-secondary">
-            {dayKcal} / {kcalTarget} Cal
+            {Math.round(dayTotals.kcal)} / {kcalTarget} Cal
           </span>
         </div>
 
         {bundle && (
           <>
+            {/* The same card the Diet screen shows for today, for any day you
+                pick — calories, and where each macro actually landed. */}
+            <DayTotals
+              totals={dayTotals}
+              targets={targets}
+              burned={dayBurned}
+              compact
+              macroHref={macroLink}
+            />
+
+            {allKeys.length > 0 && (
+              <div className="flex justify-end px-1">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(allExpanded ? new Set() : new Set(allKeys))}
+                  className="text-[12.5px] font-semibold text-brand-600"
+                >
+                  {allExpanded ? 'Collapse all' : 'Expand all'}
+                </button>
+              </div>
+            )}
+
             {/* Meals */}
             {MEAL_SLOTS.map((slot) => {
               const meal = bundle.meals.find((m) => m.slot === slot);
@@ -269,52 +375,114 @@ export default function CalendarScreen() {
                 <Card key={slot} className="space-y-1">
                   <SectionTitle
                     action={
-                      <button
-                        type="button"
-                        aria-label={
-                          confirmMeal === meal.id
-                            ? `Confirm remove ${MEAL_SLOT_LABEL[slot]}`
-                            : `Remove ${MEAL_SLOT_LABEL[slot]}`
-                        }
-                        onClick={async () => {
-                          if (confirmMeal !== meal.id) {
-                            setConfirmMeal(meal.id);
-                            return;
+                      <span className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMoving({
+                              mealId: meal.id,
+                              from: slot,
+                              indices: meal.items.map((_, i) => i),
+                              label: MEAL_SLOT_LABEL[slot],
+                            })
                           }
-                          await deleteMeal(meal.id);
-                          setConfirmMeal(null);
-                          showToast({ message: `${MEAL_SLOT_LABEL[slot]} removed` });
-                        }}
-                        onBlur={() => setConfirmMeal(null)}
-                        className={`rounded-lg p-1.5 text-[11px] font-semibold ${
-                          confirmMeal === meal.id ? 'tint-soft tint-danger' : 'text-muted'
-                        }`}
-                      >
-                        {confirmMeal === meal.id ? 'Tap to confirm' : <IconTrash width={14} height={14} />}
-                      </button>
+                          aria-label={`Move ${MEAL_SLOT_LABEL[slot]} to another meal`}
+                          className="rounded-lg p-1.5 text-muted"
+                        >
+                          <IconMove width={14} height={14} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${MEAL_SLOT_LABEL[slot]}`}
+                          onClick={() =>
+                            showConfirm({
+                              title: `Clear ${MEAL_SLOT_LABEL[slot]}?`,
+                              body: `All ${meal.items.length} item${
+                                meal.items.length === 1 ? '' : 's'
+                              } logged here will be deleted.`,
+                              confirmLabel: 'Clear',
+                              onConfirm: async () => {
+                                await deleteMeal(meal.id);
+                                showToast({
+                                  message: `${MEAL_SLOT_LABEL[slot]} removed`,
+                                  actionLabel: 'Undo',
+                                  onAction: () => restoreMeal(meal),
+                                });
+                              },
+                            })
+                          }
+                          className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+                        >
+                          <IconTrash width={14} height={14} />
+                        </button>
+                      </span>
                     }
                   >
                     {MEAL_SLOT_LABEL[slot]}
                   </SectionTitle>
-                  {meal.items.map((item, i) => (
-                    <button
-                      key={`${meal.id}-${i}`}
-                      type="button"
-                      onClick={() => openEdit(meal.id, i, item)}
-                      className="flex w-full items-center gap-3 border-b border-[var(--surface-border)] py-2.5 text-left last:border-0"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14px] font-semibold">{item.name}</p>
-                        <p className="text-[12px] text-muted">
-                          {formatPortion(item.qty, item.servingLabel)}
-                        </p>
+                  {meal.items.map((item, i) => {
+                    const key = `${meal.id}-${i}`;
+                    return (
+                      <div
+                        key={key}
+                        className="border-b border-[var(--surface-border)] py-2.5 last:border-0"
+                      >
+                        {/* Three targets for one edit action, same split as Diet:
+                            a button cannot nest inside another, so the Expand
+                            chip could not sit beside the name otherwise. */}
+                        <div className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(meal.id, slot, i, item)}
+                                className="min-w-0 truncate text-left text-[14px] font-semibold"
+                              >
+                                {item.name}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(key)}
+                                aria-expanded={expanded.has(key)}
+                                aria-label={`${expanded.has(key) ? 'Hide' : 'Show'} macros for ${item.name}`}
+                                className="hairline shrink-0 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-secondary"
+                              >
+                                {expanded.has(key) ? 'Hide' : 'Expand'}
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              aria-hidden="true"
+                              onClick={() => openEdit(meal.id, slot, i, item)}
+                              className="block w-full truncate text-left text-[12px] text-muted"
+                            >
+                              {formatPortion(item.qty, item.servingLabel)}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            onClick={() => openEdit(meal.id, slot, i, item)}
+                            className="tabular shrink-0 text-[13px] font-bold"
+                          >
+                            {Math.round(item.nutrients.kcal)}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(meal.id, slot, i, item)}
+                            aria-label={`Edit ${item.name}`}
+                            className="shrink-0 p-0.5 text-muted"
+                          >
+                            <IconChevronRight width={14} height={14} />
+                          </button>
+                        </div>
+
+                        {expanded.has(key) && <MacroStrip nutrients={item.nutrients} />}
                       </div>
-                      <span className="tabular text-[13px] font-bold">
-                        {Math.round(item.nutrients.kcal)}
-                      </span>
-                      <IconChevronRight width={14} height={14} className="shrink-0 text-muted" />
-                    </button>
-                  ))}
+                    );
+                  })}
                 </Card>
               );
             })}
@@ -392,11 +560,21 @@ export default function CalendarScreen() {
                     <button
                       type="button"
                       aria-label={`Remove ${w.type}`}
-                      onClick={async () => {
-                        await deleteWorkout(w.id);
-                        showToast({ message: `${w.type} removed` });
-                      }}
-                      className="shrink-0 p-1 text-red-600"
+                      onClick={() =>
+                        showConfirm({
+                          title: `Delete ${w.title ?? w.type}?`,
+                          body: `${formatDuration(w.durationMin)} and ${Math.round(w.kcal)} cal burned will come off this day.`,
+                          onConfirm: async () => {
+                            await deleteWorkout(w.id);
+                            showToast({
+                              message: `${w.type} removed`,
+                              actionLabel: 'Undo',
+                              onAction: () => restoreWorkout(w),
+                            });
+                          },
+                        })
+                      }
+                      className="shrink-0 p-1 text-red-600 transition-transform active:scale-90"
                     >
                       <IconTrash width={15} height={15} />
                     </button>
@@ -444,7 +622,28 @@ export default function CalendarScreen() {
           }
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}
+          onMove={() => {
+            setMoving({
+              mealId: editing.mealId,
+              from: editing.slot,
+              indices: [editing.index],
+              label: editing.item.name,
+            });
+            setEditing(null);
+          }}
           onDelete={deleteEdited}
+        />
+      )}
+
+      {moving && (
+        <MealPickerSheet
+          open
+          intent="move"
+          date={selectedDate}
+          currentSlot={moving.from}
+          title={`Move ${moving.label} to`}
+          onPick={runMove}
+          onClose={() => setMoving(null)}
         />
       )}
     </div>

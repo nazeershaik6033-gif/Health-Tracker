@@ -84,7 +84,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
       </div>
 
       {open && (
-        <div className="no-scrollbar animate-fade-in mt-3 flex gap-2 overflow-x-auto pb-1">
+        <div className="scroll-x no-scrollbar animate-fade-in mt-3 flex gap-2 pb-1">
           {days.map((d) => {
             const active = d === selectedDate;
             return (

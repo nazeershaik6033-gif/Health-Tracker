@@ -121,8 +121,11 @@ export default function Label() {
     ? scaleNutrients(food.per100g, ((serving?.grams ?? 100) * (Number(qty) || 0)) / 100)
     : null;
 
+  // svh with a hard overflow clip, matching Snap and Scan: `min-h-dvh` let this
+  // column grow past the screen, so the shutter sat below the fold and had to
+  // be scrolled to. Each phase below owns its own scrolling.
   return (
-    <div className="flex min-h-dvh flex-col bg-black">
+    <div className="flex h-svh flex-col overflow-hidden bg-black">
       <PageHeader
         title="Read a nutrition label"
         back={() => navigate(-1)}
@@ -168,8 +171,10 @@ export default function Label() {
       />
 
       {phase === 'capture' && (
-        <div className="flex flex-1 flex-col">
-          <div className="relative flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col">
+          {/* min-h-0 so the preview yields space to the shutter bar below
+              rather than shoving it off the bottom of the screen. */}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             <video
               ref={camera.videoRef}
               playsInline
@@ -206,7 +211,7 @@ export default function Label() {
             )}
           </div>
 
-          <div className="bg-black px-6 pt-4 pb-safe">
+          <div className="bg-black px-6 pt-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
             <p className="text-center text-[12.5px] text-white/60">
               Fill the box with the nutrition panel. Flatten the pack if you can.
             </p>
@@ -234,7 +239,7 @@ export default function Label() {
       )}
 
       {phase === 'reading' && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-6">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-6">
           <Card className="space-y-3">
             <div className="flex items-center gap-2">
               <IconSparkle width={16} height={16} className="animate-pulse text-brand-600" />
@@ -257,7 +262,7 @@ export default function Label() {
       )}
 
       {phase === 'result' && food && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
           <Card className="space-y-3">
             <Field
               label="Product"
@@ -355,7 +360,7 @@ export default function Label() {
       )}
 
       {phase === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-canvas)] px-8 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
           <IconWarning width={30} height={30} className="text-amber-500" />
           <p className="max-w-xs text-[14px] font-semibold">{error}</p>
           {rawText && (

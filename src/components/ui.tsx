@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react';
 import { Link } from 'react-router-dom';
 import { IconSparkle, IconChevronLeft } from './icons';
 
@@ -18,6 +18,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   full?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  /** React 19 takes a ref as an ordinary prop — no forwardRef wrapper needed. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({

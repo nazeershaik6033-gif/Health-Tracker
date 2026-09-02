@@ -2,7 +2,7 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { scaleNutrients } from "@/lib/nutrition";
 import { BottomSheet } from "./BottomSheet";
 import { Button, Field } from "./ui";
-import { IconTrash } from "./icons";
+import { IconMove, IconStar, IconTrash } from "./icons";
 import type { Food, Serving } from "@/types";
 
 /**
@@ -40,6 +40,23 @@ export interface PortionSheetProps {
   onDelete?: () => void;
   /** Opens the food's own editor. Absent when there is no food row behind it. */
   onEditFood?: () => void;
+  /**
+   * Pins the portion currently shown to a meal slot.
+   *
+   * The star lives here rather than on the food row because this is the only
+   * screen where the quantity exists: "2 rotis for breakfast" can be saved the
+   * moment it is dialled in, without logging it first and starring it after.
+   */
+  onFavourite?: (qty: number, servingLabel: string, grams?: number) => void;
+  /** e.g. "Breakfast" — names the slot the star would pin to. */
+  favouriteSlotLabel?: string;
+  /** Renders the star already filled, for a portion that is pinned. */
+  favourited?: boolean;
+  /**
+   * Opens the slot picker to re-file this item under a different meal. Only
+   * meaningful for something already logged, so it is absent while adding.
+   */
+  onMove?: () => void;
 }
 
 /** A label this sheet itself writes for a weight-mode entry, e.g. "225 g". */
@@ -65,6 +82,10 @@ export function PortionSheet({
   onConfirm,
   onDelete,
   onEditFood,
+  onFavourite,
+  favouriteSlotLabel,
+  favourited = false,
+  onMove,
 }: PortionSheetProps) {
   // The serving that was logged is not always one the food still lists — an AI
   // portion, a weight typed by hand, a food edited since. Without this the
@@ -148,6 +169,33 @@ export function PortionSheet({
               <IconTrash width={16} height={16} />
             </Button>
           )}
+          {onFavourite && (
+            <Button
+              variant="secondary"
+              aria-label={
+                favourited
+                  ? `${title} is a favourite for ${favouriteSlotLabel}`
+                  : `Save this portion as a ${favouriteSlotLabel} favourite`
+              }
+              aria-pressed={favourited}
+              onClick={() =>
+                mode === "grams"
+                  ? onFavourite(
+                      1,
+                      `${Math.round(typedGrams * 10) / 10} g`,
+                      typedGrams,
+                    )
+                  : onFavourite(quantity, servingLabel)
+              }
+            >
+              <IconStar
+                width={16}
+                height={16}
+                filled={favourited}
+                className={favourited ? "text-accent-500" : undefined}
+              />
+            </Button>
+          )}
           <Button size="lg" full disabled={!canConfirm} onClick={confirm}>
             {confirmLabel ? confirmLabel(kcal) : `Add ${kcal} Cal`}
           </Button>
@@ -155,18 +203,32 @@ export function PortionSheet({
       }
     >
       <div className="space-y-4 pb-2">
-        <div className="flex items-center gap-2">
-          {brand && <p className="min-w-0 truncate text-[13px] text-secondary">{brand}</p>}
-          {onEditFood && (
-            <button
-              type="button"
-              onClick={onEditFood}
-              className="ml-auto text-[12.5px] font-semibold text-brand-600"
-            >
-              Edit food
-            </button>
-          )}
-        </div>
+        {(brand || onMove || onEditFood) && (
+          <div className="flex items-center gap-3">
+            {brand && <p className="min-w-0 truncate text-[13px] text-secondary">{brand}</p>}
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              {onMove && (
+                <button
+                  type="button"
+                  onClick={onMove}
+                  className="flex items-center gap-1 text-[12.5px] font-semibold text-brand-600"
+                >
+                  <IconMove width={14} height={14} />
+                  Move
+                </button>
+              )}
+              {onEditFood && (
+                <button
+                  type="button"
+                  onClick={onEditFood}
+                  className="text-[12.5px] font-semibold text-brand-600"
+                >
+                  Edit food
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="surface-sunken flex gap-1 rounded-xl p-1">
           {(["serving", "grams"] as const).map((m) => (

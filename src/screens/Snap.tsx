@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
-import { addMealItems, addSnap, deleteSnap, getSnap, updateSnap } from '@/db/repo';
+import { addMealItems, addSnap, deleteSnap, getSnap, getSnapImage, updateSnap } from '@/db/repo';
 import { analyseMealPhoto } from '@/ai/service';
-import { hasKey } from '@/ai/registry';
-import { describeError } from '@/ai/types';
+import { hasKey, modelFor } from '@/ai/registry';
+import { describeError, errorDetail } from '@/ai/types';
 import { useCamera } from '@/lib/camera';
 import { blobToImagePart, canvasToBlob, captureFrame, prepareImage } from '@/lib/image';
 import {
@@ -35,7 +35,7 @@ type Phase = 'capture' | 'analysing' | 'result' | 'error';
 export default function Snap() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { settings, selectedDate, showToast } = useApp();
+  const { settings, selectedDate, showToast, showConfirm } = useApp();
   // Two inputs, because `capture` is a one-way door: with it the OS opens the
   // camera and the photo library is unreachable, without it the library. One
   // input cannot serve both affordances.
@@ -48,19 +48,23 @@ export default function Snap() {
   const [preview, setPreview] = useState<string>('');
   const [analysis, setAnalysis] = useState<SnapAnalysis | null>(null);
   const [error, setError] = useState('');
+  // Provider, model and HTTP status behind the friendly message — the only
+  // thing that makes a failed reading actionable or reportable.
+  const [detail, setDetail] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
-  // Two-tap confirm rather than window.confirm, which a standalone PWA on iOS
-  // renders as a jarring system dialog over the app.
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
   const keyed = hasKey(settings);
   const camera = useCamera({ autoStart: phase === 'capture' && keyed });
 
   /* ------------------------------ analysis ----------------------------- */
 
+  /**
+   * `image` is passed straight through on the capture path, where the blob is
+   * already in hand; "Try again" has only the row, so it reads the full image
+   * back out of its own table.
+   */
   const analyse = useCallback(
-    async (row: SnapRow) => {
+    async (row: SnapRow, image?: Blob) => {
       setPhase('analysing');
       setError('');
       abortRef.current?.abort();
@@ -69,7 +73,9 @@ export default function Snap() {
 
       try {
         await updateSnap(row.id, { status: 'analysing' });
-        const part = await blobToImagePart(row.blob);
+        const full = image ?? (await getSnapImage(row.id));
+        if (!full) throw new Error('That photo is no longer stored on this device.');
+        const part = await blobToImagePart(full);
         const result = await analyseMealPhoto(settings, part, controller.signal);
         await updateSnap(row.id, { status: 'ready', analysis: result });
         setAnalysis(result);
@@ -79,6 +85,7 @@ export default function Snap() {
         const message = describeError(err);
         await updateSnap(row.id, { status: 'failed', error: message });
         setError(message);
+        setDetail(errorDetail(err, settings.provider, modelFor(settings)));
         setPhase('error');
       }
     },
@@ -89,19 +96,21 @@ export default function Snap() {
   const ingest = useCallback(
     async (blob: Blob, autoTracked = false) => {
       const prepared = await prepareImage(blob);
-      const row = await addSnap({
-        date: selectedDate,
-        blob: prepared.full,
-        thumb: prepared.thumb,
-        width: prepared.width,
-        height: prepared.height,
-        status: 'pending',
-        autoTracked,
-      });
+      const row = await addSnap(
+        {
+          date: selectedDate,
+          thumb: prepared.thumb,
+          width: prepared.width,
+          height: prepared.height,
+          status: 'pending',
+          autoTracked,
+        },
+        prepared.full,
+      );
       setSnap(row);
       setPreview(URL.createObjectURL(prepared.full));
       camera.stop();
-      if (keyed) await analyse(row);
+      if (keyed) await analyse(row, prepared.full);
       else {
         setError('Add an AI key in Settings to read this photo.');
         setPhase('error');
@@ -171,7 +180,10 @@ export default function Snap() {
       const row = await getSnap(id);
       if (!row) return;
       setSnap(row);
-      setPreview(URL.createObjectURL(row.blob));
+      const full = await getSnapImage(id);
+      // Fall back to the thumbnail: a stored snap should still be viewable if
+      // its full image went missing, rather than showing an empty frame.
+      setPreview(URL.createObjectURL(full ?? row.thumb));
       if (row.analysis) {
         setAnalysis(row.analysis);
         setPhase('result');
@@ -239,6 +251,7 @@ export default function Snap() {
     setSnap(null);
     setAnalysis(null);
     setError('');
+    setDetail('');
     setPhase('capture');
     void camera.start();
   }
@@ -417,7 +430,7 @@ export default function Snap() {
 
       {/* -------------------------- analysing -------------------------- */}
       {phase === 'analysing' && (
-        <div className="flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-8">
+        <div className="scroll-y flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-8">
           {preview && (
             <img
               src={preview}
@@ -446,7 +459,7 @@ export default function Snap() {
 
       {/* ---------------------------- result --------------------------- */}
       {phase === 'result' && analysis && (
-        <div className="flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
+        <div className="scroll-y flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
           {preview && (
             <img
               src={preview}
@@ -551,12 +564,22 @@ export default function Snap() {
 
       {/* ----------------------------- error --------------------------- */}
       {phase === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
+        <div className="scroll-y flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-canvas)] px-8 py-6 text-center">
           {preview && (
             <img src={preview} alt="" className="h-40 w-40 rounded-2xl object-cover opacity-60" />
           )}
           <IconWarning width={30} height={30} className="text-amber-500" />
           <p className="text-[14px] font-semibold">{error}</p>
+          {detail && (
+            <button
+              type="button"
+              onClick={() => void navigator.clipboard?.writeText(detail)}
+              title="Tap to copy"
+              className="tabular max-w-full rounded-lg surface-sunken px-2.5 py-1.5 text-[11px] break-words text-muted"
+            >
+              {detail}
+            </button>
+          )}
           <div className="flex gap-2">
             {!keyed ? (
               <Button onClick={() => navigate('/settings')}>Open Settings</Button>
@@ -577,25 +600,24 @@ export default function Snap() {
           {snap && (
             <button
               type="button"
-              onClick={async () => {
-                if (!confirmDelete) {
-                  setConfirmDelete(true);
-                  return;
-                }
-                await deleteSnap(snap.id);
-                showToast({ message: 'Photo deleted' });
-                setConfirmDelete(false);
-                reset();
-              }}
+              onClick={() =>
+                showConfirm({
+                  title: 'Delete this photo?',
+                  body: 'It is removed from your Snap Gallery and cannot be analysed again.',
+                  onConfirm: async () => {
+                    await deleteSnap(snap.id);
+                    showToast({ message: 'Photo deleted' });
+                    reset();
+                  },
+                })
+              }
               // The accessible name has to contain the visible text, or voice
               // control cannot activate what the button says it is (WCAG 2.5.3).
-              aria-label={confirmDelete ? 'Tap again to delete photo' : 'Delete photo'}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
-                confirmDelete ? 'bg-red-600 text-white' : 'text-muted'
-              }`}
+              aria-label="Delete photo"
+              className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold text-muted transition-transform active:scale-95"
             >
               <IconTrash width={15} height={15} />
-              {confirmDelete ? 'Tap again to delete' : 'Delete photo'}
+              Delete photo
             </button>
           )}
         </div>
