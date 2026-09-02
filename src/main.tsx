@@ -5,9 +5,14 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RELOAD_PARAM } from './lib/appUpdate';
+import { installViewportMetrics } from './lib/viewport';
 import './styles/index.css';
 
 registerSW({ immediate: true });
+
+// Publishes --kb-inset / --safe-bottom before the first paint, so bottom bars
+// are positioned correctly from the start rather than settling into place.
+installViewportMetrics();
 
 // Settings' "Force reload" appends a cache-busting param to defeat the HTTP
 // cache. Strip it once we're here so it doesn't stick in the address bar or

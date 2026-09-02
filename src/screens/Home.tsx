@@ -383,7 +383,7 @@ export default function Home() {
       <Link
         to="/coach"
         aria-label="Ask Ria, your AI coach"
-        className="fixed right-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 flex h-13 w-13 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition-transform active:scale-95"
+        className="fixed right-4 bottom-[calc(5.5rem+var(--safe-bottom,0px))] z-30 flex h-13 w-13 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition-transform active:scale-95"
         style={{ height: '3.25rem', width: '3.25rem' }}
       >
         <IconSparkle width={24} height={24} />

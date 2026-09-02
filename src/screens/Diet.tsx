@@ -409,6 +409,7 @@ export default function Diet() {
           }
           initialQty={editing.item.qty}
           initialServingLabel={editing.item.servingLabel}
+          initialGrams={editing.item.grams}
           confirmLabel={(kcal) => `Save ${kcal} Cal`}
           onEditFood={
             editing.food ? () => navigate(`/food/${editing.food!.id}/edit`) : undefined

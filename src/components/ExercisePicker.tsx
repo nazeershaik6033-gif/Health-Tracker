@@ -56,7 +56,7 @@ export function ExercisePicker({ open, onClose, onPick, onCreateCustom }: Props)
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add an exercise" maxHeight="88vh">
+    <BottomSheet open={open} onClose={onClose} title="Add an exercise" maxHeight="88%">
       <div className="space-y-3 pb-2">
         <div className="relative">
           <IconSearch

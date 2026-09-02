@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { HAPTIC, haptic } from '@/lib/motion';
+import { useKeyboardOpen } from '@/lib/viewport';
 import { IconDiet, IconHome, IconPlans, IconPlus, IconStreak } from './icons';
 
 const ITEMS = [
@@ -26,6 +27,13 @@ export function BottomNav() {
   const navRef = useRef<HTMLElement>(null);
   const [left, right] = [ITEMS.slice(0, 2), ITEMS.slice(2)];
 
+  // While a field is focused the nav is only in the way: it would either sit
+  // under the keyboard or be pushed over the content the user is typing into.
+  // Every route that shows the nav reaches its inputs through a sheet, which
+  // has its own footer, so nothing is lost by standing down. Read before the
+  // effect below, and acted on after it, so the hook order never varies.
+  const keyboardOpen = useKeyboardOpen();
+
   // Mobile Safari can leave `position: fixed; bottom: 0` sitting above the
   // true visible edge while its toolbar shows or hides, because a fixed
   // element doesn't reliably track the *visual* viewport there — which
@@ -44,7 +52,12 @@ export function BottomNav() {
       // compute a bogus shift and translate it off-screen for good.
       if (rect.width === 0 && rect.height === 0) return;
       const shift = Math.max(0, vv.height + vv.offsetTop - rect.bottom);
-      el.style.transform = shift > 0.5 ? `translateY(${shift.toFixed(2)}px)` : '';
+      // translate3d rather than translateY: this inline transform overrides
+      // `.dock`'s own, and a 2D one would give the compositor a weaker hint
+      // than the layer promotion the bar is relying on to scroll smoothly.
+      // Clearing it falls back to the class, which keeps that promotion.
+      el.style.transform =
+        shift > 0.5 ? `translate3d(0, ${shift.toFixed(2)}px, 0)` : '';
     };
 
     sync();
@@ -61,12 +74,14 @@ export function BottomNav() {
       vv.removeEventListener('scroll', sync);
       window.removeEventListener('orientationchange', sync);
     };
-  }, []);
+  }, [keyboardOpen]);
+
+  if (keyboardOpen) return null;
 
   return (
     <nav
       ref={navRef}
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--surface-border)] bg-[var(--surface-card)]/95 backdrop-blur"
+      className="dock chrome-surface inset-x-0 z-30 border-t border-[var(--surface-border)]"
     >
       <div className="mx-auto flex max-w-lg items-stretch justify-between px-2 pt-1.5 pb-safe">
         {left.map((item) => (

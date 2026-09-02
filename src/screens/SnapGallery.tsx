@@ -83,7 +83,7 @@ export default function SnapGallery() {
 
       {/* Two actions, because "upload a photo I already took" was previously
           only reachable via a small icon inside the camera screen. */}
-      <div className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 flex flex-col gap-2">
+      <div className="fixed right-4 bottom-[calc(1.5rem+var(--safe-bottom,0px))] z-30 flex flex-col gap-2">
         <button
           type="button"
           onClick={() => navigate('/snap?pick=1')}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { prefersReducedMotion } from '@/lib/motion';
+import { useViewportRect } from '@/lib/viewport';
 
 interface Props {
   open: boolean;
@@ -8,6 +9,7 @@ interface Props {
   children: ReactNode;
   /** Sticky footer that stays visible above the fold, e.g. "Track For Dinner". */
   footer?: ReactNode;
+  /** Share of the *visible* viewport the panel may take, e.g. '85%'. */
   maxHeight?: string;
 }
 
@@ -30,7 +32,7 @@ interface Drag {
   engaged: boolean;
 }
 
-export function BottomSheet({ open, onClose, title, children, footer, maxHeight = '85vh' }: Props) {
+export function BottomSheet({ open, onClose, title, children, footer, maxHeight = '85%' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -46,6 +48,14 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
   // This flag swaps those classes out for a transition off the live position.
   const [dragExit, setDragExit] = useState(false);
   const exitTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // The sheet is `position: fixed`, so without this it is laid out against the
+  // *layout* viewport — which iOS does not shrink for the keyboard. The footer,
+  // holding the only Add/Save button, ended up behind the keyboard with no way
+  // to scroll to it: the sheet could be opened and edited but never confirmed.
+  // Sizing the overlay to the visual viewport keeps the whole sheet, footer
+  // included, inside the part of the screen the user can actually see.
+  const viewport = useViewportRect();
 
   useEffect(() => {
     if (open) {
@@ -96,6 +106,22 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
     };
   }, [open, requestClose]);
 
+  const keyboard = viewport.keyboard;
+
+  // The sheet has shrunk to fit above the keyboard, so the field the user just
+  // tapped may now be out of view inside the sheet's own scroller. The browser
+  // does this for the page but not for a nested scroll container.
+  useEffect(() => {
+    if (!open || keyboard === 0) return;
+    const id = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return;
+      if (!bodyRef.current?.contains(active)) return;
+      active.scrollIntoView({ block: 'nearest' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, keyboard]);
+
   // Mobile Safari's `position: fixed; inset: 0` can sit short of the true
   // visible viewport while the browser chrome or the keyboard is animating,
   // leaving a strip of the page showing below the scrim. Measure the residual
@@ -108,6 +134,13 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
     const el = overlayRef.current;
     const vv = window.visualViewport;
     if (!el || !vv) return;
+    // With the keyboard up the overlay is sized to the visible rect exactly,
+    // below. This measurement only ever grows, by design, so leaving it
+    // running there would undo that sizing the moment the keyboard appeared.
+    if (keyboard > 0) {
+      el.style.height = '';
+      return;
+    }
 
     const sync = () => {
       const rect = el.getBoundingClientRect();
@@ -129,7 +162,7 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
       vv.removeEventListener('scroll', sync);
       window.removeEventListener('orientationchange', sync);
     };
-  }, [mounted]);
+  }, [mounted, keyboard]);
 
   // ------------------------------------------------------------ drag to close
   //
@@ -262,10 +295,25 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
   if (!mounted) return null;
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end justify-center">
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      // Only while the keyboard is up: pin the panel to the strip that is
+      // actually visible, so its footer — the sole Add/Save button — is never
+      // stranded behind the keyboard. The rest of the time this is plain
+      // `inset: 0` and the measurement above owns any residual gap.
+      style={
+        keyboard > 0
+          ? { top: viewport.top, height: viewport.height, bottom: 'auto' }
+          : undefined
+      }
+    >
+      {/* Fixed rather than filling the overlay: with the keyboard up the
+          overlay is only the visible strip, and the scrim should still cover
+          whatever sits below it. */}
       <div
         ref={scrimRef}
-        className={`absolute inset-0 bg-black/40 ${
+        className={`fixed inset-0 bg-black/40 ${
           dragExit ? '' : closing ? 'animate-fade-out' : 'animate-fade-in'
         }`}
         onClick={requestClose}
@@ -281,7 +329,9 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
           dragExit ? '' : closing ? 'animate-sheet-down' : 'animate-sheet-up'
         }`}
         style={{
-          maxHeight,
+          // With the keyboard up there is little enough room left that holding
+          // back 15% of it would push the footer off again.
+          maxHeight: keyboard > 0 ? '100%' : maxHeight,
           background: 'var(--surface-card)',
           borderTopLeftRadius: 'var(--radius-sheet)',
           borderTopRightRadius: 'var(--radius-sheet)',
@@ -316,7 +366,17 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
           {children}
         </div>
         {footer && (
-          <div className="hairline border-t px-5 pt-3 pb-safe">{footer}</div>
+          <div
+            className="hairline shrink-0 border-t px-5 pt-3"
+            // The home indicator is not in the way when the keyboard is, and
+            // padding for it there just eats room the sheet needs.
+            style={{
+              paddingBottom:
+                keyboard > 0 ? '0.75rem' : 'max(var(--safe-bottom, 0px), 0.5rem)',
+            }}
+          >
+            {footer}
+          </div>
         )}
         {!footer && <div className="pb-safe" />}
       </div>
