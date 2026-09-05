@@ -470,7 +470,11 @@ time.
   local and unbranded products are often genuinely absent — trying every form
   of a code raises the hit rate but cannot invent an entry. When a scan comes
   back empty the honest routes are the label reader, an AI estimate, or adding
-  the food by hand, and the app offers all three rather than pretending
+  the food by hand, and the app offers all three rather than pretending. The
+  label reader is the one that leads, because the panel on the pack in your
+  hand is a better source than any database row; whatever it reads is saved
+  against the barcode, so the second scan of that product is instant and
+  offline even though the world still has never heard of it
 - Ria is not a clinician
 
 ---

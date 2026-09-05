@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood } from '@/db/repo';
 import { readNutritionLabel, draftToFood } from '@/ai/service';
@@ -21,6 +21,14 @@ const ROI = { x: 0.08, y: 0.16, w: 0.84, h: 0.62 };
 
 export default function Label() {
   const navigate = useNavigate();
+  /**
+   * Set when the user arrives here from a barcode that no database could
+   * answer. Attaching it to whatever the panel yields is the whole point of
+   * that route: the product stays unknown to the world, but this install
+   * recognises it instantly, offline, every time after.
+   */
+  const [params] = useSearchParams();
+  const barcode = params.get('barcode')?.replace(/\D/g, '') || undefined;
   const { settings, selectedDate, showToast } = useApp();
   const camera = useCamera();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -51,10 +59,14 @@ export default function Label() {
         // rotated, curved and glare-affected labels.
         const blob = await canvasToBlob(canvas, 0.9);
         const draft = await readNutritionLabel(settings, await blobToImagePart(blob));
-        const created = await createFood(draftToFood(draft, 'ai'));
+        const created = await createFood(draftToFood(draft, 'ai', barcode));
         setFood(created);
         setServingLabel(created.servings[0]?.label ?? '100 g');
-        setNote('Read by AI — check the numbers against the pack');
+        setNote(
+          barcode
+            ? 'Read by AI — check the numbers against the pack. Saved against the barcode, so the next scan finds it.'
+            : 'Read by AI — check the numbers against the pack',
+        );
         setPhase('result');
         return;
       }
@@ -70,6 +82,7 @@ export default function Label() {
       }
       const created = await createFood({
         name: reading.name,
+        barcode,
         per100g: reading.per100g,
         servings: reading.servings,
         source: 'custom',
@@ -80,7 +93,9 @@ export default function Label() {
       setServingLabel(created.servings[0]?.label ?? '100 g');
       setRawText(reading.raw);
       setNote(
-        `Read on-device — found ${reading.matched} of 5 values. Check them before saving.`,
+        `Read on-device — found ${reading.matched} of 5 values. Check them before saving.${
+          barcode ? ' Saved against the barcode, so the next scan finds it.' : ''
+        }`,
       );
       setPhase('result');
     } catch (err) {

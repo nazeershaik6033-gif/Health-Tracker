@@ -16,7 +16,7 @@ import { uid } from '@/db/schema';
 import { BottomSheet } from '@/components/BottomSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { Button, Card, Field, PageHeader } from '@/components/ui';
-import { IconBarcode, IconSparkle, IconTorch, IconWarning } from '@/components/icons';
+import { IconBarcode, IconCamera, IconSparkle, IconTorch, IconWarning } from '@/components/icons';
 import { MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
 
 /**
@@ -86,6 +86,12 @@ export default function Scan() {
   const [knownProduct, setKnownProduct] = useState<{ name: string; brand?: string } | null>(null);
   /** Set once scanning has gone on long enough to be worth offering a hand. */
   const [struggling, setStruggling] = useState(false);
+  /**
+   * What the user says the product is, when no database knew.
+   * A model can estimate "Amul Masti Buttermilk 200 ml" well; it can do
+   * nothing whatever with thirteen digits.
+   */
+  const [typedName, setTypedName] = useState('');
 
   /* ------------------------------ lookup ------------------------------- */
 
@@ -271,11 +277,13 @@ export default function Scan() {
     setError('');
     try {
       // Asking a model to recognise a barcode number is asking it to invent
-      // one: the digits carry no information it could have learned. When a
-      // database gave us the product's name, that is what to ask about.
-      const subject = knownProduct
-        ? [knownProduct.brand, knownProduct.name].filter(Boolean).join(' ')
-        : `packaged food with barcode ${code}`;
+      // one: the digits carry no information it could have learned. Anything
+      // that names the product beats them — what the user typed first, since
+      // they are holding the pack, then whatever a database could tell us.
+      const named =
+        typedName.trim() ||
+        (knownProduct ? [knownProduct.brand, knownProduct.name].filter(Boolean).join(' ') : '');
+      const subject = named || `packaged food with barcode ${code}`;
       const draft = await generateFood(settings, subject);
       const created = await createFood(draftToFood(draft, 'ai', code));
       setFood(created);
@@ -307,6 +315,7 @@ export default function Scan() {
     setNote('');
     setKnownProduct(null);
     setStruggling(false);
+    setTypedName('');
     setPhase('scanning');
     void camera.start();
   }
@@ -507,18 +516,45 @@ export default function Scan() {
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex w-full max-w-xs flex-col gap-2">
+            {/*
+              The pack is in the user's hand and the panel on the back of it is
+              the most accurate source there is — more accurate than any
+              database entry and certainly than an estimate. For a product no
+              database carries, this is the real answer, so it leads. The
+              barcode rides along, so once the panel is read this install
+              recognises the product instantly and offline from then on.
+            */}
+            <Button onClick={() => navigate(`/label?barcode=${encodeURIComponent(code)}`)}>
+              <IconCamera width={16} height={16} />
+              Scan the nutrition label
+            </Button>
+
+            {/* Failing that, the user can simply say what it is. */}
+            {hasKey(settings) && !knownProduct && (
+              <Field
+                label="Or tell us what it is"
+                placeholder="e.g. Amul Masti Buttermilk 200 ml"
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+              />
+            )}
+
             {hasKey(settings) ? (
-              <Button onClick={generateWithAI} disabled={generating}>
+              <Button variant="secondary" onClick={generateWithAI} disabled={generating}>
                 <IconSparkle width={16} height={16} />
                 {generating
                   ? 'Estimating…'
                   : knownProduct
                     ? `Estimate ${knownProduct.name} with AI`
-                    : 'Estimate it with AI'}
+                    : typedName.trim()
+                      ? `Estimate ${typedName.trim()} with AI`
+                      : 'Estimate it with AI'}
               </Button>
             ) : (
-              <Button onClick={() => navigate('/settings')}>Add an AI key to estimate it</Button>
+              <Button variant="secondary" onClick={() => navigate('/settings')}>
+                Add an AI key to estimate it
+              </Button>
             )}
             {/* Prefilled with the name when we have one, so "search by name"
                 does not mean "type it out yourself". */}
@@ -537,6 +573,14 @@ export default function Scan() {
             <Button variant="ghost" onClick={rescan}>
               Scan another
             </Button>
+
+            {hasKey(settings) && !knownProduct && !typedName.trim() && (
+              <p className="text-[11.5px] leading-relaxed text-muted">
+                Estimating from the number alone is guesswork — a barcode tells a model nothing
+                about what is inside. Reading the label, or naming the product above, gives a
+                figure worth logging.
+              </p>
+            )}
           </div>
         </div>
       )}
