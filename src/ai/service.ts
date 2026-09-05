@@ -1,8 +1,9 @@
 import type { DayBundle } from '@/db/repo';
-import type { Food, MealItem, Nutrients, PlanDay, Profile, Settings, SnapAnalysis } from '@/types';
+import type { Food, MealItem, Micros, Nutrients, PlanDay, Profile, Settings, SnapAnalysis } from '@/types';
 import { MEAL_SLOT_LABEL, type MealSlot } from '@/types';
 import { formatDuration } from '@/lib/date';
 import { mealNutrients, roundNutrients, sumNutrients } from '@/lib/nutrition';
+import { MICRO_BY_ID, formatMicro, hasMicros, microRows, dayMicros, targetsForProfile } from '@/lib/micros';
 import { getAdapter } from './registry';
 import {
   FOOD_GENERATION_SCHEMA,
@@ -10,6 +11,7 @@ import {
   MEAL_ANALYSIS_SCHEMA,
   MEAL_SUGGESTION_SCHEMA,
   PLAN_SCHEMA,
+  MICRO_KEYS,
   SESSION_SCHEMA,
   WORKOUT_PLAN_SCHEMA,
   clampScore,
@@ -148,7 +150,29 @@ interface RawFood {
   name?: string;
   brand?: string;
   per100g?: Partial<Nutrients>;
+  micros?: Record<string, unknown>;
   servings?: { label?: string; grams?: number }[];
+}
+
+/**
+ * Reads the model's micronutrient block.
+ *
+ * An all-zero object comes back undefined: a model that skipped the question
+ * and filled in zeroes would otherwise be recorded as a confident "this food
+ * contains no vitamins at all" and drag the day's totals down, where saying
+ * nothing correctly leaves the food out of the coverage figure.
+ */
+function toMicros(raw: Record<string, unknown> | undefined): Micros | undefined {
+  if (!raw) return undefined;
+  const micros: Micros = {};
+  for (const key of MICRO_KEYS) {
+    if (!(key in MICRO_BY_ID)) continue;
+    const value = raw[key];
+    if (value === undefined || value === null) continue;
+    micros[key as keyof Micros] = num(value);
+  }
+  if (!hasMicros(micros)) return undefined;
+  return Object.values(micros).some((v) => v > 0) ? micros : undefined;
 }
 
 function toFoodDraft(raw: RawFood, fallbackName: string) {
@@ -166,6 +190,7 @@ function toFoodDraft(raw: RawFood, fallbackName: string) {
     name: (raw.name ?? fallbackName).trim() || fallbackName,
     brand: raw.brand?.trim() || undefined,
     per100g,
+    micros: toMicros(raw.micros),
     // Always leave a 100 g option so the user can enter a raw weight.
     servings: servings.length ? servings : [{ label: '100 g', grams: 100 }],
   };
@@ -243,6 +268,22 @@ export function dayContext(bundle: DayBundle, profile: Profile | undefined): str
     `Date: ${bundle.date}`,
     `Eaten: ${totals.kcal} kcal — ${totals.protein} g protein, ${totals.fat} g fat, ${totals.carbs} g carbs, ${totals.fibre} g fibre`,
   ];
+
+  // Coverage is stated rather than hidden: without it the model would read a
+  // half-covered day as a genuine deficiency and tell the user to fix one.
+  const micros = dayMicros(bundle.meals);
+  if (bundle.meals.length) {
+    const short = microRows(micros.totals, targetsForProfile(profile))
+      .filter((r) => !r.def.limit && r.status !== 'good')
+      .sort((a, b) => a.pct - b.pct)
+      .slice(0, 4)
+      .map((r) => `${r.def.label} ${formatMicro(r.def.id, r.value)} of ${formatMicro(r.def.id, r.target)} (${r.pct}%)`);
+    if (short.length) {
+      lines.push(
+        `Micronutrients running short: ${short.join('; ')} — computed from ${Math.round(micros.coverage * 100)}% of today's calories, so these are floors, not final figures.`,
+      );
+    }
+  }
 
   if (bundle.meals.length) {
     lines.push('Meals:');
@@ -607,6 +648,7 @@ export function draftToFood(
     brand: draft.brand,
     barcode,
     per100g: draft.per100g,
+    micros: draft.micros,
     servings: draft.servings,
     source,
     tags: ['ai'],

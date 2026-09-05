@@ -3,7 +3,7 @@ import { RingProgress } from './RingProgress';
 import { CountUp } from './CountUp';
 import { MacroBar } from './MacroBar';
 import { Card } from './ui';
-import { IconChevronRight } from './icons';
+import { IconChevronRight, IconLeaf } from './icons';
 import type { MacroKey } from '@/lib/macroBreakdown';
 import type { Nutrients } from '@/types';
 
@@ -21,6 +21,7 @@ export function DayTotals({
   burned = 0,
   compact = false,
   macroHref,
+  micros,
 }: {
   totals: Nutrients;
   targets: Nutrients;
@@ -34,6 +35,12 @@ export function DayTotals({
    * why "why is my protein over?" had no answer on this screen.
    */
   macroHref?: (key: MacroKey) => string;
+  /**
+   * Adds a micronutrient summary under the macros. Optional because Calendar
+   * shows this card for any day in history while the micro screen always reads
+   * the selected day — a link there would land on the wrong day's numbers.
+   */
+  micros?: { onTrack: number; total: number; href: string };
 }) {
   const net = totals.kcal - burned;
   const left = Math.max(0, targets.kcal - net);
@@ -127,6 +134,20 @@ export function DayTotals({
           to={macroHref?.('fibre')}
         />
       </div>
+
+      {micros && (
+        <Link
+          to={micros.href}
+          className="hairline flex items-center gap-2.5 border-t pt-3.5 text-[13px] transition-transform active:scale-[0.99]"
+        >
+          <IconLeaf width={17} height={17} className="shrink-0 text-brand-600" />
+          <span className="flex-1 font-semibold">Micronutrients</span>
+          <span className="tabular text-secondary">
+            {micros.onTrack} of {micros.total} on track
+          </span>
+          <IconChevronRight width={16} height={16} className="shrink-0 text-muted" />
+        </Link>
+      )}
     </Card>
   );
 }

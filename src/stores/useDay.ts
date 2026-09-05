@@ -4,6 +4,7 @@ import { db } from '@/db/schema';
 import { useApp } from './useApp';
 import { addDays, rangeDays, today } from '@/lib/date';
 import { estimateWorkoutKcal, stepKcal, totalNutrients } from '@/lib/nutrition';
+import { dayMicros, targetsForProfile } from '@/lib/micros';
 import {
   MEAL_SLOTS,
   ZERO_NUTRIENTS,
@@ -68,6 +69,16 @@ export function useDay(dateOverride?: string) {
     [workouts],
   );
 
+  // Same reasoning as `totals`: this walks every item in the day, and the
+  // Home and Diet cards both read it on renders that have nothing to do with
+  // food. `targetsForProfile` reads the clock, so it is memoised too rather
+  // than handing every consumer a fresh object identity on each render.
+  const micros = useMemo(() => dayMicros(meals), [meals]);
+  const microTargets = useMemo(
+    () => targetsForProfile(profile),
+    [profile],
+  );
+
   const bodyWeightKg =
     data?.lastWeight?.kg ?? profile?.startWeightKg ?? 70;
   const stepCount = data?.steps?.count ?? 0;
@@ -94,6 +105,11 @@ export function useDay(dateOverride?: string) {
     weight: data?.weight,
     steps: data?.steps,
     targets: profile?.targets ?? ZERO_NUTRIENTS,
+    /** Day totals, plus how much of the day those totals actually saw. */
+    micros: micros.totals,
+    microCoverage: micros.coverage,
+    microUnknown: micros.unknown,
+    microTargets,
     waterGoal: data?.water?.goalGlasses ?? profile?.waterGoalGlasses ?? 9,
     glasses: data?.water?.glasses ?? 0,
     stepGoal: data?.steps?.goal ?? profile?.stepGoal ?? 8000,

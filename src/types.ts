@@ -78,6 +78,38 @@ export interface Nutrients {
 
 export const ZERO_NUTRIENTS: Nutrients = { kcal: 0, protein: 0, fat: 0, carbs: 0, fibre: 0 };
 
+/**
+ * The micronutrients tracked per day.
+ *
+ * Twelve rather than the full forty: these are the ones that are (a) commonly
+ * short in real diets, (b) present in the food-composition tables the app
+ * draws on, and (c) meaningful over a single day. Chromium and molybdenum are
+ * neither commonly short nor reliably tabulated, so tracking them would be
+ * inventing precision.
+ */
+export type MicroId =
+  | 'iron'
+  | 'calcium'
+  | 'magnesium'
+  | 'zinc'
+  | 'potassium'
+  | 'sodium'
+  | 'vitaminA'
+  | 'vitaminC'
+  | 'vitaminD'
+  | 'vitaminE'
+  | 'vitaminB12'
+  | 'folate';
+
+/**
+ * Micronutrient amounts, in each nutrient's own unit (see `MICROS`).
+ *
+ * Partial on purpose: a missing key means "not known for this food", which is
+ * a different thing from zero, and the day view reports that gap as coverage
+ * rather than quietly counting it as nothing.
+ */
+export type Micros = Partial<Record<MicroId, number>>;
+
 /** One selectable portion of a food, e.g. "1 katori" or "2 roti/chapati". */
 export interface Serving {
   label: string;
@@ -95,6 +127,8 @@ export interface Food {
   barcode?: string;
   /** Nutrients per 100 g — the canonical basis for all maths. */
   per100g: Nutrients;
+  /** Micronutrients per 100 g. Absent where the source carries none. */
+  micros?: Micros;
   servings: Serving[];
   source: FoodSource;
   tags: string[];
@@ -112,6 +146,8 @@ export interface MealItem {
   servingLabel: string;
   grams: number;
   nutrients: Nutrients;
+  /** Micronutrients for this portion. Absent when the food carries none. */
+  micros?: Micros;
   /** 0–10 ingredient score from the AI meal analysis. */
   score?: number;
   note?: string;

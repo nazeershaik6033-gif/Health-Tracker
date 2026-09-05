@@ -321,3 +321,11 @@ export const IconShare = (p: P) => (
     <path d="M5 13v6.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V13" />
   </svg>
 );
+
+/** Micronutrients — a leaf, the one shape that reads as "what's in the food". */
+export const IconLeaf = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M20 4C10 4 4 9 4 16c0 2.2.8 3.5.8 3.5S13 20 17 15c2.4-3 3-7.7 3-11Z" />
+    <path d="M4.5 19.5C7 15 10.5 12 15 10" />
+  </svg>
+);

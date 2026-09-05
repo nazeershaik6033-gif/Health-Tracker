@@ -15,6 +15,32 @@ const NUTRIENT_PROPS = {
   fibre: { type: 'number', description: 'Grams of dietary fibre' },
 } as const;
 
+/**
+ * The tracked micronutrients, per 100 g, in each nutrient's own unit.
+ *
+ * Attached only to the single-food schemas. A meal analysis returns many items
+ * at once, and asking for twelve extra figures on each one trades a large
+ * increase in tokens and latency for numbers the model is guessing at from a
+ * photograph — the food-level call is where it has a real chance of being
+ * right, and where the answer gets stored and reused.
+ */
+const MICRO_PROPS = {
+  iron: { type: 'number', description: 'Iron in mg' },
+  calcium: { type: 'number', description: 'Calcium in mg' },
+  magnesium: { type: 'number', description: 'Magnesium in mg' },
+  zinc: { type: 'number', description: 'Zinc in mg' },
+  potassium: { type: 'number', description: 'Potassium in mg' },
+  sodium: { type: 'number', description: 'Sodium in mg' },
+  vitaminA: { type: 'number', description: 'Vitamin A in µg RAE' },
+  vitaminC: { type: 'number', description: 'Vitamin C in mg' },
+  vitaminD: { type: 'number', description: 'Vitamin D in µg' },
+  vitaminE: { type: 'number', description: 'Vitamin E (alpha-tocopherol) in mg' },
+  vitaminB12: { type: 'number', description: 'Vitamin B12 in µg' },
+  folate: { type: 'number', description: 'Folate in µg DFE' },
+} as const;
+
+export const MICRO_KEYS = Object.keys(MICRO_PROPS);
+
 const ITEM_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -65,7 +91,7 @@ export const MEAL_ANALYSIS_SCHEMA = {
 export const FOOD_GENERATION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['name', 'brand', 'per100g', 'servings'],
+  required: ['name', 'brand', 'per100g', 'micros', 'servings'],
   properties: {
     name: { type: 'string' },
     brand: {
@@ -77,6 +103,13 @@ export const FOOD_GENERATION_SCHEMA = {
       additionalProperties: false,
       required: ['kcal', 'protein', 'fat', 'carbs', 'fibre'],
       properties: NUTRIENT_PROPS,
+    },
+    micros: {
+      type: 'object',
+      description: 'Micronutrients per 100 g. Use 0 only where the food genuinely has none.',
+      additionalProperties: false,
+      required: Object.keys(MICRO_PROPS),
+      properties: MICRO_PROPS,
     },
     servings: {
       type: 'array',

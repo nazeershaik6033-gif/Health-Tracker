@@ -27,6 +27,7 @@ import {
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { DayTotals } from '@/components/DayTotals';
 import { PeriodMacros } from '@/components/PeriodMacros';
+import { MICRO_IDS, microRows } from '@/lib/micros';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -153,6 +154,10 @@ export default function Diet() {
       ),
     [day.meals, profile],
   );
+
+  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+    (r) => r.status === 'good',
+  ).length;
 
   /**
    * The logged item only remembers the one serving it used; the food row
@@ -342,6 +347,7 @@ export default function Diet() {
           targets={day.targets}
           burned={day.burnedKcal}
           macroHref={macroLink}
+          micros={{ onTrack: microsOnTrack, total: MICRO_IDS.length, href: '/micros' }}
         />
       </div>
 

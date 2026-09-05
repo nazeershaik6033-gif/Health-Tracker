@@ -60,8 +60,9 @@ export default function Search() {
   const [searchParams] = useSearchParams();
 
   const [slot, setSlot] = useState<MealSlot>(pendingSlot ?? guessSlot());
-  // Prefilled by anything that already knows what you're looking for — today
-  // the AI meal suggestions, which would otherwise be read-only advice.
+  // Prefilled by anything that already knows what you're looking for — the AI
+  // meal suggestions and the micronutrient gap chips, both of which would
+  // otherwise be read-only advice.
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '');
   const [slotOpen, setSlotOpen] = useState(false);
   const [detail, setDetail] = useState<Food | null>(null);
