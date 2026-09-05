@@ -16,7 +16,7 @@ import { uid } from '@/db/schema';
 import { BottomSheet } from '@/components/BottomSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { Button, Card, Field, PageHeader } from '@/components/ui';
-import { IconBarcode, IconSparkle, IconTorch, IconWarning } from '@/components/icons';
+import { IconBarcode, IconCamera, IconSparkle, IconTorch, IconWarning } from '@/components/icons';
 import { MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
 
 /**
@@ -29,6 +29,24 @@ import { MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
  */
 const ROI = { x: 0.12, y: 0.24, w: 0.76, h: 0.44 };
 
+/**
+ * The whole visible frame, tried occasionally alongside the guide box.
+ *
+ * Cropping to the box is what makes a read reliable — it throws away the
+ * clutter a decoder would otherwise lock onto. But it also means a barcode
+ * just outside the box is never seen at all, and from the user's side that is
+ * indistinguishable from a barcode that cannot be read: they are holding the
+ * pack up and nothing happens. Sweeping the full frame every few passes
+ * catches those without giving up the cropped pass's accuracy.
+ */
+const FULL_FRAME = { x: 0, y: 0, w: 1, h: 1 };
+
+/** Full-frame sweeps per cropped passes. Kept low; the sweep costs more. */
+const SWEEP_EVERY = 4;
+
+/** How long to scan before offering the manual fallback unprompted. */
+const STRUGGLE_AFTER_MS = 9000;
+
 type Phase = 'scanning' | 'looking-up' | 'found' | 'not-found';
 
 export default function Scan() {
@@ -40,6 +58,10 @@ export default function Scan() {
   const bufferRef = useRef(new ConsensusBuffer(2, 2500));
   const rafRef = useRef<number>(0);
   const busyRef = useRef(false);
+  // The symbology behind the accepted value. Eight digits are ambiguous
+  // between EAN-8 and UPC-E, and the two expand to entirely different
+  // products, so the lookup wants to know which one was actually printed.
+  const formatRef = useRef<string | undefined>(undefined);
 
   const [phase, setPhase] = useState<Phase>('scanning');
   const [decoderKind, setDecoderKind] = useState<string>('');
@@ -56,6 +78,20 @@ export default function Scan() {
   // A QR that turned out not to be a product — a menu link, a Wi-Fi string.
   // Shown rather than swallowed, since the user did deliberately scan it.
   const [other, setOther] = useState<{ url?: string; text: string } | null>(null);
+  /**
+   * A product a database could name but not describe. Worth holding on to: it
+   * turns "not found" into "we know what this is", and gives the AI fallback a
+   * real product to estimate instead of a barcode number no model has seen.
+   */
+  const [knownProduct, setKnownProduct] = useState<{ name: string; brand?: string } | null>(null);
+  /** Set once scanning has gone on long enough to be worth offering a hand. */
+  const [struggling, setStruggling] = useState(false);
+  /**
+   * What the user says the product is, when no database knew.
+   * A model can estimate "Amul Masti Buttermilk 200 ml" well; it can do
+   * nothing whatever with thirteen digits.
+   */
+  const [typedName, setTypedName] = useState('');
 
   /* ------------------------------ lookup ------------------------------- */
 
@@ -80,7 +116,7 @@ export default function Scan() {
           return;
         }
 
-        const result = await lookupBarcodeTiered(settings, value);
+        const result = await lookupBarcodeTiered(settings, value, undefined, formatRef.current);
         if (result.found && result.food) {
           const prefix = result.food.source === 'fatsecret' ? 'fs_' : 'off_';
           const saved = await upsertFood({ ...result.food, id: uid(prefix) });
@@ -96,6 +132,11 @@ export default function Scan() {
 
         setNote(result.note ?? '');
         setError(result.warning ?? '');
+        setKnownProduct(
+          result.productName
+            ? { name: result.productName, brand: result.brand }
+            : null,
+        );
         setPhase('not-found');
       } catch (err) {
         setError(describeError(err));
@@ -178,6 +219,7 @@ export default function Scan() {
 
     let stopped = false;
     let last = 0;
+    let pass = 0;
 
     const tick = async (now: number) => {
       if (stopped) return;
@@ -193,13 +235,19 @@ export default function Scan() {
       if (!video.videoWidth) return;
 
       try {
-        const canvas = captureFrame(video, ROI);
+        // Every fourth pass looks at the whole frame instead, so a barcode the
+        // user has framed slightly off still gets read.
+        const sweep = pass % SWEEP_EVERY === SWEEP_EVERY - 1;
+        pass += 1;
+
+        const canvas = captureFrame(video, sweep ? FULL_FRAME : ROI);
         const hit = await decoder.decode(canvas);
         if (!hit || stopped) return;
         if (!isValidEAN(hit.value)) return; // failed check digit: a misread
 
         const confirmed = bufferRef.current.push(hit.value);
         if (confirmed) {
+          formatRef.current = hit.format;
           haptic(HAPTIC.success);
           await handleScan(confirmed);
         }
@@ -209,8 +257,14 @@ export default function Scan() {
     };
 
     rafRef.current = requestAnimationFrame(tick);
+    // Nine seconds of pointing a camera at a pack with nothing happening is
+    // long enough. Rather than leave the user guessing whether it is still
+    // trying, say what usually helps and put the manual entry in reach.
+    const nudge = setTimeout(() => setStruggling(true), STRUGGLE_AFTER_MS);
+
     return () => {
       stopped = true;
+      clearTimeout(nudge);
       cancelAnimationFrame(rafRef.current);
     };
   }, [phase, camera.status, camera.videoRef, handleScan]);
@@ -222,7 +276,15 @@ export default function Scan() {
     setGenerating(true);
     setError('');
     try {
-      const draft = await generateFood(settings, `packaged food with barcode ${code}`);
+      // Asking a model to recognise a barcode number is asking it to invent
+      // one: the digits carry no information it could have learned. Anything
+      // that names the product beats them — what the user typed first, since
+      // they are holding the pack, then whatever a database could tell us.
+      const named =
+        typedName.trim() ||
+        (knownProduct ? [knownProduct.brand, knownProduct.name].filter(Boolean).join(' ') : '');
+      const subject = named || `packaged food with barcode ${code}`;
+      const draft = await generateFood(settings, subject);
       const created = await createFood(draftToFood(draft, 'ai', code));
       setFood(created);
       setServingLabel(created.servings[0]?.label ?? '100 g');
@@ -246,10 +308,14 @@ export default function Scan() {
 
   function rescan() {
     bufferRef.current.reset();
+    formatRef.current = undefined;
     setFood(null);
     setCode('');
     setError('');
     setNote('');
+    setKnownProduct(null);
+    setStruggling(false);
+    setTypedName('');
     setPhase('scanning');
     void camera.start();
   }
@@ -326,6 +392,16 @@ export default function Scan() {
               Line the barcode or QR up inside the box. Hold steady — it confirms across two
               reads.
             </p>
+            {/* The three things that actually fix a stubborn read, in the order
+                they usually help. Offered only after a while, so it is advice
+                when it is wanted rather than noise on every scan. */}
+            {struggling && (
+              <p className="mt-2 text-center text-[12px] leading-relaxed text-white/75">
+                Still not reading? Move about 15 cm back so the whole barcode fits inside the
+                box, wipe the lens, and
+                {camera.torchAvailable ? ' turn the torch on for glossy or dark packaging.' : ' try more even lighting — glare on the plastic is usually the culprit.'}
+              </p>
+            )}
             {decoderKind === 'wasm' && (
               <p className="mt-1 text-center text-[11px] text-white/35">
                 Using the built-in decoder
@@ -423,28 +499,88 @@ export default function Scan() {
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
           <IconWarning width={30} height={30} className="text-amber-500" />
           <div>
-            <p className="text-[15px] font-bold">Not in the database</p>
+            {/* Naming the product changes what this screen is: not "we have no
+                idea what you scanned" but "we know what it is, just not what's
+                in it" — which is a much smaller thing to ask the user to fix. */}
+            <p className="text-[15px] font-bold">
+              {knownProduct ? 'No nutrition on file' : 'Not in the database'}
+            </p>
+            {knownProduct && (
+              <p className="mt-1 text-[13.5px] font-semibold">
+                {[knownProduct.brand, knownProduct.name].filter(Boolean).join(' · ')}
+              </p>
+            )}
             <p className="tabular mt-1 text-[12px] text-muted">{code}</p>
             {(note || error) && (
               <p className="mt-2 max-w-xs text-[12.5px] text-secondary">{error || note}</p>
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex w-full max-w-xs flex-col gap-2">
+            {/*
+              The pack is in the user's hand and the panel on the back of it is
+              the most accurate source there is — more accurate than any
+              database entry and certainly than an estimate. For a product no
+              database carries, this is the real answer, so it leads. The
+              barcode rides along, so once the panel is read this install
+              recognises the product instantly and offline from then on.
+            */}
+            <Button onClick={() => navigate(`/label?barcode=${encodeURIComponent(code)}`)}>
+              <IconCamera width={16} height={16} />
+              Scan the nutrition label
+            </Button>
+
+            {/* Failing that, the user can simply say what it is. */}
+            {hasKey(settings) && !knownProduct && (
+              <Field
+                label="Or tell us what it is"
+                placeholder="e.g. Amul Masti Buttermilk 200 ml"
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+              />
+            )}
+
             {hasKey(settings) ? (
-              <Button onClick={generateWithAI} disabled={generating}>
+              <Button variant="secondary" onClick={generateWithAI} disabled={generating}>
                 <IconSparkle width={16} height={16} />
-                {generating ? 'Estimating…' : 'Estimate it with AI'}
+                {generating
+                  ? 'Estimating…'
+                  : knownProduct
+                    ? `Estimate ${knownProduct.name} with AI`
+                    : typedName.trim()
+                      ? `Estimate ${typedName.trim()} with AI`
+                      : 'Estimate it with AI'}
               </Button>
             ) : (
-              <Button onClick={() => navigate('/settings')}>Add an AI key to estimate it</Button>
+              <Button variant="secondary" onClick={() => navigate('/settings')}>
+                Add an AI key to estimate it
+              </Button>
             )}
-            <Button variant="secondary" onClick={() => navigate('/search')}>
+            {/* Prefilled with the name when we have one, so "search by name"
+                does not mean "type it out yourself". */}
+            <Button
+              variant="secondary"
+              onClick={() =>
+                navigate(
+                  knownProduct
+                    ? `/search?q=${encodeURIComponent(knownProduct.name)}`
+                    : '/search',
+                )
+              }
+            >
               Search by name instead
             </Button>
             <Button variant="ghost" onClick={rescan}>
               Scan another
             </Button>
+
+            {hasKey(settings) && !knownProduct && !typedName.trim() && (
+              <p className="text-[11.5px] leading-relaxed text-muted">
+                Estimating from the number alone is guesswork — a barcode tells a model nothing
+                about what is inside. Reading the label, or naming the product above, gives a
+                figure worth logging.
+              </p>
+            )}
           </div>
         </div>
       )}

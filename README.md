@@ -65,7 +65,7 @@ a browser bug, not a deployment one.
 | How | What happens |
 |---|---|
 | **Snap** | Photograph a plate; a vision model identifies each item, estimates portions and macros, scores the meal 0–10 and writes a short take |
-| **Barcode** | Scan a packaged product; looked up in [Open Food Facts](https://world.openfoodfacts.org) (free, ~3M products, no key). Not found → generate it with AI |
+| **Barcode** | Scan a packaged product; looked up in [Open Food Facts](https://world.openfoodfacts.org) (free, ~3M products, no key), trying each valid form of the code. Known by name but with no panel → the AI estimate works from the product name, not the digits |
 | **Label** | Point at a nutrition panel; read by AI vision, or on-device OCR when no key is set |
 | **Voice** | "Two rotis, a katori of dal and a glass of milk" → structured entries |
 | **Search** | ~165 bundled foods, Indian-first with native units (roti, katori, glass, idli, dosa), plus anything you've saved. Fuzzy matched, works offline |
@@ -365,7 +365,17 @@ instant and offline.
 (Chrome, Edge, Safari 17+) and lazy-loads `zxing-wasm` everywhere else,
 including Firefox. Reliability comes less from the decoder than from cropping
 to the guide box, validating the EAN check digit, and requiring the same value
-on two consecutive frames before accepting it.
+on two consecutive frames before accepting it. Cropping costs something too —
+a barcode just outside the box is never seen at all — so every fourth pass
+sweeps the whole frame instead.
+
+**Barcode lookups ask for several forms of the same code.** The scanner reads
+whatever symbology is printed; a database stores whichever form its contributor
+entered. A UPC-A scanned verbatim misses the padded GTIN-13 the same product
+sits under, and a UPC-E resolves to neither, because it is zero-*suppressed*
+rather than truncated and has to be expanded. `lib/gtin.ts` derives the
+candidates and caps them at three, so a miss costs a bounded number of requests
+rather than one wrong one.
 
 **App icons are generated**, not committed as art:
 
@@ -455,6 +465,16 @@ time.
   diagnosed deficiencies all change them, and the app does not model any of it
 - On-device OCR is a fallback and is noticeably worse than AI vision on
   curved or glare-affected packaging
+- **No barcode database is complete, and this app has no product database of
+  its own.** Open Food Facts is crowd-sourced and thin on Indian retail, so
+  local and unbranded products are often genuinely absent — trying every form
+  of a code raises the hit rate but cannot invent an entry. When a scan comes
+  back empty the honest routes are the label reader, an AI estimate, or adding
+  the food by hand, and the app offers all three rather than pretending. The
+  label reader is the one that leads, because the panel on the pack in your
+  hand is a better source than any database row; whatever it reads is saved
+  against the barcode, so the second scan of that product is instant and
+  offline even though the world still has never heard of it
 - Ria is not a clinician
 
 ---

@@ -1,5 +1,6 @@
 import type { Food, MicroId, Micros, Nutrients, Serving } from '@/types';
 import { hasMicros } from './micros';
+import { gtinCandidates } from './gtin';
 
 /**
  * Open Food Facts lookup — free, keyless, ~3M barcoded products.
@@ -101,10 +102,39 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
 
+/**
+ * Looks a barcode up, trying each plausible form of the code.
+ *
+ * The scanner reads whatever symbology is printed on the pack, and Open Food
+ * Facts stores whichever form its contributor entered — usually GTIN-13. A
+ * UPC-A or UPC-E scanned verbatim therefore misses products that are in the
+ * database, which is indistinguishable, from the user's side, from the product
+ * being absent. `gtinCandidates` caps the attempts, so the worst case is three
+ * requests rather than one.
+ *
+ * A product that exists but carries no nutrition is remembered rather than
+ * discarded: knowing its name is worth far more than a bare "not found", both
+ * to show the user and to give the AI fallback something real to work from.
+ */
 export async function lookupBarcode(
   barcode: string,
   signal?: AbortSignal,
+  format?: string,
 ): Promise<OFFResult> {
+  let partialHit: OFFResult | undefined;
+
+  for (const candidate of gtinCandidates(barcode, format)) {
+    const hit = await lookupExact(candidate, signal);
+    if (hit.found && !hit.partial) return hit;
+    // Keep the first named-but-empty product; a later candidate may still
+    // turn up the same product with a full panel.
+    if (hit.found && !partialHit) partialHit = hit;
+  }
+
+  return partialHit ?? { found: false };
+}
+
+async function lookupExact(barcode: string, signal?: AbortSignal): Promise<OFFResult> {
   const res = await fetch(`${BASE}/${encodeURIComponent(barcode)}.json?fields=${FIELDS}`, {
     signal,
     headers: { accept: 'application/json' },
