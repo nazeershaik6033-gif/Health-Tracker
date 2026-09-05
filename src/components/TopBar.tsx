@@ -16,7 +16,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
   const days = Array.from({ length: 14 }, (_, i) => addDays(today(), i - 13));
 
   return (
-    <header className="sticky top-0 z-20 bg-[var(--surface-canvas)]/95 px-4 pt-safe pb-2 backdrop-blur">
+    <header className="sticky top-0 z-20 chrome-canvas px-4 pt-safe pb-2">
       <div className="flex items-center gap-2">
         <Link
           to="/settings"
@@ -84,7 +84,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
       </div>
 
       {open && (
-        <div className="no-scrollbar animate-fade-in mt-3 flex gap-2 overflow-x-auto pb-1">
+        <div className="scroll-x no-scrollbar animate-fade-in mt-3 flex gap-2 pb-1">
           {days.map((d) => {
             const active = d === selectedDate;
             return (

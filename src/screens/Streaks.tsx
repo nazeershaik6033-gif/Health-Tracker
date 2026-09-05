@@ -78,7 +78,7 @@ export default function Streaks() {
       {/* Activity grid */}
       <Card className="mt-3">
         <SectionTitle>Last 12 weeks</SectionTitle>
-        <div className="flex gap-1 overflow-x-auto pb-1">
+        <div className="scroll-x flex gap-1 pb-1">
           <div className="flex flex-col justify-around pr-1 text-[9px] text-muted">
             {['M', 'W', 'F'].map((d) => (
               <span key={d} className="h-3">

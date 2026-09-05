@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -29,7 +29,9 @@ export default function GlobalSearch() {
   const foods = useLiveQuery(async () => db.foods.toArray(), []);
   const exercises = useLiveQuery(async () => db.exercises.toArray(), []);
 
-  const q = query.trim();
+  // Deferred so a keystroke never waits on scoring both catalogs; see the note
+  // in `/search`, which does the same for foods alone.
+  const q = useDeferredValue(query).trim();
   const foodResults = useMemo(
     () => (foods && q ? searchFoods(foods, q, 8) : []),
     [foods, q],

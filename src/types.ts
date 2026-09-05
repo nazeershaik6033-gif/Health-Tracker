@@ -27,6 +27,47 @@ export const MEAL_SLOT_SHARE: Record<MealSlot, number> = {
   dinner: 0.25,
 };
 
+/**
+ * Parts of the day. Slots roll up into these so macros can be tracked against
+ * a stretch of the day, not only the day as a whole.
+ */
+export type DayPeriod = 'morning' | 'afternoon' | 'night';
+
+export const DAY_PERIODS: DayPeriod[] = ['morning', 'afternoon', 'night'];
+
+export const DAY_PERIOD_LABEL: Record<DayPeriod, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  night: 'Night',
+};
+
+/** Which slots make up each period. Order matches MEAL_SLOTS. */
+export const DAY_PERIOD_SLOTS: Record<DayPeriod, MealSlot[]> = {
+  morning: ['breakfast', 'morning_snack'],
+  afternoon: ['lunch', 'evening_snack'],
+  night: ['dinner'],
+};
+
+/** The slot whose header carries the period's expand button. */
+export const DAY_PERIOD_ANCHOR: Record<DayPeriod, MealSlot> = {
+  morning: 'breakfast',
+  afternoon: 'lunch',
+  night: 'dinner',
+};
+
+/**
+ * Default share of the day's macros per period, summed from the member slots'
+ * calorie shares so the two splits can never drift apart. Overridable per
+ * profile via `Profile.periodShares`.
+ */
+export const DAY_PERIOD_SHARE: Record<DayPeriod, number> = DAY_PERIODS.reduce(
+  (acc, period) => {
+    acc[period] = DAY_PERIOD_SLOTS[period].reduce((sum, slot) => sum + MEAL_SLOT_SHARE[slot], 0);
+    return acc;
+  },
+  {} as Record<DayPeriod, number>,
+);
+
 export interface Nutrients {
   kcal: number;
   protein: number;
@@ -123,12 +164,44 @@ export interface Meal {
   createdAt: number;
 }
 
+/**
+ * A portion you pinned to a meal slot.
+ *
+ * The unit here is a *saved portion*, not a saved food: "2 rotis" is a fact
+ * about your breakfast, not about roti, so a flag on `Food` could never hold
+ * it. Storing `MealItem[]` — the same shape a `Meal` already stores — means one
+ * favourite covers both "1 katori dal" and the whole "2 roti + dal + curd"
+ * usual, with no second concept, and the macros are frozen exactly as you
+ * entered them rather than drifting when the underlying food is edited.
+ *
+ * Nothing is ever added here automatically. `order` is yours to set.
+ */
+export interface Favourite {
+  id: string;
+  slot: MealSlot;
+  /** Defaults to the single item's name; set explicitly for a combo. */
+  label?: string;
+  items: MealItem[];
+  /** Manual position within the slot, ascending. */
+  order: number;
+  useCount: number;
+  lastUsedAt?: number;
+  createdAt: number;
+}
+
 export type SnapStatus = 'pending' | 'analysing' | 'ready' | 'logged' | 'failed';
 
+/**
+ * A photo's metadata and its thumbnail.
+ *
+ * The full-resolution capture deliberately lives in a separate table. IndexedDB
+ * hands back whole records, so with the full image on this row every listing —
+ * the Home rail, the gallery — deserialised megabytes of JPEG just to draw
+ * 80px squares. The thumb stays here because a listing genuinely needs it.
+ */
 export interface Snap {
   id: string;
   date: string;
-  blob: Blob;
   thumb: Blob;
   width: number;
   height: number;
@@ -139,6 +212,12 @@ export interface Snap {
   analysis?: SnapAnalysis;
   error?: string;
   createdAt: number;
+}
+
+/** The full-resolution capture, keyed by its snap's id. */
+export interface SnapImage {
+  id: string;
+  blob: Blob;
 }
 
 export interface SnapAnalysis {
@@ -362,6 +441,11 @@ export interface Profile {
   targets: Nutrients;
   /** Set when the user overrides the computed calorie target. */
   targetsManual: boolean;
+  /**
+   * Fraction of the day's targets allotted to each period, as decimals that
+   * add up to 1. Absent means the DAY_PERIOD_SHARE defaults.
+   */
+  periodShares?: Record<DayPeriod, number>;
   units: UnitSystem;
   waterGoalGlasses: number;
   sleepGoalMin: number;
@@ -435,4 +519,14 @@ export interface Settings {
   lastBackupAt?: number;
   /** Days before the overdue nudge appears. 0 disables it. */
   backupRemindDays?: number;
+  /**
+   * Whether walking counts toward the day's calories burned.
+   *
+   * On by default, but switchable because the app cannot tell a logged walking
+   * workout apart from the steps that same walk produced. Anyone who logs both
+   * is counting one walk twice, and only they know which they meant.
+   */
+  countStepKcal?: boolean;
+  /** Shows the frame-rate readout. Off by default; a diagnostic, not a feature. */
+  showFps?: boolean;
 }

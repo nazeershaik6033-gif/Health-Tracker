@@ -79,6 +79,9 @@
   --tint-danger-bg: #fdeeee;
   --tint-danger-fg: #7f1d1d;
   --tint-danger-rule: #dc2626;
+  --tint-pink-bg: #fdecf3;
+  --tint-pink-fg: #7a1338;
+  --tint-pink-rule: #e8467c;
   /* Pills sitting *on* a tinted card, so they lift off the fill rather than
      the canvas — white on light themes, a sliver of light on dark ones. */
   --tint-pill: rgb(255 255 255 / 0.8);
@@ -114,6 +117,9 @@
   --tint-danger-bg: #f6e0da;
   --tint-danger-fg: #6f2118;
   --tint-danger-rule: #c53030;
+  --tint-pink-bg: #f4dfe2;
+  --tint-pink-fg: #6b2036;
+  --tint-pink-rule: #d43a70;
   --tint-pill: rgb(255 255 255 / 0.62);
   color-scheme: light;
 }
@@ -146,6 +152,9 @@
   --tint-danger-bg: #251313;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
+  --tint-pink-bg: #2a1220;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
   --tint-pill: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
@@ -180,6 +189,9 @@
   --tint-danger-bg: #190d0d;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
+  --tint-pink-bg: #1c0c15;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
   --tint-pill: rgb(255 255 255 / 0.06);
   color-scheme: dark;
 }
@@ -201,6 +213,32 @@
      that clears 4.5:1 against white and near-black alike. */
   --swatch-system: linear-gradient(90deg, #ffffff 50%, #0b1210 50%);
   --swatch-system-fg: #767b79;
+}
+
+/* ---------------------------------------------------------------------- motion
+   One set of easings for the whole app, so nothing reads as hand-rolled.
+   Ported from the Premium Daily Tracker's motion system, values unchanged:
+
+     --ease-spring   overshoots. Things that should feel physical — taps,
+                     pops, the active-tab indicator.
+     --ease-settle   arrives without overshoot. Things that carry content —
+                     sheets, screen transitions, anything with text on it,
+                     where a bounce makes the copy hard to read on arrival.
+     --ease-standard the plain in-out for colour and opacity, which have no
+                     spatial momentum to imply.
+
+   Durations live here too so a change lands everywhere at once. --dur-screen
+   is the 360ms screen slide; --dur-sheet the 440ms sheet entrance.
+--------------------------------------------------------------------------- */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --dur-screen: 360ms;
+  --dur-sheet: 440ms;
+  --dur-scrim: 300ms;
+  --dur-count: 560ms;
 }
 
 @layer base {
@@ -233,6 +271,34 @@
   button,
   [role='button'] {
     touch-action: manipulation;
+  }
+
+  /* Native tap feedback is switched off above, so anything tappable has to
+     supply its own or a press reads as a dead tap. The app has ~125 buttons and
+     only a fifth carried a pressed state, which is much of why it felt
+     unresponsive — the rest gave nothing back at all, and the ones styled only
+     with `hover:` gave nothing on a touchscreen by definition.
+
+     Deliberately in `@layer base`: Tailwind utilities sit in a later layer, so
+     any element that wants a different press — `active:scale-90` on the slot
+     header icons, say — still overrides this by layer order, not by a
+     specificity fight. `:active` also paints the instant a finger lands, before
+     any handler runs, so the feedback stays immediate even when the work behind
+     the tap is not. Disabled controls are excluded; they should not appear to
+     respond to a press they will ignore. */
+  button:not(:disabled),
+  [role='button'],
+  a[href] {
+    transition:
+      transform 90ms ease-out,
+      opacity 90ms ease-out;
+  }
+
+  button:not(:disabled):active,
+  [role='button']:not([aria-disabled='true']):active,
+  a[href]:active {
+    transform: scale(0.97);
+    opacity: 0.8;
   }
 
   /* Respect users who ask for less motion — rings and sheets both animate */
@@ -306,6 +372,14 @@
     --tint-fg: var(--tint-danger-fg);
     --tint-rule: var(--tint-danger-rule);
   }
+  /* Matches --color-ring-workout, so exercise reads as one colour wherever it
+     appears — the tracker ring, the log sheet entry, the Home tile. */
+  .accent-pink,
+  .tint-pink {
+    --tint-bg: var(--tint-pink-bg);
+    --tint-fg: var(--tint-pink-fg);
+    --tint-rule: var(--tint-pink-rule);
+  }
 
   .accent-card {
     background: var(--tint-bg);
@@ -340,6 +414,7 @@
   .tint-amber,
   .tint-purple,
   .tint-blue,
+  .tint-pink,
   .tint-danger {
     background: var(--tint-bg);
     color: var(--tint-fg);
@@ -360,13 +435,74 @@
     color: var(--text-muted);
   }
 
-  /* Safe-area helpers for the bottom nav and sheets on notched devices */
+  /* Safe-area helpers for the bottom nav and sheets on notched devices.
+     `--safe-bottom` / `--safe-top` are sampled once by lib/viewport.ts and held;
+     `env()` itself is only the fallback for the first paint, because mobile
+     Safari changes it mid-scroll as the toolbars collapse, which resizes every
+     bar padded with it. That resize, against async-scrolled content, is what
+     the bottom nav's jitter was. */
   .pb-safe {
-    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+    padding-bottom: max(var(--safe-bottom, env(safe-area-inset-bottom, 0px)), 0.5rem);
   }
 
   .pt-safe {
-    padding-top: max(env(safe-area-inset-top), 0.5rem);
+    padding-top: max(var(--safe-top, env(safe-area-inset-top, 0px)), 0.5rem);
+  }
+
+  /* ------------------------------------------------------------------ dock
+     Every bar pinned to the bottom of the screen — the nav, and the "Save" /
+     "Add" action bars on the editor screens.
+
+     `bottom` tracks the keyboard so the bar rides above it instead of being
+     buried behind it, which is what made saving impossible on a phone. The
+     inset is published by lib/viewport.ts and is 0 whenever the keyboard is
+     closed, so this costs nothing the rest of the time.
+
+     The layer hints are the other half of the jitter fix: on iOS the page is
+     scrolled off the main thread, and a fixed bar that is not already on its
+     own compositor layer is re-rastered per frame and lags the content.
+     Deliberately no `contain: paint` — the nav's [+] button overhangs the top
+     edge of its bar, and paint containment would clip it off. */
+  .dock {
+    position: fixed;
+    bottom: var(--kb-inset, 0px);
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
+  /* Sitting on the keyboard, not on the home indicator — the safe-area padding
+     is only wasted height there, and height is what is scarce. */
+  [data-keyboard='open'] .dock.pb-safe {
+    padding-bottom: 0.5rem;
+  }
+
+  /* ---------------------------------------------------------------- chrome
+     Translucent bars. `backdrop-filter` has to resample everything behind it
+     every frame, which on a touch device means it visibly trails the content
+     it is blurring. Pointer devices scroll on the main thread and get the
+     frosted look; touch devices get an opaque bar, which is what native tab
+     bars do anyway. */
+  .chrome-surface {
+    background: var(--surface-card);
+  }
+
+  .chrome-canvas {
+    background: var(--surface-canvas);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .chrome-surface {
+      background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .chrome-canvas {
+      background: color-mix(in srgb, var(--surface-canvas) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
   }
 }
 
@@ -381,10 +517,10 @@
 
 @keyframes sheet-up {
   from {
-    transform: translateY(100%);
+    transform: translate3d(0, 100%, 0);
   }
   to {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes fade-in {
@@ -398,11 +534,11 @@
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(0.75rem);
+    transform: translate3d(0, 0.75rem, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes shimmer {
@@ -412,10 +548,10 @@
 }
 @keyframes sheet-down {
   from {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
   to {
-    transform: translateY(100%);
+    transform: translate3d(0, 100%, 0);
   }
 }
 @keyframes fade-out {
@@ -429,17 +565,17 @@
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(0.5rem);
+    transform: translate3d(0, 0.5rem, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes route-in {
   from {
     opacity: 0;
-    transform: translateY(0.75rem) scale(0.995);
+    transform: translate3d(0, 0.75rem, 0) scale(0.995);
   }
   to {
     opacity: 1;
@@ -447,23 +583,63 @@
   }
 }
 
+/* ------------------------------------------------------- screen transitions
+   Direction follows the bottom-nav tab order: moving right along the bar
+   slides the incoming screen in from the right, moving left from the left.
+   Anything that isn't a tab-to-tab move — a drill-down into a tracker, an
+   editor, a back-out — falls back to `route-in`'s fade-up, which doesn't
+   imply a sideways step the navigation didn't take.
+
+   translate3d rather than translateX: it promotes the element to its own
+   compositor layer, so the whole screen animates off the main thread and the
+   slide holds its frame rate while React is still hydrating a lazy route. */
+@keyframes route-in-right {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes route-in-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .animate-sheet-up {
-  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: sheet-up var(--dur-sheet) var(--ease-settle);
 }
 .animate-fade-in {
-  animation: fade-in 0.2s ease-out;
+  animation: fade-in 0.2s var(--ease-standard);
 }
 .animate-toast-in {
-  animation: toast-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: toast-in 0.24s var(--ease-settle);
 }
 .animate-sheet-down {
   animation: sheet-down 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 .animate-fade-out {
-  animation: fade-out 0.22s ease-in forwards;
+  animation: fade-out 0.22s var(--ease-standard) forwards;
 }
 .animate-route-in {
-  animation: route-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: route-in 0.26s var(--ease-settle);
+}
+.animate-route-right {
+  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+}
+.animate-route-left {
+  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
+}
+.animate-rise-in {
+  animation: rise-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ---------------------------------------------------------------- stagger
@@ -471,7 +647,7 @@
    property set per item; the cap keeps a 60-row list from taking two seconds
    to finish, since anything past the fold is invisible anyway. */
 .stagger > * {
-  animation: rise-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: rise-in 0.32s var(--ease-settle) both;
   animation-delay: calc(min(var(--i, 0), 12) * 22ms);
 }
 
@@ -480,6 +656,39 @@
 .list-fast > * {
   content-visibility: auto;
   contain-intrinsic-size: auto 56px;
+}
+
+/* ------------------------------------------------------------------ scroll
+   Applied to every panel that scrolls independently of the page — sheet
+   bodies, the coach transcript, the horizontal rails.
+
+   `overscroll-behavior: contain` stops a flick that reaches the end of the
+   panel from chaining into the page behind it, which on iOS is what makes a
+   sheet feel like it slid the page underneath. `touch-action` names the one
+   axis the panel scrolls, so the compositor can start scrolling on the first
+   touchmove instead of waiting to find out whether a listener will cancel
+   it — that wait is most of what reads as a "sticky" first frame. */
+.scroll-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A sheet being dragged by a finger. The transition is cleared so the panel
+   tracks the touch exactly, and the layer is promoted for the duration of
+   the gesture — the class is removed on release, so nothing holds it. */
+.sheet-dragging {
+  transition: none !important;
+  animation: none !important;
+  will-change: transform;
 }
 
 /* Skeleton shimmer for AI calls that take a beat */

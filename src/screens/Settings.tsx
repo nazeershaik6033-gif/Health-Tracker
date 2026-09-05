@@ -13,7 +13,7 @@ import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
 import { keyShapeWarning } from '@/ai/types';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
 import { buildLabel, checkForUpdate, describeStage, forceReload } from '@/lib/appUpdate';
-import { computeTargets, macroTargets } from '@/lib/nutrition';
+import { computeTargets, macroTargets, periodShare } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
 import { describeLastBackup } from '@/lib/backup';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -27,11 +27,22 @@ import {
   IconUpload,
   IconWarning,
 } from '@/components/icons';
-import { THEMES, type FatSecretConfig, type ProviderId, type Settings as SettingsType } from '@/types';
+import {
+  DAY_PERIODS,
+  DAY_PERIOD_LABEL,
+  DAY_PERIOD_SLOTS,
+  MEAL_SLOT_LABEL,
+  THEMES,
+  type DayPeriod,
+  type FatSecretConfig,
+  type Profile,
+  type ProviderId,
+  type Settings as SettingsType,
+} from '@/types';
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { profile, settings, setSettings, refreshProfile, showToast } = useApp();
+  const { profile, settings, setSettings, refreshProfile, showToast, showConfirm } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [keyDraft, setKeyDraft] = useState('');
@@ -63,28 +74,28 @@ export default function Settings() {
     setUpdating(null);
   }
 
-  const [confirmForce, setConfirmForce] = useState(false);
-
-  async function runForceReload() {
-    // Two taps, because this is the one control that can leave the app
+  function runForceReload() {
+    // Asks first, because this is the one control that can leave the app
     // unopenable — it deletes the offline copy and depends on the server
     // having one to replace it with.
-    if (!confirmForce) {
-      setConfirmForce(true);
-      setUpdateMessage('');
-      return;
-    }
-    setConfirmForce(false);
-    setUpdating('force');
-    setUpdateMessage(describeStage('checking'));
-    try {
-      // Rebuilding the shell takes a few seconds on a slow connection. Naming
-      // the stage as it changes is what keeps that from reading as a hang.
-      await forceReload((stage) => setUpdateMessage(describeStage(stage)));
-    } catch (err) {
-      setUpdateMessage(err instanceof Error ? err.message : 'Could not clear the cache.');
-      setUpdating(null);
-    }
+    showConfirm({
+      title: 'Rebuild the offline copy?',
+      body: 'The cached app is deleted and fetched again. If you are offline or the server is down, Healthify may not open until you have a connection.',
+      confirmLabel: 'Rebuild',
+      onConfirm: async () => {
+        setUpdating('force');
+        setUpdateMessage(describeStage('checking'));
+        try {
+          // Rebuilding the shell takes a few seconds on a slow connection.
+          // Naming the stage as it changes is what keeps that from reading
+          // as a hang.
+          await forceReload((stage) => setUpdateMessage(describeStage(stage)));
+        } catch (err) {
+          setUpdateMessage(err instanceof Error ? err.message : 'Could not clear the cache.');
+          setUpdating(null);
+        }
+      },
+    });
   }
 
   // Only so the System swatch can say which way it currently resolves.
@@ -155,6 +166,44 @@ export default function Settings() {
     fibre: String(profile?.targets.fibre ?? ''),
   }));
   const [targetsDirty, setTargetsDirty] = useState(false);
+
+  const [shareDraft, setShareDraft] = useState<Record<DayPeriod, string>>(() =>
+    percentDraft(profile),
+  );
+  const [sharesDirty, setSharesDirty] = useState(false);
+  const shareTotal = DAY_PERIODS.reduce((sum, p) => sum + (Number(shareDraft[p]) || 0), 0);
+  // Floating point makes an exact 100 unreachable for splits like 37.5/37.5/25,
+  // so the check has to tolerate the last decimal place.
+  const sharesAddUp = Math.abs(shareTotal - 100) < 0.05;
+
+  function patchShare(period: DayPeriod, value: string) {
+    setShareDraft((d) => ({ ...d, [period]: value.replace(/[^\d.]/g, '') }));
+    setSharesDirty(true);
+  }
+
+  async function saveShares() {
+    if (!profile || !sharesAddUp) return;
+    const periodShares = DAY_PERIODS.reduce(
+      (acc, period) => {
+        acc[period] = (Number(shareDraft[period]) || 0) / 100;
+        return acc;
+      },
+      {} as Record<DayPeriod, number>,
+    );
+    await saveProfile({ periodShares });
+    await refreshProfile();
+    setSharesDirty(false);
+    showToast({ message: 'Meal period split updated' });
+  }
+
+  async function resetShares() {
+    // Dropping the override falls back to the shares derived from the slots.
+    await saveProfile({ periodShares: undefined });
+    await refreshProfile();
+    setShareDraft(percentDraft(undefined));
+    setSharesDirty(false);
+    showToast({ message: 'Meal period split reset' });
+  }
 
   function patchTarget(key: keyof typeof targetDraft, value: string) {
     setTargetDraft((d) => ({ ...d, [key]: value.replace(/\D/g, '') }));
@@ -520,6 +569,107 @@ export default function Settings() {
           )}
         </Card>
 
+        {/* ------------------------ Calories burned --------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.countStepKcal !== false}
+                aria-label="Count steps toward calories burned"
+                onClick={() => setSettings({ countStepKcal: settings.countStepKcal === false })}
+                className={`relative h-6 w-10 rounded-full transition-colors ${
+                  settings.countStepKcal !== false ? 'bg-brand-500' : 'bg-[var(--surface-border)]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    settings.countStepKcal !== false ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            }
+          >
+            Count steps as calories
+          </SectionTitle>
+
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Walking is counted toward the calories you burn, net of resting energy, so it does not
+            double up with the activity level already built into your target.
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Turn it off if you log walks as workouts too — the app cannot tell a logged walk apart
+            from the steps that same walk produced, and would count it twice.
+          </p>
+        </Card>
+
+        {/* ----------------------- Meal period split --------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                onClick={resetShares}
+                className="text-[12.5px] font-semibold text-brand-600"
+              >
+                Reset
+              </button>
+            }
+          >
+            Meal period split
+          </SectionTitle>
+
+          <p className="text-[12px] leading-relaxed text-secondary">
+            How much of the day each part of the day is allowed. Diet shows these macros behind the
+            expand button on each period's first meal.
+          </p>
+
+          {profile && (
+            <>
+              <div className="space-y-2.5">
+                {DAY_PERIODS.map((period) => {
+                  const pct = (Number(shareDraft[period]) || 0) / 100;
+                  return (
+                    <Field
+                      key={period}
+                      label={`${DAY_PERIOD_LABEL[period]} — ${DAY_PERIOD_SLOTS[period]
+                        .map((slot) => MEAL_SLOT_LABEL[slot])
+                        .join(' + ')}`}
+                      value={shareDraft[period]}
+                      onChange={(e) => patchShare(period, e.target.value)}
+                      inputMode="decimal"
+                      suffix="%"
+                      hint={`${Math.round(profile.targets.kcal * pct)} kcal · ${Math.round(
+                        profile.targets.protein * pct,
+                      )} g protein · ${Math.round(profile.targets.fibre * pct)} g fibre`}
+                    />
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button onClick={saveShares} disabled={!sharesDirty || !sharesAddUp}>
+                  Save split
+                </Button>
+                <span
+                  className={`tabular text-[12.5px] font-semibold ${
+                    sharesAddUp ? 'text-muted' : 'text-red-600'
+                  }`}
+                >
+                  {Math.round(shareTotal * 10) / 10}% of the day
+                </span>
+              </div>
+
+              {!sharesAddUp && (
+                <p className="text-[11.5px] leading-relaxed text-red-600">
+                  The three periods have to add up to 100% before they can be saved.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+
         {/* -------------------------- Appearance ------------------------ */}
         <Card className="space-y-3">
           <SectionTitle>Theme</SectionTitle>
@@ -575,6 +725,42 @@ export default function Settings() {
               Following your device — currently {prefersDark ? 'dark' : 'light'}.
             </p>
           )}
+        </Card>
+
+        {/* ---------------------------- Motion -------------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(settings.showFps)}
+                aria-label="Show frame rate"
+                onClick={() => setSettings({ showFps: !settings.showFps })}
+                className={`relative h-6 w-10 rounded-full transition-colors ${
+                  settings.showFps ? 'bg-brand-500' : 'bg-[var(--surface-border)]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    settings.showFps ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            }
+          >
+            Frame rate readout
+          </SectionTitle>
+          <p className="text-[12.5px] leading-relaxed text-secondary">
+            Shows a live frames-per-second counter in the corner, with the worst reading since
+            the app opened. Useful for telling a genuinely dropped frame from an animation that
+            just looks slow on your device. Off by default.
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-muted">
+            Screen transitions, sheets and counters all follow your system&apos;s
+            &ldquo;reduce motion&rdquo; setting — turn that on in your OS accessibility settings
+            and the app stops animating.
+          </p>
         </Card>
 
         {/* -------------------------- Apple Health ---------------------- */}
@@ -711,16 +897,11 @@ export default function Settings() {
               {updating === 'check' ? 'Checking…' : 'Check for updates'}
             </Button>
             <Button
-              variant={confirmForce ? 'danger' : 'secondary'}
+              variant="secondary"
               onClick={runForceReload}
-              onBlur={() => setConfirmForce(false)}
               disabled={updating !== null}
             >
-              {updating === 'force'
-                ? 'Rebuilding…'
-                : confirmForce
-                  ? 'Tap again to rebuild the offline copy'
-                  : 'Force reload'}
+              {updating === 'force' ? 'Rebuilding…' : 'Force reload'}
             </Button>
           </div>
 
@@ -791,6 +972,17 @@ const PROXY_GUIDE_URL =
  * would mislead. The proxy field is first because it is the only arrangement
  * that reliably works — see the note rendered under it.
  */
+/** The stored fractions as editable percentages, e.g. 0.375 -> "37.5". */
+function percentDraft(profile: Profile | undefined): Record<DayPeriod, string> {
+  return DAY_PERIODS.reduce(
+    (acc, period) => {
+      acc[period] = String(Math.round(periodShare(profile, period) * 1000) / 10);
+      return acc;
+    },
+    {} as Record<DayPeriod, string>,
+  );
+}
+
 function FatSecretCard() {
   const { settings, setSettings, showToast } = useApp();
   const fs = settings.fatsecret;

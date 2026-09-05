@@ -113,6 +113,15 @@ Calorie and macro targets are computed with Mifflin-St Jeor × an activity
 factor, adjusted for your goal, and follow your weight as it changes. You can
 override the calorie number at any time.
 
+**Macros by part of the day** — protein, fats, carbs and fibre are tracked
+against parts of the day as well as the day as a whole. Diet puts an expand
+button beside Breakfast, Lunch and Dinner for Morning (breakfast + morning
+snack), Afternoon (lunch + evening snack) and Night (dinner); it opens the same
+four bars as the day card, scaled to that period. A shortfall is then visible
+while there are still meals left to fix it, rather than only at midnight. The
+split defaults to 37.5 / 37.5 / 25 — the member slots' calorie shares — and is
+editable under Settings → Meal period split.
+
 ---
 
 ## Bring your own AI key

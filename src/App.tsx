@@ -1,9 +1,13 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useTheme } from '@/lib/theme';
-import { BottomNav } from '@/components/BottomNav';
+import { useDayRollover } from '@/lib/dayRollover';
+import { routeDirection } from '@/lib/motion';
+import { BottomNav, NAV_ORDER } from '@/components/BottomNav';
+import { FpsMeter } from '@/components/FpsMeter';
 import { Toast } from '@/components/Toast';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Skeleton } from '@/components/ui';
 
 // The daily-use path is eager so the first paint after launch is immediate.
@@ -20,6 +24,8 @@ const Settings = lazy(() => import('@/screens/Settings'));
 // Lazy: it pulls in RingProgress-per-cell and the day bundle, and it is a
 // deliberate navigation rather than part of the launch path.
 const CalendarScreen = lazy(() => import('@/screens/Calendar'));
+// Lazy: reached by tapping a figure on the day summary, never on launch.
+const MacroBreakdown = lazy(() => import('@/screens/MacroBreakdown'));
 const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
 // Lazy: the zip/XML reader is dead weight for everyone who never imports.
 const ImportHealth = lazy(() => import('@/screens/ImportHealth'));
@@ -64,17 +70,45 @@ export default function App() {
   const { ready, profile, settings, init } = useApp();
   const location = useLocation();
   useTheme(settings.theme);
+  useDayRollover();
 
   useEffect(() => {
     void init();
   }, [init]);
 
   // Reset scroll between screens; without this a deep-scrolled Diet view
-  // carries its offset into the next screen.
+  // carries its offset into the next screen. Instant rather than smooth: the
+  // incoming screen is already animating in, and a smooth scroll racing that
+  // slide is what makes a transition read as two separate movements.
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  // Screen-transition direction. Moving right along the bottom-nav order
+  // slides the incoming screen in from the right, moving left from the left.
+  // Everything else — a drill-down into a tracker, an editor, a route that is
+  // not a tab — fades up instead, rather than implying a sideways step the
+  // navigation didn't take.
+  //
+  // Resolved during render, not in an effect: the class has to be on the
+  // element in the same commit that gives it its new key, or the animation is
+  // already a frame late. It is then held until the path changes again — a
+  // re-render from anything else (a toast, a settings write) must not swap the
+  // class mid-flight, which would restart the animation as a different one.
+  // Re-running this on the same path is a no-op, so StrictMode's double render
+  // produces the same result.
+  const prevPath = useRef(location.pathname);
+  const routeClass = useRef('animate-route-in');
+  if (prevPath.current !== location.pathname) {
+    const direction = routeDirection(prevPath.current, location.pathname, NAV_ORDER);
+    routeClass.current =
+      direction === 'right'
+        ? 'animate-route-right'
+        : direction === 'left'
+          ? 'animate-route-left'
+          : 'animate-route-in';
+    prevPath.current = location.pathname;
+  }
 
   if (!ready) return <BootSkeleton />;
 
@@ -99,13 +133,28 @@ export default function App() {
           and this way Safari and Firefox get the same motion as Chrome.
         */}
         <Suspense fallback={<BootSkeleton />}>
-          <div key={location.pathname} className="animate-route-in">
+          {/*
+            will-change is set for the transition and dropped on animationend
+            rather than left in the stylesheet: a screen sits mounted long
+            after its entrance finished, and a permanent hint would have every
+            idle screen holding a compositor layer it no longer needs. The
+            target check ignores stagger animations bubbling up from rows.
+          */}
+          <div
+            key={location.pathname}
+            className={routeClass.current}
+            style={{ willChange: 'transform, opacity' }}
+            onAnimationEnd={(e) => {
+              if (e.target === e.currentTarget) e.currentTarget.style.willChange = 'auto';
+            }}
+          >
           <Routes>
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/" element={<Home />} />
             <Route path="/diet" element={<Diet />} />
             <Route path="/micros" element={<Micros />} />
             <Route path="/calendar" element={<CalendarScreen />} />
+            <Route path="/macro/:key" element={<MacroBreakdown />} />
             <Route path="/import/health" element={<ImportHealth />} />
             <Route path="/find" element={<GlobalSearch />} />
             <Route path="/food/recipe" element={<RecipeBuilder />} />
@@ -136,7 +185,9 @@ export default function App() {
       </main>
 
       <Toast />
+      <ConfirmDialog />
       {!fullscreen && <BottomNav />}
+      {settings.showFps && <FpsMeter />}
     </div>
   );
 }
