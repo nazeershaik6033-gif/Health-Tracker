@@ -24,6 +24,8 @@ const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
 // Lazy: the zip/XML reader is dead weight for everyone who never imports.
 const ImportHealth = lazy(() => import('@/screens/ImportHealth'));
 const GlobalSearch = lazy(() => import('@/screens/GlobalSearch'));
+// Lazy: a deliberate drill-down from the day, not part of the launch path.
+const Micros = lazy(() => import('@/screens/Micros'));
 const RecipeBuilder = lazy(() => import('@/screens/RecipeBuilder'));
 const Streaks = lazy(() => import('@/screens/Streaks'));
 const Plans = lazy(() => import('@/screens/Plans'));
@@ -102,6 +104,7 @@ export default function App() {
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/" element={<Home />} />
             <Route path="/diet" element={<Diet />} />
+            <Route path="/micros" element={<Micros />} />
             <Route path="/calendar" element={<CalendarScreen />} />
             <Route path="/import/health" element={<ImportHealth />} />
             <Route path="/find" element={<GlobalSearch />} />

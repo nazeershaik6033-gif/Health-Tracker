@@ -1,4 +1,5 @@
-import type { Food, Nutrients, Serving } from '@/types';
+import type { Food, MicroId, Micros, Nutrients, Serving } from '@/types';
+import { hasMicros } from './micros';
 
 /**
  * Open Food Facts lookup — free, keyless, ~3M barcoded products.
@@ -25,6 +26,47 @@ const FIELDS = [
   'nova_group',
   'categories_tags',
 ].join(',');
+
+/**
+ * Open Food Facts nutriment key → the micronutrient it maps to, with the
+ * factor that converts OFF's unit to ours.
+ *
+ * OFF normalises every `_100g` value to grams regardless of how the label
+ * printed it, so milligram nutrients are ×1000 and microgram nutrients ×1e6.
+ * Getting this wrong is invisible rather than loud — a thousand-fold error
+ * still renders as a plausible-looking bar — hence the explicit table.
+ */
+const MICRO_FIELDS: { key: string; id: MicroId; factor: number }[] = [
+  { key: 'iron_100g', id: 'iron', factor: 1e3 },
+  { key: 'calcium_100g', id: 'calcium', factor: 1e3 },
+  { key: 'magnesium_100g', id: 'magnesium', factor: 1e3 },
+  { key: 'zinc_100g', id: 'zinc', factor: 1e3 },
+  { key: 'potassium_100g', id: 'potassium', factor: 1e3 },
+  { key: 'sodium_100g', id: 'sodium', factor: 1e3 },
+  { key: 'vitamin-a_100g', id: 'vitaminA', factor: 1e6 },
+  { key: 'vitamin-c_100g', id: 'vitaminC', factor: 1e3 },
+  { key: 'vitamin-d_100g', id: 'vitaminD', factor: 1e6 },
+  { key: 'vitamin-e_100g', id: 'vitaminE', factor: 1e3 },
+  { key: 'vitamin-b12_100g', id: 'vitaminB12', factor: 1e6 },
+  { key: 'vitamin-b9_100g', id: 'folate', factor: 1e6 },
+];
+
+/**
+ * Pulls whatever micronutrients the product declares.
+ *
+ * Only keys actually present are copied: a label that lists calcium and
+ * nothing else should count its calcium and stay silent on the rest, not
+ * report eleven zeroes and drag the day's totals down.
+ */
+function readMicros(n: Record<string, number | string | undefined>): Micros | undefined {
+  const micros: Micros = {};
+  for (const { key, id, factor } of MICRO_FIELDS) {
+    if (n[key] === undefined || n[key] === '') continue;
+    const value = toNum(n[key]) * factor;
+    if (Number.isFinite(value)) micros[id] = Math.round(value * 100) / 100;
+  }
+  return hasMicros(micros) ? micros : undefined;
+}
 
 interface OFFResponse {
   status?: number;
@@ -100,6 +142,8 @@ export async function lookupBarcode(
     fibre: round1(toNum(n.fiber_100g)),
   };
 
+  const micros = readMicros(n);
+
   const servings: Serving[] = [];
   const servingGrams = toNum(p.serving_quantity);
   if (servingGrams > 0) {
@@ -126,6 +170,7 @@ export async function lookupBarcode(
       brand: p.brands?.split(',')[0]?.trim() || undefined,
       barcode: p.code ?? barcode,
       per100g,
+      micros,
       servings,
       source: 'openfoodfacts',
       tags: ['packaged', ...(p.categories_tags ?? []).slice(0, 4).map((t) => t.replace(/^en:/, ''))],

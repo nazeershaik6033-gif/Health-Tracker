@@ -5,12 +5,14 @@ import type {
   Meal,
   MealItem,
   MealSlot,
+  Micros,
   Nutrients,
   Profile,
   Sex,
   WorkoutIntensity,
 } from '@/types';
 import { MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
+import { hasMicros, roundMicros, scaleMicros } from './micros';
 
 export const ACTIVITY_FACTOR: Record<ActivityLevel, number> = {
   sedentary: 1.2,
@@ -149,7 +151,20 @@ export function buildMealItem(food: Food, servingLabel: string, qty: number): Me
     servingLabel: serving.label,
     grams,
     nutrients: roundNutrients(scaleNutrients(food.per100g, grams / 100)),
+    micros: portionMicros(food.micros, grams),
   };
+}
+
+/**
+ * Scales a food's per-100g micronutrients to a portion.
+ *
+ * Returns undefined rather than an empty object when the food has none, so
+ * "we don't know" stays distinguishable from "we know it's nothing" all the
+ * way down to the day's coverage figure.
+ */
+export function portionMicros(per100g: Micros | undefined, grams: number): Micros | undefined {
+  if (!hasMicros(per100g)) return undefined;
+  return roundMicros(scaleMicros(per100g, grams / 100));
 }
 
 /* ------------------------------- workouts -------------------------------- */
@@ -308,6 +323,12 @@ export function per100gFromItem(item: MealItem): Nutrients {
   };
 }
 
+/** The micronutrient counterpart of `per100gFromItem`, for the same reasons. */
+export function microsPer100gFromItem(item: MealItem): Micros | undefined {
+  if (!hasMicros(item.micros)) return undefined;
+  return scaleMicros(item.micros, 100 / (item.grams || 100));
+}
+
 /**
  * Rescales a logged item to a new quantity when there is no food row to
  * rebuild from. Scales on grams so switching serving keeps the numbers honest.
@@ -322,6 +343,7 @@ export function rescaleMealItem(item: MealItem, qty: number, servingLabel: strin
     servingLabel,
     grams,
     nutrients: roundNutrients(scaleNutrients(item.nutrients, factor)),
+    micros: hasMicros(item.micros) ? roundMicros(scaleMicros(item.micros, factor)) : undefined,
   };
 }
 
@@ -341,5 +363,6 @@ export function buildMealItemFromGrams(food: Food, grams: number): MealItem {
     servingLabel: `${Math.round(safe * 10) / 10} g`,
     grams: safe,
     nutrients: roundNutrients(scaleNutrients(food.per100g, safe / 100)),
+    micros: portionMicros(food.micros, safe),
   };
 }

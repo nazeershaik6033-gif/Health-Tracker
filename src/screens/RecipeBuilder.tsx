@@ -6,6 +6,7 @@ import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood } from '@/db/repo';
 import { searchFoods } from '@/lib/foodSearch';
 import { scaleNutrients, sumNutrients, roundNutrients, buildMealItemFromGrams } from '@/lib/nutrition';
+import { hasMicros, roundMicros, scaleMicros, sumMicros } from '@/lib/micros';
 import { today } from '@/lib/date';
 import { BottomSheet } from '@/components/BottomSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -57,6 +58,29 @@ export default function RecipeBuilder() {
   const per100g =
     totalGrams > 0 ? scaleNutrients(totals, 100 / totalGrams) : { ...ZERO_NUTRIENTS };
 
+  /**
+   * Micros are summed the same way, but only from ingredients that carry them.
+   * A recipe whose ingredients are half unknown would otherwise claim a
+   * complete micronutrient profile while quietly under-counting every value,
+   * so the whole recipe reports none unless the data is essentially complete.
+   */
+  const knownMicroGrams = ingredients
+    .filter((i) => hasMicros(i.food.micros))
+    .reduce((sum, i) => sum + i.grams, 0);
+  const microsPer100g =
+    totalGrams > 0 && knownMicroGrams / totalGrams >= 0.9
+      ? roundMicros(
+          scaleMicros(
+            sumMicros(
+              ingredients
+                .filter((i) => hasMicros(i.food.micros))
+                .map((i) => scaleMicros(i.food.micros!, i.grams / 100)),
+            ),
+            100 / totalGrams,
+          ),
+        )
+      : undefined;
+
   const servings = Math.max(1, Math.round(Number(servingsCount) || 1));
   const servingGrams = totalGrams / servings;
   const perServing = roundNutrients(scaleNutrients(per100g, servingGrams / 100));
@@ -87,6 +111,7 @@ export default function RecipeBuilder() {
     return createFood({
       name: trimmedName,
       per100g,
+      micros: microsPer100g,
       servings: [
         { label: servingLabel, grams: servingGrams },
         ...(Math.round(servingGrams) === 100 ? [] : [{ label: '100 g', grams: 100 }]),

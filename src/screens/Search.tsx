@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
@@ -34,7 +34,10 @@ export default function Search() {
   const settings = useApp((s) => s.settings);
 
   const [slot, setSlot] = useState<MealSlot>(pendingSlot ?? guessSlot());
-  const [query, setQuery] = useState('');
+  // Seeded from `?q=`, so a "rich in iron" suggestion elsewhere can hand the
+  // user straight to that food rather than to an empty search box.
+  const [params] = useSearchParams();
+  const [query, setQuery] = useState(params.get('q') ?? '');
   const [slotOpen, setSlotOpen] = useState(false);
   const [detail, setDetail] = useState<Food | null>(null);
   const [addedIds, setAddedIds] = useState<string[]>([]);

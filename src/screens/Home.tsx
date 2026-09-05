@@ -18,6 +18,7 @@ import {
   IconDroplet,
   IconFlame,
   IconGallery,
+  IconLeaf,
   IconMoon,
   IconPlus,
   IconScale,
@@ -28,6 +29,7 @@ import {
 import { formatDuration, relativeDayLabel } from '@/lib/date';
 import { backupOverdue, describeLastBackup } from '@/lib/backup';
 import { formatKcal, kgToDisplay, weightUnit } from '@/lib/nutrition';
+import { microRows } from '@/lib/micros';
 import { setWater } from '@/db/repo';
 import type { MealSlot } from '@/types';
 
@@ -52,6 +54,11 @@ export default function Home() {
   const latestWeight = useLiveQuery(async () => db.weight.orderBy('date').reverse().first(), []);
 
   const units = profile?.units ?? 'metric';
+  // Macros answer "how much"; this answers "of what". Summarised to one line
+  // here — the full breakdown lives on its own screen.
+  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+    (r) => r.status === 'good',
+  ).length;
   const eaten = day.totals.kcal;
   const target = day.targets.kcal || 1;
   const lostKg = profile ? profile.startWeightKg - (latestWeight?.kg ?? profile.startWeightKg) : 0;
@@ -192,6 +199,28 @@ export default function Home() {
               color="var(--color-macro-fibre)"
             />
           </div>
+
+          <Link
+            to="/micros"
+            className="hairline flex items-center gap-3 border-t pt-3.5 transition-transform active:scale-[0.99]"
+          >
+            <div className="tint-soft tint-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+              <IconLeaf width={18} height={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13.5px] font-semibold">Micronutrients</p>
+              <p className="text-[12px] text-secondary">
+                {day.meals.length === 0
+                  ? '12 vitamins and minerals to hit today'
+                  : `${microsOnTrack} of 12 on track${
+                      day.microCoverage < 0.95
+                        ? ` · ${Math.round(day.microCoverage * 100)}% of the day counted`
+                        : ''
+                    }`}
+              </p>
+            </div>
+            <IconChevronRight width={18} height={18} className="shrink-0 text-muted" />
+          </Link>
         </Card>
 
         {/* --------------------------- Snaps rail ------------------------ */}

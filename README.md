@@ -70,6 +70,26 @@ a browser bug, not a deployment one.
 | **Voice** | "Two rotis, a katori of dal and a glass of milk" → structured entries |
 | **Search** | ~165 bundled foods, Indian-first with native units (roti, katori, glass, idli, dosa), plus anything you've saved. Fuzzy matched, works offline |
 
+**Micronutrients** — twelve vitamins and minerals per day, alongside the
+macros: iron, calcium, magnesium, zinc, potassium, sodium, vitamins A, C, D, E,
+B12 and folate. Targets follow ICMR-NIN 2020 RDAs for Indians, adjusted for
+your age and sex (iron drops after menopause, calcium rises in adolescence and
+again past 50); potassium and the sodium ceiling come from WHO. Sodium is
+tracked as a limit rather than a goal.
+
+Every bundled food carries per-100 g figures from IFCT 2017 and USDA
+FoodData Central; barcode lookups take whatever the product declares, and
+AI-generated foods are asked for the panel too. Tap any nutrient for what it
+does, which of today's foods supplied it, and what would close the gap —
+ranked by foods you already log, since the richest source of B12 is no use to
+someone who doesn't eat it.
+
+Micronutrient data is patchy everywhere in the world, so the screen reports
+**coverage**: what share of the day's calories the figures actually saw, and
+which items had no data. A photo-logged restaurant meal contributes none, and
+the app says so rather than reporting a deficiency that is really a gap in the
+data.
+
 **Trackers** — water, sleep, weight, workouts and steps, each with a goal, an
 entry flow and a trend chart.
 
@@ -281,7 +301,8 @@ src/
   ai/           ProviderAdapter interface + Anthropic / Gemini / OpenRouter
                 adapters, prompts, JSON schemas, streaming SSE reader
   db/           Dexie schema, repository layer, JSON export/import
-  data/         bundled seed catalogs (foods, exercises) as compact tuples
+  data/         bundled seed catalogs (foods, micronutrients, exercises)
+                as compact tuples
   lib/          camera, barcode decoding, OCR, image pipeline,
                 Open Food Facts, nutrition maths, fuzzy search, motion
   components/   design-system pieces (rings, macro bars, sheets, icons)
@@ -305,6 +326,16 @@ added to the offline bundle. `lib/motion.ts` holds the shared helpers
 **Search** is one scorer in `lib/search.ts`, specialised by `foodSearch.ts` and
 `exerciseSearch.ts`. Every typed word must land somewhere or the row scores
 zero, which is what makes multi-word queries behave.
+
+**Micronutrients are optional everywhere and "missing" never means zero.**
+`Food.micros` and `MealItem.micros` are partial maps, so a barcode that
+declares only calcium counts its calcium and stays silent on the rest instead
+of reporting eleven zeroes. Day totals therefore travel with a calorie-weighted
+coverage figure, and every screen that shows a micronutrient number is required
+to be able to say what that number is built on. `lib/micros.ts` owns the
+reference data, the units and the maths; the seed table is joined onto the food
+catalog by name at seed time, and drift between the two files is shouted about
+in dev.
 
 **Workout sessions extend `WorkoutEntry` rather than replacing it.** The
 per-exercise detail lives in an optional `exercises` array while `type`,
@@ -406,6 +437,13 @@ time.
 - FatSecret needs a proxy you deploy yourself; there is no browser-direct path
   (CORS and IP whitelisting, see above)
 - AI portion estimates from a photo are estimates; check them before saving
+- Photo and voice logs carry no micronutrients — the per-item cost in tokens
+  and latency buys numbers a model is guessing at from an image. They lower the
+  day's micro coverage instead, which the screen states outright
+- Micronutrient figures for composite dishes are computed from typical recipes,
+  not laboratory values; the whole foods around them are direct table lookups
+- Reference intakes are for a healthy adult. Pregnancy, supplements and
+  diagnosed deficiencies all change them, and the app does not model any of it
 - On-device OCR is a fallback and is noticeably worse than AI vision on
   curved or glare-affected packaging
 - Ria is not a clinician

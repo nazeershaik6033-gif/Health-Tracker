@@ -15,12 +15,14 @@ import {
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { RingProgress } from '@/components/RingProgress';
 import { MacroBar } from '@/components/MacroBar';
+import { microRows } from '@/lib/micros';
 import { Card, EmptyState, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import {
   IconChevronLeft,
   IconChevronRight,
   IconDiet,
+  IconLeaf,
   IconPlus,
   IconSparkle,
   IconTrash,
@@ -39,6 +41,10 @@ export default function Diet() {
     item: MealItem;
     food?: Food;
   } | null>(null);
+
+  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+    (r) => r.status === 'good',
+  ).length;
 
   /**
    * The logged item only remembers the one serving it used; the food row
@@ -153,6 +159,18 @@ export default function Diet() {
             asPercent={false}
           />
         </div>
+
+        <Link
+          to="/micros"
+          className="hairline flex items-center gap-2.5 border-t pt-3.5 text-[13px] transition-transform active:scale-[0.99]"
+        >
+          <IconLeaf width={17} height={17} className="shrink-0 text-brand-600" />
+          <span className="flex-1 font-semibold">Micronutrients</span>
+          <span className="tabular text-secondary">
+            {microsOnTrack} of 12 on track
+          </span>
+          <IconChevronRight width={16} height={16} className="shrink-0 text-muted" />
+        </Link>
       </Card>
 
       {/* Slots */}

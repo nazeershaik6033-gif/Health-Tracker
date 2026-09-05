@@ -3,6 +3,7 @@ import { db } from '@/db/schema';
 import { useApp } from './useApp';
 import { addDays, rangeDays, today } from '@/lib/date';
 import { estimateWorkoutKcal, totalNutrients } from '@/lib/nutrition';
+import { dayMicros, targetsForProfile } from '@/lib/micros';
 import { MEAL_SLOTS, ZERO_NUTRIENTS, type Meal, type MealSlot } from '@/types';
 
 /**
@@ -29,6 +30,7 @@ export function useDay(dateOverride?: string) {
   const meals = data?.meals ?? [];
   const totals = meals.length ? totalNutrients(meals) : ZERO_NUTRIENTS;
   const workoutKcal = (data?.workouts ?? []).reduce((sum, w) => sum + w.kcal, 0);
+  const micros = dayMicros(meals);
 
   const bySlot = MEAL_SLOTS.reduce<Record<MealSlot, Meal | undefined>>(
     (acc, slot) => {
@@ -51,6 +53,11 @@ export function useDay(dateOverride?: string) {
     weight: data?.weight,
     steps: data?.steps,
     targets: profile?.targets ?? ZERO_NUTRIENTS,
+    /** Day totals, plus how much of the day those totals actually saw. */
+    micros: micros.totals,
+    microCoverage: micros.coverage,
+    microUnknown: micros.unknown,
+    microTargets: targetsForProfile(profile),
     waterGoal: data?.water?.goalGlasses ?? profile?.waterGoalGlasses ?? 9,
     glasses: data?.water?.glasses ?? 0,
     stepGoal: data?.steps?.goal ?? profile?.stepGoal ?? 8000,

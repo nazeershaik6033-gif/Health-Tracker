@@ -71,6 +71,16 @@ export async function ensureSeeded(): Promise<void> {
   const missing = seeds.filter((_, i) => !existing[i]);
   if (missing.length) await db.foods.bulkPut(missing);
 
+  // Seed rows written before micronutrients existed carry none, and the loop
+  // above deliberately never rewrites a row that is already there. Back-fill
+  // just the micros, leaving the user's edits, useCount and lastUsedAt intact —
+  // without this an existing install would show 0% micro coverage forever.
+  const needMicros = existing.flatMap((stored, i) => {
+    if (!stored || stored.micros || !seeds[i].micros) return [];
+    return [{ ...stored, micros: seeds[i].micros }];
+  });
+  if (needMicros.length) await db.foods.bulkPut(needMicros);
+
   // Same shape for exercises. Only the rows that aren't already there are
   // written, so a user's `useCount` on a seeded exercise survives every
   // subsequent launch and every catalog addition.
