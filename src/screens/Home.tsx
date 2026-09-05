@@ -224,7 +224,7 @@ export default function Home() {
           </div>
 
           <Link
-            to="/micros"
+            to={`/micros?date=${selectedDate}`}
             className="hairline flex items-center gap-3 border-t pt-3.5 transition-transform active:scale-[0.99]"
           >
             <div className="tint-soft tint-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">

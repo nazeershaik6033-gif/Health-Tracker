@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
@@ -8,7 +8,7 @@ import { MicroBar } from '@/components/MicroBar';
 import { RingProgress } from '@/components/RingProgress';
 import { Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import { IconLeaf, IconWarning } from '@/components/icons';
-import { relativeDayLabel } from '@/lib/date';
+import { relativeDayLabel, today } from '@/lib/date';
 import {
   biggestGaps,
   contributors,
@@ -32,7 +32,13 @@ import type { Food, MicroId } from '@/types';
 export default function Micros() {
   const navigate = useNavigate();
   const { selectedDate } = useApp();
-  const day = useDay();
+  // The date travels in the query string, matching the macro breakdown, so
+  // Calendar can open any past day without moving the app's selected date
+  // underneath it. Micronutrients are a per-day figure like any other, and a
+  // day in March has to be as readable as today.
+  const [params] = useSearchParams();
+  const date = params.get('date') ?? selectedDate;
+  const day = useDay(date);
   const [open, setOpen] = useState<MicroId | null>(null);
 
   const rows = useMemo(
@@ -48,10 +54,11 @@ export default function Micros() {
   const foods = useLiveQuery(async () => db.foods.toArray(), []);
 
   const logged = day.meals.length > 0;
+  const isToday = date === today();
 
   return (
     <>
-      <PageHeader title="Micronutrients" subtitle={relativeDayLabel(selectedDate)} back="/" />
+      <PageHeader title="Micronutrients" subtitle={relativeDayLabel(date)} back="/" />
 
       <div className="px-4 pt-3 pb-6">
       {!logged ? (
@@ -81,7 +88,7 @@ export default function Micros() {
                 <p className="text-[15px] font-bold tracking-tight">
                   {onTrack === rows.length
                     ? 'Every micro on track'
-                    : `${rows.length - onTrack} still short today`}
+                    : `${rows.length - onTrack} still short${isToday ? ' today' : ''}`}
                 </p>
                 <p className="text-[12.5px] text-secondary">
                   Targets are ICMR-NIN 2020 for your age and sex.
@@ -98,11 +105,11 @@ export default function Micros() {
           {/* ----------------------------- gaps ----------------------------- */}
           {gaps.length > 0 && foods && (
             <Card className="space-y-3">
-              <SectionTitle>Close today&apos;s gaps</SectionTitle>
+              <SectionTitle>{isToday ? "Close today's gaps" : 'Where this day fell short'}</SectionTitle>
               {gaps.map((row) => {
                 const picks = suggestFoods(foods, row.def.id, row.target, 3).filter(
-                  // Suggesting more of something already eaten today is advice
-                  // they have already taken.
+                  // Suggesting more of something already eaten that day is
+                  // advice they have already taken.
                   (p) => !day.meals.some((m) => m.items.some((i) => i.foodId === p.foodId)),
                 );
                 return (
@@ -185,7 +192,7 @@ function CoverageNote({ pct, unknown }: { pct: number; unknown: string[] }) {
   if (pct >= 95) {
     return (
       <p className="hairline border-t pt-3 text-[12px] text-secondary">
-        Counted across everything you logged today.
+        Counted across everything you logged that day.
       </p>
     );
   }

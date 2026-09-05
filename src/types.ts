@@ -520,6 +520,13 @@ export interface Settings {
   /** Days before the overdue nudge appears. 0 disables it. */
   backupRemindDays?: number;
   /**
+   * Which micronutrient back-fill has been applied to already-logged meals.
+   * Absent on installs that predate micronutrients, which is exactly the case
+   * the back-fill exists to repair. Bumped when the seed data gains figures
+   * that earlier logs should retroactively pick up.
+   */
+  microBackfillVersion?: number;
+  /**
    * Whether walking counts toward the day's calories burned.
    *
    * On by default, but switchable because the app cannot tell a logged walking

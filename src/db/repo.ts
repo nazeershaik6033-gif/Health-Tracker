@@ -1,9 +1,10 @@
-import Dexie from 'dexie';
+import Dexie, { type Table } from 'dexie';
 import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
 import { seedExercises } from '@/data/exercises.seed';
 import { today } from '@/lib/date';
-import { computeTargets } from '@/lib/nutrition';
+import { computeTargets, portionMicros } from '@/lib/nutrition';
+import { hasMicros } from '@/lib/micros';
 import { DEFAULT_FATSECRET } from '@/types';
 import type {
   ChatMessage,
@@ -14,6 +15,7 @@ import type {
   Meal,
   MealItem,
   MealSlot,
+  Micros,
   Plan,
   Profile,
   Settings,
@@ -24,6 +26,13 @@ import type {
   WeightEntry,
   WorkoutEntry,
 } from '@/types';
+
+/**
+ * Bumped whenever already-logged meals should be re-scanned for
+ * micronutrients — a new install starts at the current version and skips the
+ * walk entirely, since nothing it logged could ever predate the data.
+ */
+export const MICRO_BACKFILL_VERSION = 1;
 
 export const DEFAULT_SETTINGS: Settings = {
   id: 'app',
@@ -36,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   onboardingDone: false,
   backupRemindDays: 14,
   countStepKcal: true,
+  microBackfillVersion: MICRO_BACKFILL_VERSION,
 };
 
 /**
@@ -95,6 +105,74 @@ export async function ensureSeeded(): Promise<void> {
   if (!(await db.settings.get('app'))) {
     await db.settings.put(DEFAULT_SETTINGS);
   }
+
+  // Strictly after the food back-fill above: this reads micronutrients off the
+  // catalog, so running it first would find nothing and then mark itself done.
+  await backfillMealMicros();
+}
+
+/**
+ * Gives already-logged meals their micronutrients.
+ *
+ * A `MealItem` is a snapshot, not a lookup — it keeps its own nutrients so that
+ * renaming or deleting a food never rewrites what you ate last month. That is
+ * the right design, and it is also why every meal logged before micronutrients
+ * existed carries none: back-filling the food catalog fixed what you log
+ * *next*, and did nothing for months of history. Those days read as 0%
+ * coverage, which is indistinguishable from a real gap in the data.
+ *
+ * So this recomputes them from the food each item was built from, scaled by the
+ * grams already stored on the item. Items with no `foodId` — anything from a
+ * photo or a voice log — and items whose food carries no micronutrients are
+ * left alone: unknown stays unknown rather than becoming a confident zero, and
+ * the coverage figure keeps telling the truth about them.
+ */
+export async function backfillMealMicros(): Promise<void> {
+  // The raw row, deliberately not `getSettings()`: that merges DEFAULT_SETTINGS
+  // in, and the default carries the current version — so every pre-micros
+  // install would read as already migrated and skip the one walk it needs.
+  // Absent on those rows, present on anything written since, which is exactly
+  // the signal wanted here.
+  const stored = await db.settings.get('app');
+  if ((stored?.microBackfillVersion ?? 0) >= MICRO_BACKFILL_VERSION) return;
+
+  // One pass over the catalog rather than a lookup per item: a year of logs is
+  // thousands of items against a few hundred foods.
+  const catalog = new Map<string, Micros>();
+  for (const food of await db.foods.toArray()) {
+    if (hasMicros(food.micros)) catalog.set(food.id, food.micros);
+  }
+
+  if (catalog.size) {
+    await backfillItems(db.meals, catalog);
+    // Favourites hold the same snapshots, so a pinned meal would otherwise go
+    // on logging micro-less items long after the history itself was repaired.
+    await backfillItems(db.favourites, catalog);
+  }
+
+  await saveSettings({ microBackfillVersion: MICRO_BACKFILL_VERSION });
+}
+
+/** Shared by meals and favourites, which both store `MealItem[]`. */
+async function backfillItems<T extends { items: MealItem[] }>(
+  table: Table<T, string>,
+  catalog: Map<string, Micros>,
+): Promise<void> {
+  const updated: T[] = [];
+
+  for (const row of await table.toArray()) {
+    let changed = false;
+    const items = row.items.map((item) => {
+      if (hasMicros(item.micros) || !item.foodId) return item;
+      const micros = portionMicros(catalog.get(item.foodId), item.grams);
+      if (!micros) return item;
+      changed = true;
+      return { ...item, micros };
+    });
+    if (changed) updated.push({ ...row, items });
+  }
+
+  if (updated.length) await table.bulkPut(updated);
 }
 
 /* -------------------------------- settings ------------------------------- */
