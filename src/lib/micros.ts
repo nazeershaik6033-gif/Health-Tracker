@@ -1,4 +1,11 @@
-import type { Meal, MealItem, MicroId, Micros, Profile, Sex } from '@/types';
+import { MEAL_SLOTS, type Meal, type MealItem, type MealSlot, type MicroId, type Micros, type Profile, type Sex } from '@/types';
+import { SORT_LABEL, type SortDir, type SortField } from './macroBreakdown';
+
+// Re-exported so screens that only deal in micronutrients need one import,
+// not two — the sort vocabulary (amount/name/meal, asc/desc) is identical to
+// the macro breakdown's, and staying on the same type keeps the two filter
+// UIs from drifting apart by accident.
+export { SORT_LABEL, type SortDir, type SortField };
 
 /**
  * Micronutrient reference data and maths.
@@ -165,6 +172,11 @@ export const MICRO_BY_ID: Record<MicroId, MicroDef> = Object.fromEntries(
 ) as Record<MicroId, MicroDef>;
 
 export const MICRO_IDS: MicroId[] = MICROS.map((m) => m.id);
+
+/** Type guard for a route param — mirrors `isMacroKey` in `lib/macroBreakdown.ts`. */
+export function isMicroId(value: string | undefined): value is MicroId {
+  return Boolean(value && value in MICRO_BY_ID);
+}
 
 /* --------------------------------- targets -------------------------------- */
 
@@ -469,4 +481,106 @@ export function suggestFoods(
   }
   scored.sort((a, b) => Number(b.familiar) - Number(a.familiar) || b.share - a.share);
   return scored.slice(0, limit);
+}
+
+/* ------------------------------- breakdown -------------------------------- */
+
+/**
+ * One logged item and what it contributed of a single nutrient — the
+ * micronutrient counterpart of `BreakdownRow` in `lib/macroBreakdown.ts`.
+ *
+ * `value` is `undefined` rather than 0 for an item whose food carries no data
+ * for this nutrient. Collapsing that into zero would let an "unknown" item
+ * quietly win a sort as the least-contributing one, when the honest answer is
+ * that it isn't ranked at all — the same distinction `dayMicros` draws for
+ * the day as a whole, carried down to the single-item view.
+ */
+export interface MicroBreakdownRow {
+  mealId: string;
+  slot: MealSlot;
+  /** Position within the meal — what `replaceMealItem`/`removeMealItem` take. */
+  index: number;
+  item: MealItem;
+  value: number | undefined;
+  /** Share of the day's *known* total for this nutrient, 0–1. */
+  share: number;
+}
+
+/**
+ * Every item logged that day, however much (or little is known) of the given
+ * nutrient it carried.
+ *
+ * Items with no data for this nutrient are kept rather than dropped: "which
+ * of today's items has no iron figure at all" is the same honest question
+ * `dayMicros`'s coverage note raises for the whole day, and dropping the rows
+ * here would make this list quietly disagree with that note.
+ */
+export function buildMicroBreakdown(meals: Meal[], id: MicroId): MicroBreakdownRow[] {
+  const rows: MicroBreakdownRow[] = [];
+  let total = 0;
+
+  for (const meal of meals) {
+    meal.items.forEach((item, index) => {
+      const value = item.micros?.[id];
+      if (value !== undefined) total += value;
+      rows.push({ mealId: meal.id, slot: meal.slot, index, item, value, share: 0 });
+    });
+  }
+
+  if (total > 0) {
+    for (const row of rows) if (row.value !== undefined) row.share = row.value / total;
+  }
+  return rows;
+}
+
+/** Sum of the *known* values in a set of rows — unknowns contribute nothing to add. */
+export function sumMicroRows(rows: MicroBreakdownRow[]): number {
+  return rows.reduce((sum, row) => sum + (row.value ?? 0), 0);
+}
+
+const slotOrder = (slot: MealSlot) => MEAL_SLOTS.indexOf(slot);
+
+/**
+ * Sorts a copy, never in place — the caller keeps the unsorted list so
+ * switching direction doesn't compound. Matches `sortBreakdown`'s contract in
+ * `lib/macroBreakdown.ts`, same field names and tie-break, for one reason:
+ * every micronutrient screen deliberately offers the same filter controls as
+ * the macro one, and that only stays true if the two sorts actually agree.
+ *
+ * Rows with no data for this nutrient always sort last, in either direction —
+ * "amount, ascending" answers "what contributed the least", not "what do we
+ * know nothing about", and the two must not be confused for each other.
+ */
+export function sortMicroBreakdown(
+  rows: MicroBreakdownRow[],
+  field: SortField,
+  dir: SortDir,
+): MicroBreakdownRow[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  const logOrder = (a: MicroBreakdownRow, b: MicroBreakdownRow) =>
+    slotOrder(a.slot) - slotOrder(b.slot) || a.index - b.index;
+
+  return [...rows].sort((a, b) => {
+    switch (field) {
+      case 'amount':
+        if (a.value === undefined && b.value === undefined) return logOrder(a, b);
+        if (a.value === undefined) return 1;
+        if (b.value === undefined) return -1;
+        return sign * (a.value - b.value) || logOrder(a, b);
+      case 'name':
+        return sign * a.item.name.localeCompare(b.item.name) || logOrder(a, b);
+      case 'meal':
+        return sign * logOrder(a, b);
+    }
+  });
+}
+
+/** Per-slot totals of the known values, for the filter chips. */
+export function microSlotTotals(rows: MicroBreakdownRow[]): Map<MealSlot, number> {
+  const map = new Map<MealSlot, number>();
+  for (const row of rows) {
+    if (row.value === undefined) continue;
+    map.set(row.slot, (map.get(row.slot) ?? 0) + row.value);
+  }
+  return map;
 }
