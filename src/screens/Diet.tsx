@@ -347,7 +347,11 @@ export default function Diet() {
           targets={day.targets}
           burned={day.burnedKcal}
           macroHref={macroLink}
-          micros={{ onTrack: microsOnTrack, total: MICRO_IDS.length, href: '/micros' }}
+          micros={{
+            onTrack: microsOnTrack,
+            total: MICRO_IDS.length,
+            href: `/micros?date=${selectedDate}`,
+          }}
         />
       </div>
 

@@ -33,7 +33,9 @@ import {
   totalNutrients,
 } from '@/lib/nutrition';
 import { RingProgress } from '@/components/RingProgress';
+import { useDay } from '@/stores/useDay';
 import { DayTotals } from '@/components/DayTotals';
+import { MICRO_IDS, microRows } from '@/lib/micros';
 import type { MacroKey } from '@/lib/macroBreakdown';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -120,6 +122,13 @@ export default function CalendarScreen() {
 
   const summaries = useLiveQuery(() => summariseRange(from, to), [from, to]);
   const bundle = useLiveQuery(() => dayBundle(selectedDate, profile), [selectedDate, profile]);
+
+  // Scrolling back to a day should answer "how did this day go" completely,
+  // and half that answer is which vitamins and minerals it actually delivered.
+  const day = useDay(selectedDate);
+  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+    (r) => r.status === 'good',
+  ).length;
 
   const todayISO = today();
   const atCurrentMonth =
@@ -353,6 +362,11 @@ export default function CalendarScreen() {
               burned={dayBurned}
               compact
               macroHref={macroLink}
+              micros={{
+                onTrack: microsOnTrack,
+                total: MICRO_IDS.length,
+                href: `/micros?date=${selectedDate}`,
+              }}
             />
 
             {allKeys.length > 0 && (
