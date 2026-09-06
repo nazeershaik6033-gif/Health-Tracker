@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useApp } from '@/stores/useApp';
@@ -17,6 +17,7 @@ import {
   type MicroGroup,
   type MicroRow,
 } from '@/lib/micros';
+import type { MealItem } from '@/types';
 
 /**
  * The day's micronutrients.
@@ -107,10 +108,7 @@ export default function Micros() {
               </div>
             </div>
 
-            <CoverageNote
-              pct={coveragePct}
-              unknown={day.microUnknown.map((i) => i.name)}
-            />
+            <CoverageNote pct={coveragePct} unknown={day.microUnknown} />
           </Card>
 
           {/* ----------------------------- gaps ----------------------------- */}
@@ -183,7 +181,7 @@ export default function Micros() {
  * photo-logged lunch contributes nothing to it. Under-reporting a nutrient as
  * "low" when the data is simply absent is the failure worth designing against.
  */
-function CoverageNote({ pct, unknown }: { pct: number; unknown: string[] }) {
+function CoverageNote({ pct, unknown }: { pct: number; unknown: MealItem[] }) {
   if (pct >= 95) {
     return (
       <p className="hairline border-t pt-3 text-[12px] text-secondary">
@@ -192,7 +190,13 @@ function CoverageNote({ pct, unknown }: { pct: number; unknown: string[] }) {
     );
   }
 
-  const names = [...new Set(unknown)];
+  // One chip per distinct food, not per portion: eating the same yoghurt at
+  // breakfast and again at night is one gap to fill, not two.
+  const foods = [...new Map(unknown.map((i) => [i.foodId ?? i.name, i])).values()];
+  // Items logged from a photo or typed straight into a meal have no food row
+  // behind them, so there is nothing to open and nowhere to put the numbers.
+  const fixable = foods.filter((i) => i.foodId);
+
   return (
     <div className="accent-card accent-amber flex items-start gap-2.5 p-3">
       <IconWarning width={16} height={16} className="accent-rule-fg mt-0.5 shrink-0" />
@@ -201,14 +205,50 @@ function CoverageNote({ pct, unknown }: { pct: number; unknown: string[] }) {
           Based on {pct}% of today&apos;s calories
         </p>
         <p className="accent-body text-[11.5px] leading-relaxed">
-          {names.length > 0 && (
-            <>
-              No micronutrient data for {names.slice(0, 3).join(', ')}
-              {names.length > 3 && ` and ${names.length - 3} more`}.{' '}
-            </>
-          )}
           Treat every figure below as a floor — you have had at least this much.
         </p>
+
+        {foods.length > 0 && (
+          <>
+            <p className="accent-body mt-2 text-[11.5px] leading-relaxed">
+              {fixable.length > 0
+                ? 'No micronutrient data for these. Tap one to type in what its label says — it counts from then on, everywhere.'
+                : 'No micronutrient data for these.'}
+            </p>
+            {/*
+              The names used to be a flat sentence, which named the problem and
+              offered nothing to do about it — and until the food editor could
+              take micronutrients, there genuinely was nothing. Now each one is
+              a way in to fix it, on the food itself rather than this one meal,
+              so filling it in once fixes every day it appears on.
+            */}
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {foods.slice(0, 6).map((item) =>
+                item.foodId ? (
+                  <Link
+                    key={item.foodId}
+                    to={`/food/${item.foodId}/edit`}
+                    className="hairline accent-title rounded-full border px-2.5 py-1 text-[11.5px] font-semibold"
+                  >
+                    {item.name}
+                  </Link>
+                ) : (
+                  <span
+                    key={item.name}
+                    className="accent-body rounded-full px-2.5 py-1 text-[11.5px] opacity-70"
+                  >
+                    {item.name}
+                  </span>
+                ),
+              )}
+              {foods.length > 6 && (
+                <span className="accent-body self-center text-[11.5px]">
+                  and {foods.length - 6} more
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

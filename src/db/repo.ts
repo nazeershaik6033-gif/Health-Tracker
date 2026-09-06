@@ -153,12 +153,18 @@ export async function backfillMealMicros(): Promise<void> {
   await saveSettings({ microBackfillVersion: MICRO_BACKFILL_VERSION });
 }
 
-/** Shared by meals and favourites, which both store `MealItem[]`. */
+/**
+ * Shared by meals and favourites, which both store `MealItem[]`.
+ *
+ * Returns how many items were filled in, so a caller acting on one food can
+ * tell the user what just happened to their history.
+ */
 async function backfillItems<T extends { items: MealItem[] }>(
   table: Table<T, string>,
   catalog: Map<string, Micros>,
-): Promise<void> {
+): Promise<number> {
   const updated: T[] = [];
+  let filled = 0;
 
   for (const row of await table.toArray()) {
     let changed = false;
@@ -167,12 +173,35 @@ async function backfillItems<T extends { items: MealItem[] }>(
       const micros = portionMicros(catalog.get(item.foodId), item.grams);
       if (!micros) return item;
       changed = true;
+      filled += 1;
       return { ...item, micros };
     });
     if (changed) updated.push({ ...row, items });
   }
 
   if (updated.length) await table.bulkPut(updated);
+  return filled;
+}
+
+/**
+ * Fills in one food's micronutrients across everything already logged.
+ *
+ * Typing a pack's iron and calcium into the food editor otherwise only helps
+ * from the next meal onwards, because a `MealItem` is a snapshot. The screen
+ * that sent the user here would go on naming that same food as missing data
+ * they had just supplied — the fix visibly not working.
+ *
+ * This only ever fills a blank: items that already carry micronutrients are
+ * left exactly as logged, so the snapshot rule still holds where it matters.
+ * Nothing that was recorded is rewritten; something that was never recorded is
+ * finally known.
+ */
+export async function applyFoodMicrosToHistory(foodId: string, micros: Micros): Promise<number> {
+  if (!hasMicros(micros)) return 0;
+  const catalog = new Map([[foodId, micros]]);
+  const meals = await backfillItems(db.meals, catalog);
+  const favourites = await backfillItems(db.favourites, catalog);
+  return meals + favourites;
 }
 
 /* -------------------------------- settings ------------------------------- */

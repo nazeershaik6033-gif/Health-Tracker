@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx",
     "build:pages": "tsc --noEmit && BASE_PATH=/Health-Tracker/ OUT_DIR=docs vite build && node scripts/build-meta.mjs",
-    "check:pages": "node scripts/build-meta.mjs --check"
+    "check:pages": "node scripts/build-meta.mjs --check",
+    "vendor:ocr": "node scripts/vendor-tesseract.mjs"
   },
   "dependencies": {
     "dexie": "^4.0.11",

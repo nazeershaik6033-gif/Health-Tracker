@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood } from '@/db/repo';
@@ -7,7 +7,7 @@ import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
 import { useCamera } from '@/lib/camera';
 import { blobToImagePart, canvasToBlob, captureFrame } from '@/lib/image';
-import { readLabelOffline, terminateOCR, type LabelReading } from '@/lib/ocr';
+import { readLabelOffline, terminateOCR, warmOCR, type LabelReading } from '@/lib/ocr';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { Button, Card, Field, PageHeader, Skeleton } from '@/components/ui';
@@ -43,8 +43,43 @@ export default function Label() {
   const [qty, setQty] = useState('1');
   const [servingLabel, setServingLabel] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  /**
+   * The in-flight read, so it can be called off.
+   *
+   * A deadline in the AI layer stops a stalled request eventually; this is what
+   * lets the user stop waiting *now*, which matters more when the answer is
+   * "this is taking too long" rather than "this is broken".
+   */
+  const abortRef = useRef<AbortController | null>(null);
 
   const keyed = hasKey(settings);
+
+  /**
+   * Pull the OCR runtime down while the user is framing the shot, for the
+   * users who are actually going to need it. It is several megabytes, and
+   * spending them here rather than after the shutter is the difference
+   * between a wait with a viewfinder in front of it and a wait with a
+   * spinner. Torn down on the way out so an abandoned screen doesn't leave a
+   * worker holding a wasm heap.
+   */
+  useEffect(() => {
+    if (keyed) return;
+    void warmOCR();
+    return () => void terminateOCR();
+  }, [keyed]);
+
+  function cancelRead() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    // The AI path stops on the signal. The OCR path has none to stop on —
+    // `recognize()` takes no AbortSignal — so tearing the worker down is the
+    // only thing that actually ends the work rather than just hiding it.
+    void terminateOCR();
+    setPhase('capture');
+    setError('');
+    setProgress(0);
+    void camera.start();
+  }
 
   async function readCanvas(canvas: HTMLCanvasElement) {
     setPhase('reading');
@@ -53,13 +88,21 @@ export default function Label() {
     setProgress(0.1);
     camera.stop();
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       if (keyed) {
         // The vision model reads panels far more reliably than OCR, including
         // rotated, curved and glare-affected labels.
         const blob = await canvasToBlob(canvas, 0.9);
-        const draft = await readNutritionLabel(settings, await blobToImagePart(blob));
+        const draft = await readNutritionLabel(
+          settings,
+          await blobToImagePart(blob),
+          controller.signal,
+        );
         const created = await createFood(draftToFood(draft, 'ai', barcode));
+        if (controller.signal.aborted) return;
         setFood(created);
         setServingLabel(created.servings[0]?.label ?? '100 g');
         setNote(
@@ -72,6 +115,10 @@ export default function Label() {
       }
 
       const reading: LabelReading = await readLabelOffline(canvas, setProgress);
+      // Terminating the worker can make a cancelled recognise resolve rather
+      // than throw, so a late result is checked against the signal instead of
+      // trusted — otherwise Cancel would flicker back into a result screen.
+      if (controller.signal.aborted) return;
       if (reading.matched === 0) {
         setRawText(reading.raw);
         setError(
@@ -89,6 +136,7 @@ export default function Label() {
         tags: ['scanned'],
         verified: false,
       });
+      if (controller.signal.aborted) return;
       setFood(created);
       setServingLabel(created.servings[0]?.label ?? '100 g');
       setRawText(reading.raw);
@@ -99,10 +147,21 @@ export default function Label() {
       );
       setPhase('result');
     } catch (err) {
+      // A read the user called off is not a failure to report back to them —
+      // and a cancelled OCR run throws whatever the torn-down worker threw,
+      // which is not always an AbortError, so the signal is what decides.
+      if (controller.signal.aborted) return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(describeError(err));
       setPhase('error');
     } finally {
-      void terminateOCR();
+      // Only clean up if this read is still the current one. Cancel already
+      // tore down the worker and the user may have started another read since;
+      // a late `finally` from the abandoned run must not kill the new one.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        void terminateOCR();
+      }
     }
   }
 
@@ -273,6 +332,21 @@ export default function Label() {
             <Skeleton className="h-3 w-2/3 rounded" />
             <Skeleton className="h-3 w-1/2 rounded" />
           </Card>
+          {/*
+            The only way out while a read is in flight. The header's back arrow
+            leaves the screen but not the request, and until this existed a
+            stalled call left the user watching a pulse with nothing to press.
+          */}
+          <div className="mt-3 flex justify-center">
+            <Button variant="secondary" onClick={cancelRead}>
+              Cancel
+            </Button>
+          </div>
+          <p className="mt-2 text-center text-[11.5px] text-muted">
+            {keyed
+              ? 'Sending the photo to your AI provider. This usually takes a few seconds.'
+              : 'Recognising text on this device. Larger photos take longer.'}
+          </p>
         </div>
       )}
 

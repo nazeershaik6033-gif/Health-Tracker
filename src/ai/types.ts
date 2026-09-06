@@ -42,6 +42,12 @@ export type AIErrorKind =
   | 'rate-limit'
   | 'network'
   | 'refused'
+  /**
+   * The request was still open when its deadline passed. Distinct from
+   * `network`: nothing failed, the connection simply never answered, which is
+   * what a stalled socket looks like from here and is otherwise indefinite.
+   */
+  | 'timeout'
   /** The model hit its output budget before finishing. Retryable with more. */
   | 'truncated'
   | 'bad-response'
@@ -69,6 +75,9 @@ export const UNREPAIRABLE: ReadonlySet<AIErrorKind> = new Set<AIErrorKind>([
   'refused',
   'network',
   'rate-limit',
+  // A retry here is the worst case of all: the first attempt already spent the
+  // full deadline waiting, and a second would silently double it.
+  'timeout',
 ]);
 
 const trimPeriod = (s: string) => s.trim().replace(/\.$/, '');
@@ -91,6 +100,8 @@ export function describeError(err: unknown): string {
         return 'The provider is rate-limiting requests. Try again shortly.';
       case 'network':
         return 'Could not reach the provider. Check your connection.';
+      case 'timeout':
+        return 'The provider stopped responding. Check your connection and try again.';
       case 'refused':
         return 'The model declined to answer that.';
       case 'truncated':
