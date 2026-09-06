@@ -79,10 +79,27 @@ tracked as a limit rather than a goal.
 
 Every bundled food carries per-100 g figures from IFCT 2017 and USDA
 FoodData Central; barcode lookups take whatever the product declares, and
-AI-generated foods are asked for the panel too. Tap any nutrient for what it
-does, which of today's foods supplied it, and what would close the gap —
-ranked by foods you already log, since the richest source of B12 is no use to
-someone who doesn't eat it.
+AI-generated foods are asked for the panel too. A **Completed** label appears
+at the top of the day once every nutrient clears its target (or, for sodium,
+stays under its ceiling) — the same "done" signal a finished streak gets,
+rather than something to infer from twelve green rows.
+
+Tapping a nutrient opens its own breakdown, filtered and sorted exactly like
+the macro screen reached from Protein or Carbs on the day summary: a meal-slot
+chip narrows the list to one part of the day, and a sort field (amount, name,
+meal) with its own direction toggle reorders it. Items with no data for that
+nutrient stay in the list rather than being dropped — they read as "No data"
+and always sort last under Amount, never mistaken for a confident zero. Every
+row is editable and deletable from there too, the same portion sheet the Diet
+screen uses.
+
+Below the breakdown sits **Good sources of &lt;nutrient&gt;** — up to six foods
+from your list ranked by how much of the day's target one realistic serving
+covers, led by foods you already eat (the richest source of B12 is no use to
+someone who doesn't eat it) and never repeating something already on today's
+plate. Shown for every nutrient, on track or not — "keep eating these" is as
+useful as "eat more of these" — except the sodium ceiling, where a list of
+foods to add makes no sense.
 
 Micronutrient data is patchy everywhere in the world, so the screen reports
 **coverage**: what share of the day's calories the figures actually saw, and

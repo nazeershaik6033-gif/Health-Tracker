@@ -138,6 +138,31 @@ export function AIBadge({ label = 'AI' }: { label?: string }) {
   );
 }
 
+/**
+ * A passive status label — "Completed", "Over target" — for a header or a
+ * card top, not a control. `tint-soft` carries its own fill and foreground,
+ * so unlike `AIBadge` this needs no tinted ancestor (a page header sits on
+ * plain canvas, not a coloured card).
+ */
+export function StatusPill({
+  children,
+  tone = 'brand',
+  icon,
+}: {
+  children: ReactNode;
+  tone?: 'brand' | 'amber' | 'danger';
+  icon?: ReactNode;
+}) {
+  return (
+    <span
+      className={`tint-soft tint-${tone} inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold`}
+    >
+      {icon}
+      {children}
+    </span>
+  );
+}
+
 /* ------------------------------ Empty states ----------------------------- */
 
 export function EmptyState({

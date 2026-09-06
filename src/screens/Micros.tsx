@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -6,19 +6,17 @@ import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
 import { MicroBar } from '@/components/MicroBar';
 import { RingProgress } from '@/components/RingProgress';
-import { Card, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
-import { IconLeaf, IconWarning } from '@/components/icons';
+import { Card, EmptyState, PageHeader, SectionTitle, StatusPill } from '@/components/ui';
+import { IconCheck, IconLeaf, IconWarning } from '@/components/icons';
 import { relativeDayLabel, today } from '@/lib/date';
 import {
   biggestGaps,
-  contributors,
   formatMicro,
   microRows,
   suggestFoods,
   type MicroGroup,
   type MicroRow,
 } from '@/lib/micros';
-import type { Food, MicroId } from '@/types';
 
 /**
  * The day's micronutrients.
@@ -39,7 +37,6 @@ export default function Micros() {
   const [params] = useSearchParams();
   const date = params.get('date') ?? selectedDate;
   const day = useDay(date);
-  const [open, setOpen] = useState<MicroId | null>(null);
 
   const rows = useMemo(
     () => microRows(day.micros, day.microTargets),
@@ -55,10 +52,24 @@ export default function Micros() {
 
   const logged = day.meals.length > 0;
   const isToday = date === today();
+  const completed = logged && rows.length > 0 && onTrack === rows.length;
 
   return (
     <>
-      <PageHeader title="Micronutrients" subtitle={relativeDayLabel(date)} back="/" />
+      <PageHeader
+        title="Micronutrients"
+        subtitle={relativeDayLabel(date)}
+        back="/"
+        action={
+          // Every nutrient at 90%+ of target (or under the sodium ceiling) —
+          // named as a label at the top rather than left to be inferred from
+          // twelve green rows, the same way the day's other done states (a
+          // finished streak, a closed ring) get their own badge.
+          completed ? (
+            <StatusPill icon={<IconCheck width={12} height={12} />}>Completed</StatusPill>
+          ) : undefined
+        }
+      />
 
       <div className="px-4 pt-3 pb-6">
       {!logged ? (
@@ -148,24 +159,8 @@ export default function Micros() {
           )}
 
           {/* --------------------------- the nutrients ---------------------- */}
-          <MicroGroupCard
-            title="Vitamins"
-            group="vitamin"
-            rows={rows}
-            open={open}
-            onToggle={(id) => setOpen((cur) => (cur === id ? null : id))}
-            day={day}
-            foods={foods}
-          />
-          <MicroGroupCard
-            title="Minerals"
-            group="mineral"
-            rows={rows}
-            open={open}
-            onToggle={(id) => setOpen((cur) => (cur === id ? null : id))}
-            day={day}
-            foods={foods}
-          />
+          <MicroGroupCard title="Vitamins" group="vitamin" rows={rows} date={date} />
+          <MicroGroupCard title="Minerals" group="mineral" rows={rows} date={date} />
 
           <p className="px-1 text-center text-[11px] leading-relaxed text-muted">
             Reference intakes are for a healthy adult and are not medical advice. Supplements,
@@ -221,22 +216,23 @@ function CoverageNote({ pct, unknown }: { pct: number; unknown: string[] }) {
 
 /* --------------------------------- groups --------------------------------- */
 
+/**
+ * A group of nutrient rows, each linking out to its own breakdown — the same
+ * shape as tapping Protein or Carbs on the day summary. That screen is where
+ * "where did this come from" gets answered in full, filtered and sorted the
+ * same way as the macro breakdown, so this list stays a fast scan rather than
+ * an accordion of its own.
+ */
 function MicroGroupCard({
   title,
   group,
   rows,
-  open,
-  onToggle,
-  day,
-  foods,
+  date,
 }: {
   title: string;
   group: MicroGroup;
   rows: MicroRow[];
-  open: MicroId | null;
-  onToggle: (id: MicroId) => void;
-  day: ReturnType<typeof useDay>;
-  foods: Food[] | undefined;
+  date: string;
 }) {
   const shown = rows.filter((r) => r.def.group === group);
 
@@ -248,89 +244,10 @@ function MicroGroupCard({
       <ul className="divide-y divide-[var(--surface-border)]">
         {shown.map((row) => (
           <li key={row.def.id}>
-            <MicroBar
-              row={row}
-              expanded={open === row.def.id}
-              onToggle={() => onToggle(row.def.id)}
-            />
-            {open === row.def.id && (
-              <MicroDetail row={row} day={day} foods={foods} />
-            )}
+            <MicroBar row={row} to={`/micro/${row.def.id}?date=${date}`} />
           </li>
         ))}
       </ul>
     </Card>
-  );
-}
-
-function MicroDetail({
-  row,
-  day,
-  foods,
-}: {
-  row: MicroRow;
-  day: ReturnType<typeof useDay>;
-  foods: Food[] | undefined;
-}) {
-  const navigate = useNavigate();
-  const from = contributors(day.meals, row.def.id);
-  const picks =
-    foods && row.status !== 'good' ? suggestFoods(foods, row.def.id, row.target, 3) : [];
-
-  return (
-    <div className="space-y-2.5 px-1 pb-3">
-      <p className="text-[12px] leading-relaxed text-secondary">{row.def.why}</p>
-
-      {from.length > 0 ? (
-        <div>
-          <p className="text-[11.5px] font-semibold text-muted uppercase">Where it came from</p>
-          <ul className="mt-1 space-y-1">
-            {from.map((c) => (
-              <li key={c.name} className="flex items-baseline gap-2 text-[12.5px]">
-                <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                <span className="tabular shrink-0 text-secondary">
-                  {formatMicro(row.def.id, c.amount)}
-                </span>
-                <span className="tabular w-9 shrink-0 text-right text-muted">
-                  {Math.round(c.share * 100)}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p className="text-[12px] text-muted">
-          Nothing you logged today carries {row.def.label.toLowerCase()}.
-        </p>
-      )}
-
-      {row.def.limit && row.status === 'over' && (
-        <p className="text-[12px] leading-relaxed text-secondary">
-          Salt added at the table, pickles, papad and packaged snacks are usually where the
-          difference sits — the cooking itself is rarely the whole story.
-        </p>
-      )}
-
-      {picks.length > 0 && (
-        <div>
-          <p className="text-[11.5px] font-semibold text-muted uppercase">Good sources</p>
-          <div className="no-scrollbar -mx-1 mt-1 flex gap-1.5 overflow-x-auto px-1">
-            {picks.map((p) => (
-              <button
-                key={p.foodId}
-                type="button"
-                onClick={() => navigate(`/search?q=${encodeURIComponent(p.name)}`)}
-                className="surface-sunken shrink-0 rounded-lg px-2.5 py-1.5 text-left transition-transform active:scale-95"
-              >
-                <span className="block text-[12.5px] font-semibold">{p.name}</span>
-                <span className="block text-[11px] text-secondary">
-                  {p.servingLabel} · {formatMicro(row.def.id, p.amount)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }

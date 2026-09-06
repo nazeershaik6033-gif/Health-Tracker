@@ -1,10 +1,12 @@
+import { Link } from 'react-router-dom';
 import { MICRO_STATUS_COLOR, MICRO_STATUS_LABEL, formatMicro, type MicroRow } from '@/lib/micros';
-import { IconChevronDown } from './icons';
+import { IconChevronRight } from './icons';
 
 interface Props {
   row: MicroRow;
-  expanded: boolean;
-  onToggle: () => void;
+  /** Opens the full breakdown for this nutrient — where it came from, filtered
+   *  and sorted the same way the macro breakdown is, plus food recommendations. */
+  to: string;
 }
 
 /**
@@ -15,17 +17,16 @@ interface Props {
  * fills toward a limit rather than a goal. Folding both into one component
  * would mean three flags and a worse version of each.
  */
-export function MicroBar({ row, expanded, onToggle }: Props) {
+export function MicroBar({ row, to }: Props) {
   const { def, value, target, pct, status } = row;
   const color = MICRO_STATUS_COLOR[status];
   const width = Math.max(value > 0 ? 2 : 0, Math.min(100, pct));
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      className="w-full px-1 py-2.5 text-left"
+    <Link
+      to={to}
+      aria-label={`${def.label}: ${formatMicro(def.id, value)} of ${formatMicro(def.id, target)}${def.limit ? ' max' : ''}, ${MICRO_STATUS_LABEL[status]}. See what contributed.`}
+      className="block w-full px-1 py-2.5 text-left transition-transform active:scale-[0.99]"
     >
       <div className="flex items-baseline gap-2">
         <span className="flex-1 text-[13.5px] font-semibold">{def.label}</span>
@@ -33,12 +34,7 @@ export function MicroBar({ row, expanded, onToggle }: Props) {
           {formatMicro(def.id, value)} / {formatMicro(def.id, target)}
           {def.limit && ' max'}
         </span>
-        <IconChevronDown
-          width={15}
-          height={15}
-          className="shrink-0 text-muted transition-transform duration-200"
-          style={{ transform: `rotate(${expanded ? 180 : 0}deg)` }}
-        />
+        <IconChevronRight width={15} height={15} className="shrink-0 text-muted" />
       </div>
 
       <div className="mt-1.5 flex items-center gap-2">
@@ -58,6 +54,6 @@ export function MicroBar({ row, expanded, onToggle }: Props) {
           {pct}% · {MICRO_STATUS_LABEL[status]}
         </span>
       </div>
-    </button>
+    </Link>
   );
 }
