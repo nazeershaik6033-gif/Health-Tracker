@@ -1,5 +1,6 @@
 import type { ProviderId, Settings } from '@/types';
 import { AIError, PROVIDER_META, keyShapeWarning, type ProviderAdapter } from './types';
+import { withDeadline } from './deadline';
 import { createAnthropic } from './anthropic';
 import { createGemini } from './gemini';
 import { createOpenRouter } from './openrouter';
@@ -28,12 +29,35 @@ export function getAdapter(settings: Settings): ProviderAdapter {
   const model = modelFor(settings);
   switch (id) {
     case 'anthropic':
-      return createAnthropic(key, model);
+      return deadlined(createAnthropic(key, model));
     case 'gemini':
-      return createGemini(key, model);
+      return deadlined(createGemini(key, model));
     case 'openrouter':
-      return createOpenRouter(key, model);
+      return deadlined(createOpenRouter(key, model));
   }
+}
+
+/**
+ * Puts a deadline on every one-shot call, for every provider, in one place.
+ *
+ * Wrapping here rather than at each `fetch` is what makes it true of the whole
+ * app: label reading, photo analysis, voice parsing, food generation, insights
+ * and plans all reach a model through this function, and every one of them
+ * could previously hang forever on a connection that simply stopped answering.
+ *
+ * `chat` is deliberately left alone. It streams, so a long-running call is the
+ * normal case rather than a symptom, and the text arriving on screen is its own
+ * progress indicator — a caller that wants to stop it already has the signal to
+ * do so.
+ */
+function deadlined(adapter: ProviderAdapter): ProviderAdapter {
+  return {
+    ...adapter,
+    vision: (images, prompt, opts = {}) =>
+      withDeadline((signal) => adapter.vision(images, prompt, { ...opts, signal }), opts.signal),
+    extract: (prompt, opts = {}) =>
+      withDeadline((signal) => adapter.extract(prompt, { ...opts, signal }), opts.signal),
+  };
 }
 
 /** Cheap round-trip used by Settings to verify a pasted key actually works. */

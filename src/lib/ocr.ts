@@ -20,21 +20,79 @@ export interface LabelReading {
 
 let workerPromise: Promise<import('tesseract.js').Worker> | null = null;
 
+/**
+ * Where the Tesseract runtime is served from.
+ *
+ * Left to itself, tesseract.js downloads its worker script, its wasm core and
+ * the English model from jsDelivr on first use — three requests to a third
+ * party, at the exact moment this reader is supposed to be proving it needs
+ * nothing but the phone. On a plane, behind a filter, or in an installed PWA
+ * with no connection, it hung and then failed. The files are vendored into
+ * `public/tesseract/` instead; see the README there.
+ *
+ * `BASE_URL` because the app is served from `/` locally and `/<repo>/` on
+ * GitHub Pages, and these are absolute paths, not relative ones.
+ */
+const RUNTIME = `${import.meta.env.BASE_URL}tesseract`;
+
 async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const { createWorker } = await import('tesseract.js');
-      return createWorker('eng');
+      const { createWorker, OEM } = await import('tesseract.js');
+      // `corePath` and `langPath` are directories on purpose: tesseract.js
+      // feature-detects wasm SIMD and appends the core filename itself, and
+      // appends `eng.traineddata.gz` to the language path. Naming one core
+      // explicitly would hand the SIMD decision to us and get it wrong on
+      // some device we cannot test.
+      return createWorker('eng', OEM.LSTM_ONLY, {
+        workerPath: `${RUNTIME}/worker.min.js`,
+        corePath: RUNTIME,
+        langPath: RUNTIME,
+        // The vendored model is the gzipped one, matching what the CDN
+        // default would have served for an LSTM-only worker.
+        gzip: true,
+      });
     })();
   }
   return workerPromise;
 }
 
+/**
+ * Loads the worker, the core and the model without recognising anything.
+ *
+ * ~7 MB has to arrive before the first read can start, and the natural moment
+ * to spend it is while the user is still lining the pack up in the frame
+ * rather than after they press the shutter. It also means an install that has
+ * opened this screen once has the whole runtime in the service worker's cache,
+ * which is what makes the offline reader genuinely work offline instead of
+ * only working on a network.
+ *
+ * Failure is deliberately silent: this is an optimisation, and the read that
+ * follows will surface any real problem itself.
+ */
+export async function warmOCR(): Promise<void> {
+  try {
+    await getWorker();
+  } catch {
+    workerPromise = null;
+  }
+}
+
 export async function terminateOCR(): Promise<void> {
   if (!workerPromise) return;
-  const worker = await workerPromise;
-  await worker.terminate();
+  // Cleared first: this is also how a cancelled read stops an in-flight
+  // recognise, so a caller that immediately starts another must get a fresh
+  // worker rather than await the one being torn down.
+  const pending = workerPromise;
   workerPromise = null;
+  try {
+    const worker = await pending;
+    await worker.terminate();
+  } catch {
+    // A worker that never finished starting has nothing to terminate, and
+    // failing to clean up is not worth surfacing over whatever went wrong
+    // first.
+  }
 }
 
 /**

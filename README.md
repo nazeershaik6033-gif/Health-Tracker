@@ -66,7 +66,7 @@ a browser bug, not a deployment one.
 |---|---|
 | **Snap** | Photograph a plate; a vision model identifies each item, estimates portions and macros, scores the meal 0–10 and writes a short take |
 | **Barcode** | Scan a packaged product; looked up in [Open Food Facts](https://world.openfoodfacts.org) (free, ~3M products, no key), trying each valid form of the code. Known by name but with no panel → the AI estimate works from the product name, not the digits |
-| **Label** | Point at a nutrition panel; read by AI vision, or on-device OCR when no key is set |
+| **Label** | Point at a nutrition panel; read by AI vision, or on-device OCR when no key is set. Cancellable while it works, and it gives up on its own rather than spinning forever |
 | **Voice** | "Two rotis, a katori of dal and a glass of milk" → structured entries |
 | **Search** | ~165 bundled foods, Indian-first with native units (roti, katori, glass, idli, dosa), plus anything you've saved. Fuzzy matched, works offline |
 
@@ -79,7 +79,11 @@ tracked as a limit rather than a goal.
 
 Every bundled food carries per-100 g figures from IFCT 2017 and USDA
 FoodData Central; barcode lookups take whatever the product declares, and
-AI-generated foods are asked for the panel too. A **Completed** label appears
+AI-generated foods are asked for the panel too. A food you create or edit by
+hand has a **Micronutrients (optional)** section for the same twelve, entered
+per serving off the pack and collapsed until you want it — blank means unknown
+there, not zero, so only what you actually fill in is ever counted. A
+**Completed** label appears
 at the top of the day once every nutrient clears its target (or, for sodium,
 stays under its ceiling) — the same "done" signal a finished streak gets,
 rather than something to infer from twelve green rows.
@@ -105,7 +109,11 @@ Micronutrient data is patchy everywhere in the world, so the screen reports
 **coverage**: what share of the day's calories the figures actually saw, and
 which items had no data. A photo-logged restaurant meal contributes none, and
 the app says so rather than reporting a deficiency that is really a gap in the
-data.
+data. The items it names are tappable — each one opens that food's editor at
+the micronutrient fields, so the note is a route to fixing the gap rather than
+only a statement of it. Filling them in also reaches backwards: meals already
+logged from that food get the numbers they never had, because a blank was
+never something you logged. Nothing that *was* recorded is rewritten.
 
 **Trackers** — water, sleep, weight, workouts and steps, each with a goal, an
 entry flow and a trend chart.
@@ -174,6 +182,12 @@ AI-only surfaces explain what a key would add instead of silently disappearing:
 - The home insight card computes a real local summary from your day
 - Label scanning falls back to on-device OCR (Tesseract) with editable values
 - Snap, Voice, Coach and Plans link to Settings
+
+"Without a network" is meant literally: the Tesseract worker, its wasm core and
+the English model are vendored into `public/tesseract/` rather than fetched
+from a CDN on first use, and the Label screen starts pulling them while you are
+still framing the shot. See `public/tesseract/README.md` for what is vendored
+and how to refresh it.
 
 ---
 
@@ -363,6 +377,18 @@ reference data, the units and the maths; the seed table is joined onto the food
 catalog by name at seed time, and drift between the two files is shouted about
 in dev.
 
+**Every one-shot AI call has a deadline, applied in one place.** `getAdapter`
+wraps each provider's `vision` and `extract` in `ai/deadline.ts`, so a request
+that is accepted and then never answered fails as a typed `timeout` after 75
+seconds instead of leaving a screen mid-thought. The adapters had always
+threaded the caller's `AbortSignal` into `fetch`, which covers a user pressing
+Cancel and nothing else. A timeout is deliberately not left as the bare
+`AbortError` a stalled fetch throws — the two are indistinguishable at the
+catch site and mean opposite things to read ("you cancelled this" versus "the
+provider went quiet"), and it is marked unrepairable so the retry pass doesn't
+silently double the wait. Streaming `chat` is excluded: text arriving on screen
+is its own progress indicator.
+
 **Workout sessions extend `WorkoutEntry` rather than replacing it.** The
 per-exercise detail lives in an optional `exercises` array while `type`,
 `durationMin` and `kcal` stay populated as roll-ups, so day totals, streaks,
@@ -482,6 +508,9 @@ time.
   diagnosed deficiencies all change them, and the app does not model any of it
 - On-device OCR is a fallback and is noticeably worse than AI vision on
   curved or glare-affected packaging
+- The OCR runtime is ~7 MB and is downloaded on first use of the Label screen
+  without a key, not precached with the app shell. It is cached hard from then
+  on, but the very first read on a fresh install does need a network
 - **No barcode database is complete, and this app has no product database of
   its own.** Open Food Facts is crowd-sourced and thin on Indian retail, so
   local and unbranded products are often genuinely absent — trying every form

@@ -75,9 +75,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,json}'],
-        // The zxing wasm binary and tesseract worker are lazy-loaded; keep
-        // them out of the precache so first install stays small.
-        globIgnores: ['**/*.wasm', '**/tesseract*'],
+        // The zxing wasm binary and the vendored Tesseract runtime are
+        // lazy-loaded and add up to ~11 MB. Precaching them would make every
+        // first install pay for an OCR path most users with an AI key never
+        // touch; the service worker caches them hard on first *use* instead.
+        globIgnores: ['**/*.wasm', '**/tesseract/**'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: { enabled: false, type: 'module' },

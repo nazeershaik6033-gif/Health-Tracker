@@ -1,12 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
-import { addMealItems, createFood, getFood, upsertFood } from '@/db/repo';
+import {
+  addMealItems,
+  applyFoodMicrosToHistory,
+  createFood,
+  getFood,
+  upsertFood,
+} from '@/db/repo';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
+import { MICROS, hasMicros, roundMicros } from '@/lib/micros';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
-import { IconPlus, IconTrash } from '@/components/icons';
-import { MEAL_SLOT_LABEL, type Food, type MealSlot, type Serving } from '@/types';
+import { IconChevronDown, IconPlus, IconTrash } from '@/components/icons';
+import {
+  MEAL_SLOT_LABEL,
+  type Food,
+  type MealSlot,
+  type MicroId,
+  type Micros,
+  type Serving,
+} from '@/types';
 
 /**
  * Create a food by hand.
@@ -17,6 +31,9 @@ import { MEAL_SLOT_LABEL, type Food, type MealSlot, type Serving } from '@/types
  *
  * Values are entered per serving, because that is how a recipe or a packet
  * reads, and converted to the per-100g basis everything else calculates on.
+ * That applies to the micronutrients too: a pack lists iron per serving, and
+ * asking someone to divide by 1.4 before typing is how figures get entered
+ * wrong.
  */
 export default function FoodEditor() {
   const navigate = useNavigate();
@@ -36,6 +53,16 @@ export default function FoodEditor() {
   const [fat, setFat] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fibre, setFibre] = useState('');
+  /**
+   * Micronutrients as typed, per serving, keyed by nutrient.
+   *
+   * Strings rather than numbers because blank has to survive round-tripping:
+   * every other figure in this editor treats an empty box as zero, and here
+   * that would be a lie. A food with no iron figure is not a food with no
+   * iron — it is a food nobody has measured — and the day view counts on the
+   * difference to work out how much of the day it actually saw.
+   */
+  const [microInput, setMicroInput] = useState<Partial<Record<MicroId, string>>>({});
   const [extra, setExtra] = useState<Serving[]>([]);
   const [extraLabel, setExtraLabel] = useState('');
   const [extraGrams, setExtraGrams] = useState('');
@@ -65,6 +92,16 @@ export default function FoodEditor() {
       setFat(String(Math.round(food.per100g.fat * factor * 10) / 10));
       setCarbs(String(Math.round(food.per100g.carbs * factor * 10) / 10));
       setFibre(String(Math.round(food.per100g.fibre * factor * 10) / 10));
+      const loadedMicros: Partial<Record<MicroId, string>> = {};
+      for (const def of MICROS) {
+        const per100 = food.micros?.[def.id];
+        if (per100 === undefined) continue;
+        const value = per100 * factor;
+        loadedMicros[def.id] = String(
+          value >= 10 ? Math.round(value) : Math.round(value * 100) / 100,
+        );
+      }
+      setMicroInput(loadedMicros);
       // Everything after the first serving, minus the 100 g row the editor adds.
       setExtra(food.servings.slice(1).filter((sv) => sv.grams !== 100));
       setSource(food.source);
@@ -99,6 +136,29 @@ export default function FoodEditor() {
     fibre: grams ? (num(fibre) * 100) / grams : 0,
   };
 
+  /**
+   * The typed micronutrients, per 100 g, or undefined when none were given.
+   *
+   * Only boxes with something in them become keys. Blank stays absent rather
+   * than becoming zero, which is what lets `hasMicros` and the day's coverage
+   * figure keep telling the truth about what is known and what merely wasn't
+   * filled in.
+   */
+  const micros: Micros | undefined = (() => {
+    if (!grams) return undefined;
+    const out: Micros = {};
+    for (const def of MICROS) {
+      const raw = microInput[def.id]?.trim();
+      if (!raw) continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) continue;
+      out[def.id] = (n * 100) / grams;
+    }
+    return hasMicros(out) ? roundMicros(out) : undefined;
+  })();
+
+  const microCount = MICROS.filter((def) => micros?.[def.id] !== undefined).length;
+
   async function save(logTo?: MealSlot) {
     if (!valid || saving) return;
     setSaving(true);
@@ -107,6 +167,10 @@ export default function FoodEditor() {
         name: trimmedName,
         brand: brand.trim() || undefined,
         per100g,
+        // Always present, even as undefined: `upsertFood` merges over the
+        // stored row, so an omitted key would keep whatever micros were there
+        // before and clearing the fields would appear to do nothing.
+        micros,
         servings,
         // Keep a built-in food's provenance when it is edited; only genuinely
         // new rows are marked custom.
@@ -116,6 +180,12 @@ export default function FoodEditor() {
       };
       const food = id ? await upsertFood({ ...draft, id }) : await createFood(draft);
 
+      // Give the micronutrients to meals already logged from this food. Only
+      // items carrying none are touched, so nothing recorded is rewritten —
+      // but the day that sent the user here stops naming this food as missing
+      // data they have now typed in.
+      const filled = micros ? await applyFoodMicrosToHistory(food.id, micros) : 0;
+
       if (logTo) {
         await addMealItems(selectedDate, logTo, [
           buildMealItem(food, servings[0].label, 1),
@@ -124,7 +194,13 @@ export default function FoodEditor() {
         navigate('/diet');
       } else {
         showToast({
-          message: editing ? `${food.name} updated` : `${food.name} saved to your foods`,
+          message: filled
+            ? `${food.name} updated — micronutrients added to ${filled} logged ${
+                filled === 1 ? 'entry' : 'entries'
+              }`
+            : editing
+              ? `${food.name} updated`
+              : `${food.name} saved to your foods`,
         });
         navigate(-1);
       }
@@ -150,7 +226,8 @@ export default function FoodEditor() {
       {editing && (
         <p className="mx-4 mt-3 accent-card accent-amber p-3 text-[11.5px] leading-relaxed">
           Meals you have already logged keep the numbers they were logged with — changing this
-          food only affects what you add from now on.
+          food only affects what you add from now on. Micronutrients are the exception: those
+          fill in backwards too, since a blank there was never a number you logged.
         </p>
       )}
 
@@ -241,6 +318,81 @@ export default function FoodEditor() {
           </p>
         </Card>
 
+        {/*
+          Micronutrients. Collapsed, because most foods are logged without
+          them and twelve extra boxes above the Save button would make the
+          common case worse. Open, it is the only way to give a home-cooked
+          dish or a hand-typed packet any micro data at all — which is what
+          the Micronutrients screen means when it says it is working from a
+          fraction of the day.
+        */}
+        <details className="surface-card group rounded-2xl px-4 py-3.5">
+          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <SectionTitle
+              action={
+                <span className="flex items-center gap-2">
+                  {microCount > 0 && (
+                    <span className="tint-soft tint-brand tabular rounded-full px-2 py-0.5 text-[11px] font-bold">
+                      {microCount}
+                    </span>
+                  )}
+                  <IconChevronDown
+                    width={16}
+                    height={16}
+                    className="text-muted transition-transform group-open:rotate-180"
+                  />
+                </span>
+              }
+            >
+              Micronutrients (optional)
+            </SectionTitle>
+          </summary>
+
+          <div className="space-y-3">
+            <p className="text-[11.5px] leading-relaxed text-muted">
+              Per serving, straight off the pack. Leave anything you don't know{' '}
+              <strong className="font-semibold">blank</strong> — blank means unknown, not zero,
+              and only the ones you fill in are counted.
+            </p>
+
+            {(['mineral', 'vitamin'] as const).map((group) => (
+              <div key={group}>
+                <p className="mb-1.5 text-[11px] font-bold tracking-wide text-muted uppercase">
+                  {group === 'mineral' ? 'Minerals' : 'Vitamins'}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {MICROS.filter((def) => def.group === group).map((def) => (
+                    <Field
+                      key={def.id}
+                      label={def.label}
+                      value={microInput[def.id] ?? ''}
+                      onChange={(e) =>
+                        setMicroInput((prev) => ({
+                          ...prev,
+                          [def.id]: e.target.value.replace(/[^0-9.]/g, ''),
+                        }))
+                      }
+                      inputMode="decimal"
+                      placeholder="—"
+                      suffix={def.unit}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {microCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setMicroInput({})}
+                className="text-[12px] font-semibold text-red-600"
+              >
+                Clear all {microCount}
+              </button>
+            )}
+          </div>
+        </details>
+
         {/* Extra servings, so "1 katori" and "1 bowl" can both exist. */}
         <Card className="space-y-3">
           <SectionTitle>Other servings (optional)</SectionTitle>
@@ -312,6 +464,8 @@ export default function FoodEditor() {
             </div>
             <p className="mt-2 text-center text-[11.5px] text-muted">
               {servingLabel.trim() || '1 serving'} = {Math.round(preview.kcal)} Cal
+              {microCount > 0 &&
+                ` · ${microCount} micronutrient${microCount === 1 ? '' : 's'}`}
             </p>
           </Card>
         )}
