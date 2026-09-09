@@ -87,6 +87,10 @@ function fixedBottom(): number | null {
   return probe.getBoundingClientRect().bottom;
 }
 
+/**
+ * `measure` forces a synchronous layout (the probe has to be read back), so it
+ * is deliberately not run for scroll-driven passes — see `schedule`.
+ */
 function measure(): ViewportRect {
   const vv = window.visualViewport;
   if (!vv) return { top: 0, height: window.innerHeight, keyboard: 0 };
@@ -149,9 +153,16 @@ function publish(next: ViewportRect): void {
   const keyboardChanged = next.keyboard !== current.keyboard;
   current = next;
 
-  const root = document.documentElement;
-  root.style.setProperty('--kb-inset', `${next.keyboard}px`);
+  // Only when the keyboard genuinely moved. `top` and `height` change on
+  // every frame of a scroll as Safari's toolbars collapse, and writing a
+  // custom property on <html> invalidates style for the *entire* document —
+  // so doing it unconditionally here meant a full-page style recalculation on
+  // every scroll frame, on the main thread, while the compositor was trying
+  // to scroll. That was the single largest source of scroll jank in the app.
+  // Nothing in CSS reads the other two fields, so they cost nothing to hold.
   if (keyboardChanged) {
+    const root = document.documentElement;
+    root.style.setProperty('--kb-inset', `${next.keyboard}px`);
     if (next.keyboard > 0) root.setAttribute('data-keyboard', 'open');
     else root.removeAttribute('data-keyboard');
   }
@@ -180,8 +191,12 @@ export function installViewportMetrics(): void {
   publish(measure());
 
   const vv = window.visualViewport;
+  // `resize` only. `visualViewport` also fires `scroll` continuously on iOS
+  // while the page is scrolled, and subscribing to it meant a forced layout
+  // (the probe read inside `measure`) on every frame of every fling. The
+  // keyboard cannot open or close without a resize, so scroll told us nothing
+  // we did not already know — it only cost frames.
   vv?.addEventListener('resize', schedule);
-  vv?.addEventListener('scroll', schedule);
   window.addEventListener('resize', schedule);
 
   // Rotation genuinely changes the safe areas, so this is the one place the
