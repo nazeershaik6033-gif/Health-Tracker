@@ -1,6 +1,56 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
+   Typeface
+
+   Archivo, self-hosted. Two reasons it is a file in `public/` and not a
+   Google Fonts <link>: this is an offline-first PWA, so a webfont that needs
+   the network is a webfont that vanishes on a plane; and a third-party
+   stylesheet is a second render-blocking round trip before any text paints.
+   `woff2` is already in the service worker's precache glob, so it installs
+   with the app.
+
+   One file, two axes. Archivo is variable on *both* weight (100-900) and
+   width (62-125%), which is the whole reason it was chosen over a
+   two-family pairing: the condensed uppercase headings and the normal-width
+   body text in the reference app are the same typeface at different widths,
+   and shipping that as one 88KB file rather than two static families is what
+   keeps the cost honest.
+
+   `latin-ext` is a separate face rather than one merged file: `unicode-range`
+   means a phone only ever downloads it if a food name actually contains one
+   of those characters, so the common case pays 88KB, not 172KB.
+
+   `font-display: swap` deliberately. The fallback stack below is metrically
+   close enough that the reflow is not violent, and on a cold install showing
+   nothing until a font arrives is worse than showing the system face for a
+   frame.
+--------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url('/fonts/archivo-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url('/fonts/archivo-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ---------------------------------------------------------------------------
    Design tokens
    Sampled from the reference app: emerald primary, orange on food actions,
    warm off-white canvas, white cards, pastel tracker rings.
@@ -241,6 +291,19 @@
   --dur-count: 560ms;
 }
 
+/* ------------------------------------------------------------------ type
+   One family at two widths. The fallbacks are listed so that a cold install
+   with the font still in flight, or a browser that rejects the file, lands on
+   the platform grotesque rather than on Times. */
+:root {
+  --font-sans:
+    'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', system-ui, sans-serif;
+  /* Same stack; the condensed look comes from `font-stretch`, not a second
+     family, so the fallback degrades to normal-width rather than to nothing. */
+  --font-display: var(--font-sans);
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
@@ -255,12 +318,41 @@
     margin: 0;
     background: var(--surface-canvas);
     color: var(--text-primary);
-    font-family:
-      'Inter var', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-      'Helvetica Neue', system-ui, sans-serif;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* iOS inflates text in some containers when the page is rotated or a
+       column is narrow, which silently breaks the type scale below. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     overscroll-behavior-y: none;
+  }
+
+  /* -------------------------------------------------------------- display
+     Section headings. The reference app sets every one of them in condensed
+     uppercase with tracking pulled tight, which is what makes a plain list of
+     sections read as a designed hierarchy rather than as bold body text.
+
+     `font-stretch` is the whole point of shipping a variable font with a
+     width axis: this is the same file as the body text, so a heading costs no
+     extra bytes. 78% is narrow enough to read as condensed at a glance and
+     wide enough to stay legible at 13px, which is where most of these land.
+
+     `text-wrap: balance` because these are 2-4 words and a one-word orphan on
+     the second line is the usual failure. */
+  .display {
+    font-family: var(--font-display);
+    font-stretch: 78%;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
   }
 
   /* Numeric readouts (calories, macros, weights) line up in columns */
@@ -315,12 +407,24 @@
 }
 
 @layer components {
+  /* Flat, with a hairline instead of a drop shadow. Two reasons, and they
+     happen to be the same change.
+
+     Visually, the reference app separates content with edges and whitespace
+     and casts no shadows at all; a soft shadow under every card is what made
+     this app read as a 2016 material sheet next to it.
+
+     Mechanically, a 16px-blur shadow on every card is a large blurred region
+     the compositor has to re-raster whenever the card moves, and during a
+     scroll every card moves. An inset hairline has no blur radius and no
+     spread, so it rasters as part of the card's own tile.
+
+     Inset rather than a `border` so the ring costs no layout: adding a real
+     1px border to every card would shift the contents of all of them. */
   .surface-card {
     background: var(--surface-card);
     border-radius: var(--radius-card);
-    box-shadow:
-      0 1px 2px rgb(16 20 19 / 0.04),
-      0 6px 16px -8px rgb(16 20 19 / 0.1);
+    box-shadow: inset 0 0 0 1px var(--surface-border);
   }
 
   .surface-sunken {
@@ -647,8 +751,8 @@
    property set per item; the cap keeps a 60-row list from taking two seconds
    to finish, since anything past the fold is invisible anyway. */
 .stagger > * {
-  animation: rise-in 0.32s var(--ease-settle) both;
-  animation-delay: calc(min(var(--i, 0), 12) * 22ms);
+  animation: rise-in 0.22s var(--ease-settle) both;
+  animation-delay: calc(min(var(--i, 0), 6) * 14ms);
 }
 
 /* Long lists skip layout and paint for off-screen rows, which is what keeps

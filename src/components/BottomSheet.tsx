@@ -140,6 +140,12 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
     const vv = window.visualViewport;
     if (!el || !vv) return;
 
+    // Write, read, write — which means this forces a synchronous layout every
+    // time it runs. That is affordable once per frame and ruinous per event:
+    // `visualViewport` fires `scroll` many times per frame on iOS, and running
+    // it unbatched stalled the main thread for exactly as long as a sheet was
+    // open. Hence the rAF coalescing below; this function is never called
+    // directly from a listener.
     const sync = () => {
       el.style.height = '';
       const rect = el.getBoundingClientRect();
@@ -147,20 +153,30 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
       if (Math.abs(delta) > 0.5) el.style.height = `${rect.height + delta}px`;
     };
 
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
+    };
+
     sync();
     // iOS settles the viewport over roughly a second after the sheet opens or
     // the keyboard moves, and fires no event once it lands — hence the fixed
     // re-measure points.
     const timers = [120, 500, 1200].map((ms) => setTimeout(sync, ms));
-    vv.addEventListener('resize', sync);
-    vv.addEventListener('scroll', sync);
-    window.addEventListener('orientationchange', sync);
+    vv.addEventListener('resize', schedule);
+    vv.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('orientationchange', schedule);
 
     return () => {
       timers.forEach(clearTimeout);
-      vv.removeEventListener('resize', sync);
-      vv.removeEventListener('scroll', sync);
-      window.removeEventListener('orientationchange', sync);
+      if (frame) cancelAnimationFrame(frame);
+      vv.removeEventListener('resize', schedule);
+      vv.removeEventListener('scroll', schedule);
+      window.removeEventListener('orientationchange', schedule);
     };
   }, [mounted, keyboard]);
 

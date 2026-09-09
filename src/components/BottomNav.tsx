@@ -46,33 +46,74 @@ export function BottomNav() {
     const vv = window.visualViewport;
     if (!el || !vv) return;
 
-    const sync = () => {
-      const rect = el.getBoundingClientRect();
-      // A hidden bar reports an empty rect; measuring against that would
-      // compute a bogus shift and translate it off-screen for good.
-      if (rect.width === 0 && rect.height === 0) return;
-      const shift = Math.max(0, vv.height + vv.offsetTop - rect.bottom);
+    // Where the bar's bottom edge sits with no correction applied, in layout
+    // coordinates. Cached rather than re-read, because reading it back is a
+    // forced synchronous layout and this used to happen on every one of the
+    // `scroll` events iOS fires throughout a fling — a layout flush followed
+    // immediately by a style write, which is textbook layout thrashing and
+    // stalled the main thread for the whole gesture.
+    //
+    // Caching is sound: the bar is `position: fixed` with fixed padding, so
+    // scrolling cannot move its untransformed box. Only a resize, a rotation
+    // or the keyboard can, and each of those re-measures below.
+    let base: number | null = null;
+    let shift = 0;
+    let frame = 0;
+
+    // Pure arithmetic on the visual viewport — no layout read, so this is
+    // cheap enough to run on every scroll frame.
+    const apply = () => {
+      if (base === null) return;
+      const next = Math.max(0, vv.height + vv.offsetTop - base);
+      // Sub-pixel churn would rewrite the transform every frame for no visible
+      // change, and each rewrite re-composites the layer.
+      if (Math.abs(next - shift) < 0.5) return;
+      // Tracks what is actually on the element, not what was computed: below
+      // the threshold the transform is cleared, so recording `next` there
+      // would leave `remeasure` subtracting an offset that isn't applied.
+      shift = next > 0.5 ? next : 0;
       // translate3d rather than translateY: this inline transform overrides
       // `.dock`'s own, and a 2D one would give the compositor a weaker hint
       // than the layer promotion the bar is relying on to scroll smoothly.
       // Clearing it falls back to the class, which keeps that promotion.
       el.style.transform =
-        shift > 0.5 ? `translate3d(0, ${shift.toFixed(2)}px, 0)` : '';
+        next > 0.5 ? `translate3d(0, ${next.toFixed(2)}px, 0)` : '';
     };
 
-    sync();
+    // The one place that touches layout. `rect.bottom` already includes our
+    // own translate, so subtracting it back out recovers the untransformed
+    // edge without having to clear the transform and re-read.
+    const remeasure = () => {
+      const rect = el.getBoundingClientRect();
+      // A hidden bar reports an empty rect; measuring against that would
+      // compute a bogus shift and translate it off-screen for good.
+      if (rect.width === 0 && rect.height === 0) return;
+      base = rect.bottom - shift;
+      apply();
+    };
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        apply();
+      });
+    };
+
+    remeasure();
     // The viewport settles over about a second after a toolbar or keyboard
     // transition, and fires no event once it lands.
-    const timers = [120, 500, 1200].map((ms) => setTimeout(sync, ms));
-    vv.addEventListener('resize', sync);
-    vv.addEventListener('scroll', sync);
-    window.addEventListener('orientationchange', sync);
+    const timers = [120, 500, 1200].map((ms) => setTimeout(remeasure, ms));
+    vv.addEventListener('resize', remeasure);
+    vv.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('orientationchange', remeasure);
 
     return () => {
       timers.forEach(clearTimeout);
-      vv.removeEventListener('resize', sync);
-      vv.removeEventListener('scroll', sync);
-      window.removeEventListener('orientationchange', sync);
+      if (frame) cancelAnimationFrame(frame);
+      vv.removeEventListener('resize', remeasure);
+      vv.removeEventListener('scroll', onScroll);
+      window.removeEventListener('orientationchange', remeasure);
     };
   }, [keyboardOpen]);
 

@@ -59,10 +59,25 @@ export function Card({
   return <div className={`surface-card ${padded ? 'p-4' : ''} ${className}`}>{children}</div>;
 }
 
+/**
+ * Every "Today", "Meals", "Trackers" heading in the app.
+ *
+ * Set in condensed uppercase rather than at 15px bold, which is the single
+ * change that does most of the work in making a stack of sections read as a
+ * hierarchy instead of as bold body copy. The reference app sets all of its
+ * section headings this way, and because the app's typeface is variable on
+ * the width axis the condensed cut is the same font file as the body text —
+ * so the whole treatment costs nothing to ship. See `.display` in
+ * styles/index.css.
+ *
+ * Smaller than what it replaces, on purpose: uppercase reads about two points
+ * larger than mixed case at the same size, so 13px here sits at roughly the
+ * weight 15px bold did while leaving more air above the content.
+ */
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-2.5 flex items-center justify-between">
-      <h2 className="text-[15px] font-bold tracking-tight">{children}</h2>
+    <div className="mb-2.5 flex items-baseline justify-between gap-3">
+      <h2 className="display text-[13px] leading-tight">{children}</h2>
       {action}
     </div>
   );
