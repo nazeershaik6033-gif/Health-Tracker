@@ -472,6 +472,32 @@ export const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'black', label: 'Black' },
 ];
 
+/**
+ * Typeface options. All four are system-available or already-bundled stacks —
+ * no new webfont fetch — so the offline-first guarantee (see the font-face
+ * comment in styles/index.css) holds for every choice, not just the default.
+ */
+export type FontFamilyId = 'sans' | 'system' | 'serif' | 'mono';
+
+export const FONT_FAMILIES: { id: FontFamilyId; label: string }[] = [
+  { id: 'sans', label: 'Default' },
+  { id: 'system', label: 'System' },
+  { id: 'serif', label: 'Serif' },
+  { id: 'mono', label: 'Mono' },
+];
+
+/** Overall text/UI scale. Applied as a page zoom, so it grows everything a
+ *  browser's own zoom would — including the many components sized in
+ *  fixed pixels, which a root `font-size` change alone would not reach. */
+export type FontSizeId = 'sm' | 'md' | 'lg' | 'xl';
+
+export const FONT_SIZES: { id: FontSizeId; label: string }[] = [
+  { id: 'sm', label: 'S' },
+  { id: 'md', label: 'M' },
+  { id: 'lg', label: 'L' },
+  { id: 'xl', label: 'XL' },
+];
+
 export type ProviderId = 'anthropic' | 'gemini' | 'openrouter';
 
 /**
@@ -513,6 +539,8 @@ export interface Settings {
   fatsecret: FatSecretConfig;
   autoTrack: boolean;
   theme: ThemeId;
+  fontFamily: FontFamilyId;
+  fontSize: FontSizeId;
   onboardingDone: boolean;
   lastInsightDate?: string;
   /** Set on every successful export, so the app can say how stale a backup is. */

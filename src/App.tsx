@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useTheme } from '@/lib/theme';
+import { useTypography } from '@/lib/typography';
 import { useDayRollover } from '@/lib/dayRollover';
 import { routeDirection } from '@/lib/motion';
 import { BottomNav, NAV_ORDER } from '@/components/BottomNav';
@@ -72,6 +73,7 @@ export default function App() {
   const { ready, profile, settings, init } = useApp();
   const location = useLocation();
   useTheme(settings.theme);
+  useTypography(settings.fontFamily, settings.fontSize);
   useDayRollover();
 
   useEffect(() => {
@@ -124,7 +126,7 @@ export default function App() {
   );
 
   return (
-    <div className="mx-auto min-h-dvh w-full max-w-lg">
+    <div className="mx-auto min-h-dvh w-full shell-w">
       <main className={fullscreen ? '' : 'pb-24'}>
         {/*
           Keyed on the path so each screen replays its entrance. React Router
@@ -197,7 +199,7 @@ export default function App() {
 
 function BootSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-lg space-y-3 px-4 pt-safe">
+    <div className="mx-auto w-full shell-w space-y-3 px-4 pt-safe">
       <div className="flex items-center gap-2 pt-3">
         <Skeleton className="h-9 w-9 rounded-full" />
         <div className="flex-1" />

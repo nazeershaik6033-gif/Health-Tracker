@@ -31,14 +31,36 @@ import {
   DAY_PERIODS,
   DAY_PERIOD_LABEL,
   DAY_PERIOD_SLOTS,
+  FONT_FAMILIES,
+  FONT_SIZES,
   MEAL_SLOT_LABEL,
   THEMES,
   type DayPeriod,
   type FatSecretConfig,
+  type FontFamilyId,
+  type FontSizeId,
   type Profile,
   type ProviderId,
   type Settings as SettingsType,
 } from '@/types';
+
+/** Preview stacks for the font-style swatches — matches the CSS overrides in
+ *  `[data-font-family]` so the swatch shows what selecting it actually does. */
+const FONT_STACK: Record<FontFamilyId, string> = {
+  sans: "'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif",
+  serif: "Georgia, Cambria, 'Times New Roman', Times, serif",
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+};
+
+/** Pixel sizes for the S/M/L/XL labels themselves, so the segmented control
+ *  previews the scale before the choice is even applied. */
+const FONT_SIZE_PREVIEW: Record<FontSizeId, string> = {
+  sm: '12px',
+  md: '14px',
+  lg: '16px',
+  xl: '18px',
+};
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -725,6 +747,74 @@ export default function Settings() {
               Following your device — currently {prefersDark ? 'dark' : 'light'}.
             </p>
           )}
+        </Card>
+
+        {/* ----------------------------- Text ---------------------------- */}
+        <Card className="space-y-3">
+          <SectionTitle>Font style</SectionTitle>
+          <div className="flex gap-1">
+            {FONT_FAMILIES.map(({ id, label }) => {
+              const selected = settings.fontFamily === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSettings({ fontFamily: id })}
+                  aria-pressed={selected}
+                  aria-label={`${label} font`}
+                  className="flex flex-1 flex-col items-center gap-1.5"
+                >
+                  <span
+                    className={`rounded-full border-2 p-0.5 transition-colors ${
+                      selected ? 'border-brand-500' : 'border-transparent'
+                    }`}
+                  >
+                    <span
+                      className={`hairline flex h-12 w-12 items-center justify-center rounded-full border ${
+                        selected ? 'tint-soft tint-brand' : 'surface-sunken'
+                      }`}
+                    >
+                      <span
+                        className="text-[18px] leading-none"
+                        style={{ fontFamily: FONT_STACK[id] }}
+                        aria-hidden="true"
+                      >
+                        Aa
+                      </span>
+                    </span>
+                  </span>
+                  <span
+                    className={`text-[11.5px] ${
+                      selected ? 'font-bold' : 'font-medium text-muted'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <SectionTitle>Font size</SectionTitle>
+          <div className="surface-sunken flex gap-1 rounded-xl p-1">
+            {FONT_SIZES.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSettings({ fontSize: id })}
+                aria-pressed={settings.fontSize === id}
+                className={`flex-1 rounded-lg py-2 font-semibold transition-colors ${
+                  settings.fontSize === id ? 'bg-[var(--surface-card)] shadow-sm' : 'text-secondary'
+                }`}
+                style={{ fontSize: FONT_SIZE_PREVIEW[id] }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[13px] leading-relaxed text-secondary">
+            Sample text at this size — calories, macros and every screen scale with it.
+          </p>
         </Card>
 
         {/* ---------------------------- Motion -------------------------- */}

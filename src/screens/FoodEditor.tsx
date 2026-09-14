@@ -471,7 +471,7 @@ export default function FoodEditor() {
         )}
       </div>
 
-      <div className="dock inset-x-0 z-20 mx-auto flex max-w-lg gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
+      <div className="dock inset-x-0 z-20 mx-auto flex shell-w gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
         <Button variant="secondary" disabled={!valid || saving} onClick={() => save()}>
           {editing ? 'Save' : 'Save only'}
         </Button>

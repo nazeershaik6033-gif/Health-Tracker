@@ -304,6 +304,63 @@
   --font-display: var(--font-sans);
 }
 
+/* Font style picker (Settings → Appearance). Every alternative is a system
+   stack already resident on the device — never a webfont fetch — so switching
+   away from Archivo costs nothing offline. Selected by `data-font-family` on
+   <html>, set by `useTypography`; overriding the two vars above is enough
+   because every heading and body element already reads through them. */
+[data-font-family='system'] {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    system-ui, sans-serif;
+  --font-display: var(--font-sans);
+}
+[data-font-family='serif'] {
+  --font-sans: Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-display: var(--font-sans);
+}
+[data-font-family='mono'] {
+  --font-sans: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-display: var(--font-sans);
+}
+
+/* Font size picker (Settings → Appearance). Implemented as a page zoom rather
+   than a root `font-size` change: most of the app's type is set in fixed
+   pixels (`text-[12.5px]` and the like), which a `font-size` percentage on
+   <html> never reaches since px is an absolute unit. `zoom` scales the
+   rendered page the same way a browser's own zoom does, reaching every
+   pixel-sized label, icon and tap target along with the text. */
+:root {
+  --font-zoom: 1;
+}
+[data-font-size='sm'] {
+  --font-zoom: 0.925;
+}
+[data-font-size='lg'] {
+  --font-zoom: 1.1;
+}
+[data-font-size='xl'] {
+  --font-zoom: 1.225;
+}
+
+/* ---------------------------------------------------------------- landscape
+   The app shell is one centered column everywhere — the routes below, the
+   bottom nav, every screen's sticky action dock, and sheet content all share
+   `shell-w` instead of a fixed `max-w-lg` so they stay in lockstep. Portrait
+   keeps the original 32rem (Tailwind's `lg`): it was sized for a phone held
+   upright and there is no extra width to give it there. Landscape is the
+   width a phone actually gains by rotating, and without this the column stays
+   32rem and the extra width just sits empty on both sides. `min()` still caps
+   it well short of full-bleed on a tablet or a desktop browser window. */
+:root {
+  --shell-w: 32rem;
+}
+@media (orientation: landscape) {
+  :root {
+    --shell-w: min(64rem, 94vw);
+  }
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
@@ -312,6 +369,13 @@
   html {
     /* Prevent iOS rubber-band revealing the page background behind the app */
     background: var(--surface-canvas);
+    zoom: var(--font-zoom);
+  }
+
+  /* The one shared content column — see the landscape comment above for why
+     every screen reads this instead of a literal `max-w-lg`. */
+  .shell-w {
+    max-width: var(--shell-w);
   }
 
   body {

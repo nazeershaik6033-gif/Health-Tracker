@@ -93,7 +93,10 @@ export default defineConfig({
         start_url: '.',
         scope: './',
         display: 'standalone',
-        orientation: 'portrait',
+        // Was 'portrait', which locks the installed app and forces Android
+        // to letterbox it in landscape instead of actually rendering there.
+        // 'any' lets the OS rotate the app with the device.
+        orientation: 'any',
         background_color: '#F7F7F5',
         theme_color: '#14A06A',
         categories: ['health', 'fitness', 'lifestyle'],
