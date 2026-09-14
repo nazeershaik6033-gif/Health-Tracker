@@ -42,6 +42,8 @@ export const DEFAULT_SETTINGS: Settings = {
   fatsecret: DEFAULT_FATSECRET,
   autoTrack: false,
   theme: 'system',
+  fontFamily: 'sans',
+  fontSize: 'md',
   onboardingDone: false,
   backupRemindDays: 14,
   countStepKcal: true,

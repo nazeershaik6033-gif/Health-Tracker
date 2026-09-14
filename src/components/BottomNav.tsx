@@ -124,7 +124,7 @@ export function BottomNav() {
       ref={navRef}
       className="dock chrome-surface inset-x-0 z-30 border-t border-[var(--surface-border)]"
     >
-      <div className="mx-auto flex max-w-lg items-stretch justify-between px-2 pt-1.5 pb-safe">
+      <div className="mx-auto flex shell-w items-stretch justify-between px-2 pt-1.5 pb-safe">
         {left.map((item) => (
           <NavItem key={item.to} {...item} />
         ))}

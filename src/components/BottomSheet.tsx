@@ -329,7 +329,7 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative flex w-full max-w-lg flex-col outline-none ${
+        className={`relative flex w-full shell-w flex-col outline-none ${
           dragExit ? '' : closing ? 'animate-sheet-down' : 'animate-sheet-up'
         }`}
         style={{
