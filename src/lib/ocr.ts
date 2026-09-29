@@ -144,8 +144,13 @@ export function parseLabelText(text: string): Omit<LabelReading, 'raw'> {
   }
 
   // If the panel is per-serving only, scale to 100 g so the row is comparable.
+  // The gap before the unit tolerates OCR noise (glare and smudges routinely
+  // turn a plain space into a stray symbol) the same way every pattern above
+  // already tolerates noise between a label and its value — this one used to
+  // require the unit letter immediately after the number and silently missed
+  // the serving size on anything but a perfectly clean scan.
   const servings: Serving[] = [];
-  const servingMatch = text.match(/serving\s+size[^\d\n]{0,20}?([\d.,]+)\s*(g|ml)/i);
+  const servingMatch = text.match(/serving\s+size[^\d\n]{0,20}?([\d.,]+)[^\w\n]{0,3}(g|ml)\b/i);
   const servingGrams = servingMatch ? toNumber(servingMatch[1]) : null;
   const per100Declared = /per\s*100\s*(g|ml)/i.test(text);
 
@@ -160,11 +165,24 @@ export function parseLabelText(text: string): Omit<LabelReading, 'raw'> {
 
   // The product name is usually the longest all-caps or title-case line near
   // the top; that heuristic beats taking line 1, which is often a logo artefact.
+  // Boilerplate headings are excluded by name, and *any* digit disqualifies a
+  // line, not just a run of two — `\d{2,}` let "Dietary Fibre 4.5 g" through
+  // because "4.5" never puts two digits next to each other, and a nutrient
+  // value line has always been the wrong thing to name the food after.
+  const BOILERPLATE =
+    /^(nutrition\s*facts?|ingredients?|amount\s*per|per\s*100|serving\s*size|nutrition\s*information)/i;
   const name =
     text
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l.length > 3 && l.length < 40 && /[a-z]/i.test(l) && !/\d{2,}/.test(l))
+      .filter(
+        (l) =>
+          l.length > 3 &&
+          l.length < 40 &&
+          /[a-z]/i.test(l) &&
+          !/\d/.test(l) &&
+          !BOILERPLATE.test(l),
+      )
       .sort((a, b) => b.length - a.length)[0] ?? 'Scanned product';
 
   return { name, per100g, servings, matched: seen.size };
