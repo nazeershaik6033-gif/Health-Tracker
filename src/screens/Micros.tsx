@@ -64,7 +64,7 @@ export default function Micros() {
         action={
           // Every nutrient at 90%+ of target (or under the sodium ceiling) —
           // named as a label at the top rather than left to be inferred from
-          // twelve green rows, the same way the day's other done states (a
+          // a wall of green rows, the same way the day's other done states (a
           // finished streak, a closed ring) get their own badge.
           completed ? (
             <StatusPill icon={<IconCheck width={12} height={12} />}>Completed</StatusPill>
@@ -77,7 +77,7 @@ export default function Micros() {
         <EmptyState
           icon={<IconLeaf width={22} height={22} />}
           title="Nothing logged for this day"
-          body="Micronutrients are counted from what you eat. Log a meal and the vitamins and minerals appear here."
+          body="Micronutrients are counted from what you eat. Log a meal and the numbers appear here."
         />
       ) : (
         <div className="space-y-3">
@@ -159,6 +159,7 @@ export default function Micros() {
           {/* --------------------------- the nutrients ---------------------- */}
           <MicroGroupCard title="Vitamins" group="vitamin" rows={rows} date={date} />
           <MicroGroupCard title="Minerals" group="mineral" rows={rows} date={date} />
+          <MicroGroupCard title="Omega-3" group="omega3" rows={rows} date={date} />
 
           <p className="px-1 text-center text-[11px] leading-relaxed text-muted">
             Reference intakes are for a healthy adult and are not medical advice. Supplements,

@@ -234,7 +234,7 @@ export default function Home() {
               <p className="text-[13.5px] font-semibold">Micronutrients</p>
               <p className="text-[12px] text-secondary">
                 {day.meals.length === 0
-                  ? `${MICRO_IDS.length} vitamins and minerals to hit today`
+                  ? `${MICRO_IDS.length} micronutrients to hit today`
                   : `${microsOnTrack} of ${MICRO_IDS.length} on track${
                       day.microCoverage < 0.95
                         ? ` · ${Math.round(day.microCoverage * 100)}% of the day counted`

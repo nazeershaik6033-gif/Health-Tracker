@@ -19,7 +19,7 @@ const NUTRIENT_PROPS = {
  * The tracked micronutrients, per 100 g, in each nutrient's own unit.
  *
  * Attached only to the single-food schemas. A meal analysis returns many items
- * at once, and asking for twelve extra figures on each one trades a large
+ * at once, and asking for twenty-four extra figures on each one trades a large
  * increase in tokens and latency for numbers the model is guessing at from a
  * photograph — the food-level call is where it has a real chance of being
  * right, and where the answer gets stored and reused.
@@ -31,12 +31,24 @@ const MICRO_PROPS = {
   zinc: { type: 'number', description: 'Zinc in mg' },
   potassium: { type: 'number', description: 'Potassium in mg' },
   sodium: { type: 'number', description: 'Sodium in mg' },
+  iodine: { type: 'number', description: 'Iodine in µg' },
+  selenium: { type: 'number', description: 'Selenium in µg' },
+  copper: { type: 'number', description: 'Copper in mg' },
+  manganese: { type: 'number', description: 'Manganese in mg' },
+  chromium: { type: 'number', description: 'Chromium in µg' },
   vitaminA: { type: 'number', description: 'Vitamin A in µg RAE' },
   vitaminC: { type: 'number', description: 'Vitamin C in mg' },
   vitaminD: { type: 'number', description: 'Vitamin D in µg' },
   vitaminE: { type: 'number', description: 'Vitamin E (alpha-tocopherol) in mg' },
+  vitaminB1: { type: 'number', description: 'Vitamin B1 (thiamin) in mg' },
+  vitaminB2: { type: 'number', description: 'Vitamin B2 (riboflavin) in mg' },
+  vitaminB3: { type: 'number', description: 'Vitamin B3 (niacin) in mg NE' },
+  vitaminB5: { type: 'number', description: 'Vitamin B5 (pantothenic acid) in mg' },
+  vitaminB6: { type: 'number', description: 'Vitamin B6 (pyridoxine) in mg' },
   vitaminB12: { type: 'number', description: 'Vitamin B12 in µg' },
   folate: { type: 'number', description: 'Folate in µg DFE' },
+  epa: { type: 'number', description: 'EPA (eicosapentaenoic acid, an omega-3) in mg' },
+  dha: { type: 'number', description: 'DHA (docosahexaenoic acid, an omega-3) in mg' },
 } as const;
 
 export const MICRO_KEYS = Object.keys(MICRO_PROPS);

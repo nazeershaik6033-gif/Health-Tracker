@@ -81,11 +81,21 @@ export const ZERO_NUTRIENTS: Nutrients = { kcal: 0, protein: 0, fat: 0, carbs: 0
 /**
  * The micronutrients tracked per day.
  *
- * Twelve rather than the full forty: these are the ones that are (a) commonly
- * short in real diets, (b) present in the food-composition tables the app
- * draws on, and (c) meaningful over a single day. Chromium and molybdenum are
- * neither commonly short nor reliably tabulated, so tracking them would be
- * inventing precision.
+ * The original twelve were chosen because they are (a) commonly short in real
+ * diets, (b) present in the bundled food-composition tables, and (c)
+ * meaningful over a single day — and chromium was named explicitly as one to
+ * leave out, since it is neither commonly short nor reliably tabulated.
+ * Requested anyway, along with the rest of the B-complex, five more trace
+ * minerals and the two headline omega-3s: added here, in `MICROS` and in the
+ * AI schema, so an AI-read label, an AI-generated food, or one typed in by
+ * hand can all carry them from day one. The bundled 170-food catalog in
+ * `foods.seed.ts` / `micros.seed.ts` is *not* backfilled for them — inventing
+ * plausible-looking chromium or EPA figures for a home-cooked dal is exactly
+ * the "inventing precision" the original twelve were chosen to avoid, and
+ * unlike the original twelve there is no verified composition table backing
+ * numbers for these across the whole catalog. A barcode scan against Open
+ * Food Facts (`lib/openfoodfacts.ts`) does carry real values for most of
+ * these when the product's label reports them.
  */
 export type MicroId =
   | 'iron'
@@ -94,12 +104,24 @@ export type MicroId =
   | 'zinc'
   | 'potassium'
   | 'sodium'
+  | 'iodine'
+  | 'selenium'
+  | 'copper'
+  | 'manganese'
+  | 'chromium'
   | 'vitaminA'
   | 'vitaminC'
   | 'vitaminD'
   | 'vitaminE'
+  | 'vitaminB1'
+  | 'vitaminB2'
+  | 'vitaminB3'
+  | 'vitaminB5'
+  | 'vitaminB6'
   | 'vitaminB12'
-  | 'folate';
+  | 'folate'
+  | 'epa'
+  | 'dha';
 
 /**
  * Micronutrient amounts, in each nutrient's own unit (see `MICROS`).
