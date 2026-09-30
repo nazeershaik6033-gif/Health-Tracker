@@ -9,7 +9,7 @@ import {
   upsertFood,
 } from '@/db/repo';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
-import { MICROS, hasMicros, roundMicros } from '@/lib/micros';
+import { MICROS, type MicroGroup, hasMicros, roundMicros } from '@/lib/micros';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { IconChevronDown, IconPlus, IconTrash } from '@/components/icons';
@@ -117,9 +117,13 @@ export default function FoodEditor() {
 
   const grams = num(servingGrams);
   const trimmedName = name.trim();
-  // A food with no weight cannot be rescaled, and one with no calories is not
-  // a food entry. Both would silently corrupt every total that used it.
-  const valid = trimmedName.length > 0 && grams > 0 && num(kcal) > 0;
+  // A food with no weight cannot be rescaled, which would silently corrupt
+  // every total that used it — but zero calories is a real value, not a
+  // missing one: water, black coffee, and a vitamin supplement (the whole
+  // point of the micronutrient fields below) are all genuinely 0 kcal, and
+  // requiring a positive number here made them impossible to save no matter
+  // what else was filled in.
+  const valid = trimmedName.length > 0 && grams > 0 && kcal.trim().length > 0;
 
   const servings: Serving[] = [
     { label: servingLabel.trim() || '1 serving', grams },
@@ -320,7 +324,7 @@ export default function FoodEditor() {
 
         {/*
           Micronutrients. Collapsed, because most foods are logged without
-          them and twelve extra boxes above the Save button would make the
+          them and two dozen extra boxes above the Save button would make the
           common case worse. Open, it is the only way to give a home-cooked
           dish or a hand-typed packet any micro data at all — which is what
           the Micronutrients screen means when it says it is working from a
@@ -355,10 +359,10 @@ export default function FoodEditor() {
               and only the ones you fill in are counted.
             </p>
 
-            {(['mineral', 'vitamin'] as const).map((group) => (
+            {(['mineral', 'vitamin', 'omega3'] as const).map((group) => (
               <div key={group}>
                 <p className="mb-1.5 text-[11px] font-bold tracking-wide text-muted uppercase">
-                  {group === 'mineral' ? 'Minerals' : 'Vitamins'}
+                  {GROUP_LABEL[group]}
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {MICROS.filter((def) => def.group === group).map((def) => (
@@ -489,6 +493,12 @@ export default function FoodEditor() {
     </div>
   );
 }
+
+const GROUP_LABEL: Record<MicroGroup, string> = {
+  mineral: 'Minerals',
+  vitamin: 'Vitamins',
+  omega3: 'Omega-3',
+};
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (

@@ -25,7 +25,7 @@ export { SORT_LABEL, type SortDir, type SortField };
 
 export type MicroUnit = 'mg' | 'µg';
 
-export type MicroGroup = 'mineral' | 'vitamin';
+export type MicroGroup = 'mineral' | 'vitamin' | 'omega3';
 
 /** Where a nutrient sits against its target. Drives colour and copy. */
 export type MicroStatus = 'low' | 'short' | 'good' | 'over';
@@ -113,6 +113,52 @@ export const MICROS: MicroDef[] = [
     why: 'A ceiling, not a goal. Almost all of it arrives from salt added in cooking, pickles, papad and packaged food.',
   },
   {
+    id: 'iodine',
+    label: 'Iodine',
+    short: 'Iodine',
+    unit: 'µg',
+    group: 'mineral',
+    ul: 1100,
+    why: 'Built into thyroid hormone, which sets the body’s metabolic rate. Iodised salt is the main source; unrefined and sea salt carry none.',
+  },
+  {
+    id: 'selenium',
+    label: 'Selenium',
+    short: 'Selenium',
+    unit: 'µg',
+    group: 'mineral',
+    ul: 400,
+    why: 'An antioxidant enzyme cofactor and part of thyroid hormone metabolism. Brazil nuts are the standout source; otherwise it tracks soil content, which is patchy.',
+  },
+  {
+    id: 'copper',
+    label: 'Copper',
+    short: 'Copper',
+    unit: 'mg',
+    group: 'mineral',
+    ul: 10,
+    why: 'Iron metabolism, connective tissue and nerve coating. Nuts, seeds, legumes and organ meat are the main sources; genuine shortfalls are uncommon.',
+  },
+  {
+    id: 'manganese',
+    label: 'Manganese',
+    short: 'Manganese',
+    unit: 'mg',
+    group: 'mineral',
+    ul: 11,
+    why: 'Bone formation and antioxidant enzymes. Widespread in whole grains, nuts and tea, so a typical diet rarely falls short.',
+  },
+  {
+    id: 'chromium',
+    label: 'Chromium',
+    short: 'Chromium',
+    unit: 'µg',
+    group: 'mineral',
+    // No UL exists: the US Institute of Medicine found no adverse effect
+    // level from food, the same reason `folate` and `vitaminB12` skip it.
+    why: 'Thought to support insulin action, though the evidence is thinner than for the other minerals here. Food tables rarely publish a reliable figure, so treat this one as the least certain number on the screen.',
+  },
+  {
     id: 'vitaminA',
     label: 'Vitamin A',
     short: 'Vit A',
@@ -149,6 +195,48 @@ export const MICROS: MicroDef[] = [
     why: 'An antioxidant that protects cell membranes. Nuts, seeds and cooking oils are effectively the only sources.',
   },
   {
+    id: 'vitaminB1',
+    label: 'Vitamin B1 (Thiamin)',
+    short: 'B1',
+    unit: 'mg',
+    group: 'vitamin',
+    why: 'Converts carbohydrate into usable energy. Whole grains carry it; the milling that makes flour white strips most of it out.',
+  },
+  {
+    id: 'vitaminB2',
+    label: 'Vitamin B2 (Riboflavin)',
+    short: 'B2',
+    unit: 'mg',
+    group: 'vitamin',
+    why: 'Energy metabolism and, with iron, red blood cell formation. Milk, curd, eggs and green leafy vegetables are the main sources.',
+  },
+  {
+    id: 'vitaminB3',
+    label: 'Vitamin B3 (Niacin)',
+    short: 'B3',
+    unit: 'mg',
+    group: 'vitamin',
+    ul: 35,
+    why: 'Energy metabolism and DNA repair. A diet built heavily around maize with little else can run short, since maize niacin is poorly absorbed.',
+  },
+  {
+    id: 'vitaminB5',
+    label: 'Vitamin B5 (Pantothenic acid)',
+    short: 'B5',
+    unit: 'mg',
+    group: 'vitamin',
+    why: 'Built into coenzyme A, central to breaking down every macronutrient for energy. Widespread enough in ordinary food that a genuine shortfall is rare.',
+  },
+  {
+    id: 'vitaminB6',
+    label: 'Vitamin B6 (Pyridoxine)',
+    short: 'B6',
+    unit: 'mg',
+    group: 'vitamin',
+    ul: 100,
+    why: 'Protein and neurotransmitter metabolism. Needs rise roughly with how much protein is eaten, so a high-protein diet needs more of it too.',
+  },
+  {
     id: 'vitaminB12',
     label: 'Vitamin B12',
     short: 'B12',
@@ -164,6 +252,22 @@ export const MICROS: MicroDef[] = [
     group: 'vitamin',
     ul: 1000,
     why: 'Cell division and red blood cell formation, and critical before and during early pregnancy. Dals, greens and citrus are the main sources.',
+  },
+  {
+    id: 'epa',
+    label: 'EPA (Omega-3)',
+    short: 'EPA',
+    unit: 'mg',
+    group: 'omega3',
+    why: 'An anti-inflammatory long-chain omega-3, alongside DHA below. Oily fish is by far the richest source; a diet without fish or fish oil usually carries very little.',
+  },
+  {
+    id: 'dha',
+    label: 'DHA (Omega-3)',
+    short: 'DHA',
+    unit: 'mg',
+    group: 'omega3',
+    why: 'A structural fat in the brain and retina, and the omega-3 the body can make least of from plant sources. Oily fish and algae oil are the reliable sources.',
   },
 ];
 
@@ -188,6 +292,13 @@ export function isMicroId(value: string | undefined): value is MicroId {
  *
  * Filled from WHO guidance where ICMR sets no figure: potassium (≥3510 mg/day)
  * and the sodium ceiling (<2000 mg/day).
+ *
+ * The eleven added below this line lean on US/WHO Dietary Reference Intakes
+ * rather than ICMR, which does not publish a figure for all of them (chromium
+ * notably — see its `why` line in `MICROS`). Treat these as reasonable general
+ * guidance rather than the same tightly-sourced number as the original twelve.
+ * EPA and DHA have no individual RDI anywhere; the figures here split the
+ * commonly-cited combined 250–500 mg/day omega-3 guidance in half.
  */
 const BASE_TARGETS: Record<MicroId, { male: number; female: number }> = {
   iron: { male: 19, female: 29 },
@@ -196,12 +307,24 @@ const BASE_TARGETS: Record<MicroId, { male: number; female: number }> = {
   zinc: { male: 17, female: 13.2 },
   potassium: { male: 3500, female: 3500 },
   sodium: { male: 2000, female: 2000 },
+  iodine: { male: 150, female: 150 },
+  selenium: { male: 55, female: 55 },
+  copper: { male: 0.9, female: 0.9 },
+  manganese: { male: 2.3, female: 1.8 },
+  chromium: { male: 35, female: 25 },
   vitaminA: { male: 1000, female: 840 },
   vitaminC: { male: 80, female: 65 },
   vitaminD: { male: 15, female: 15 },
   vitaminE: { male: 10, female: 8 },
+  vitaminB1: { male: 1.2, female: 1.1 },
+  vitaminB2: { male: 1.3, female: 1.1 },
+  vitaminB3: { male: 16, female: 14 },
+  vitaminB5: { male: 5, female: 5 },
+  vitaminB6: { male: 1.7, female: 1.5 },
   vitaminB12: { male: 2.2, female: 2.2 },
   folate: { male: 300, female: 300 },
+  epa: { male: 125, female: 125 },
+  dha: { male: 125, female: 125 },
 };
 
 /**

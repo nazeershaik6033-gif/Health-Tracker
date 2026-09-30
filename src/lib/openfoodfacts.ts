@@ -44,12 +44,28 @@ const MICRO_FIELDS: { key: string; id: MicroId; factor: number }[] = [
   { key: 'zinc_100g', id: 'zinc', factor: 1e3 },
   { key: 'potassium_100g', id: 'potassium', factor: 1e3 },
   { key: 'sodium_100g', id: 'sodium', factor: 1e3 },
+  { key: 'iodine_100g', id: 'iodine', factor: 1e6 },
+  { key: 'selenium_100g', id: 'selenium', factor: 1e6 },
+  { key: 'copper_100g', id: 'copper', factor: 1e3 },
+  { key: 'manganese_100g', id: 'manganese', factor: 1e3 },
+  { key: 'chromium_100g', id: 'chromium', factor: 1e6 },
   { key: 'vitamin-a_100g', id: 'vitaminA', factor: 1e6 },
   { key: 'vitamin-c_100g', id: 'vitaminC', factor: 1e3 },
   { key: 'vitamin-d_100g', id: 'vitaminD', factor: 1e6 },
   { key: 'vitamin-e_100g', id: 'vitaminE', factor: 1e3 },
+  { key: 'vitamin-b1_100g', id: 'vitaminB1', factor: 1e3 },
+  { key: 'vitamin-b2_100g', id: 'vitaminB2', factor: 1e3 },
+  { key: 'vitamin-pp_100g', id: 'vitaminB3', factor: 1e3 },
+  { key: 'pantothenic-acid_100g', id: 'vitaminB5', factor: 1e3 },
+  { key: 'vitamin-b6_100g', id: 'vitaminB6', factor: 1e3 },
   { key: 'vitamin-b12_100g', id: 'vitaminB12', factor: 1e6 },
   { key: 'vitamin-b9_100g', id: 'folate', factor: 1e6 },
+  // Least certain pair here: most products that report omega-3 at all only
+  // report the combined `omega-3-fat_100g`, not the EPA/DHA split OFF's
+  // taxonomy technically supports. A product missing these two specific keys
+  // just leaves epa/dha unset, same as any other nutrient it doesn't declare.
+  { key: 'eicosapentaenoic-acid_100g', id: 'epa', factor: 1e3 },
+  { key: 'docosahexaenoic-acid_100g', id: 'dha', factor: 1e3 },
 ];
 
 /**
