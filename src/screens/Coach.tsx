@@ -134,7 +134,7 @@ export default function Coach() {
   if (!keyed) {
     return (
       <div className="min-h-dvh">
-        <PageHeader title="Ria" back={() => navigate(-1)} />
+        <PageHeader title="Ria" back={-1} />
         <div className="flex flex-col items-center gap-4 px-8 pt-24 text-center">
           <div className="flex h-16 w-16 items-center justify-center accent-card">
             <IconSparkle width={30} height={30} />
@@ -156,7 +156,7 @@ export default function Coach() {
       <PageHeader
         title="Ria"
         subtitle="Your nutrition & fitness coach"
-        back={() => navigate(-1)}
+        back={-1}
         action={
           messages.length > 0 ? (
             <button

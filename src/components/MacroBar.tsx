@@ -16,15 +16,21 @@ export function MacroBar({ label, value, target, color, unit = 'g', asPercent = 
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[13px] text-secondary">{label}:</span>
-        <span className={`tabular text-[13px] font-semibold ${over ? 'text-red-600' : ''}`}>
+        <span className="text-[12.5px] font-medium text-secondary">{label}</span>
+        <span className={`tabular text-[13px] font-bold ${over ? 'text-red-500' : ''}`}>
           {asPercent ? `${pct}%` : `${Math.round(value)}/${Math.round(target)} ${unit}`}
         </span>
       </div>
-      <div className="surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full">
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-sunken)]">
         <div
-          className="h-full rounded-full transition-[width] duration-500 ease-out"
-          style={{ width: `${width}%`, background: over ? '#dc2626' : color }}
+          className="h-full origin-left rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
+          style={{
+            width: `${width}%`,
+            background: over
+              ? '#ef4444'
+              : `linear-gradient(90deg, color-mix(in srgb, ${color} 65%, white), ${color})`,
+            animation: 'grow-x 0.9s cubic-bezier(0.16,1,0.3,1) both',
+          }}
         />
       </div>
     </div>

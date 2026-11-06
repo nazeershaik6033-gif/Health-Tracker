@@ -78,7 +78,7 @@ export default function LogSheet() {
 
   return (
     <div className="min-h-dvh">
-      <PageHeader title="Log something" back={() => navigate(-1)} />
+      <PageHeader title="Log something" back={-1} />
 
       <div className="space-y-2.5 px-4 pt-4">
         {options.map((opt) => {
@@ -88,7 +88,7 @@ export default function LogSheet() {
               key={opt.to}
               type="button"
               onClick={() => navigate(blocked ? '/settings' : opt.to)}
-              className="surface-card flex w-full items-center gap-3.5 p-4 text-left transition-transform active:scale-[0.99]"
+              className="surface-card flex w-full items-center gap-3.5 p-4 text-left pressable"
             >
               <span
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${opt.tint}`}

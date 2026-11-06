@@ -182,7 +182,7 @@ export function SetsSheet({
                   onClick={() => setSets((prev) => prev.filter((_, j) => j !== i))}
                   disabled={sets.length === 1}
                   aria-label={`Remove set ${i + 1}`}
-                  className="w-8 shrink-0 rounded-lg p-1.5 text-muted transition-transform active:scale-90 disabled:opacity-30"
+                  className="w-8 shrink-0 rounded-lg p-1.5 text-muted pressable disabled:opacity-30"
                 >
                   <IconClose width={15} height={15} />
                 </button>
@@ -192,7 +192,7 @@ export function SetsSheet({
             <button
               type="button"
               onClick={addSet}
-              className="hairline flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-2.5 text-[13px] font-semibold text-brand-600 transition-transform active:scale-[0.99]"
+              className="hairline flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-2.5 text-[13px] font-semibold text-brand-600 pressable"
             >
               <IconPlus width={15} height={15} />
               Add set
@@ -223,7 +223,7 @@ export function SetsSheet({
                 key={value}
                 type="button"
                 onClick={() => setIntensity(value)}
-                className={`hairline flex-1 rounded-lg border py-2 text-[12.5px] font-semibold transition-transform active:scale-95 ${
+                className={`hairline flex-1 rounded-lg border py-2 text-[12.5px] font-semibold pressable ${
                   intensity === value ? 'border-brand-500 tint-soft tint-brand' : ''
                 }`}
               >

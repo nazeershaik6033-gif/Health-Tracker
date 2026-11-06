@@ -157,7 +157,7 @@ export default function Voice() {
   if (!keyed) {
     return (
       <div className="min-h-dvh">
-        <PageHeader title="Say what you ate" back={() => navigate(-1)} />
+        <PageHeader title="Say what you ate" back={-1} />
         <div className="flex flex-col items-center gap-4 px-8 pt-24 text-center">
           <IconSparkle width={30} height={30} className="text-brand-500" />
           <p className="text-[15px] font-semibold">Voice logging needs an AI key</p>
@@ -173,7 +173,7 @@ export default function Voice() {
 
   return (
     <div className="min-h-dvh pb-32">
-      <PageHeader title="Say what you ate" back={() => navigate(-1)} />
+      <PageHeader title="Say what you ate" back={-1} />
 
       <div className="px-4 pt-4">
         {!supported && (
@@ -194,7 +194,7 @@ export default function Voice() {
                 type="button"
                 onClick={phase === 'listening' ? stopListening : startListening}
                 aria-label={phase === 'listening' ? 'Stop listening' : 'Start listening'}
-                className={`relative flex h-24 w-24 items-center justify-center rounded-full text-white transition-transform active:scale-95 ${
+                className={`relative flex h-24 w-24 items-center justify-center rounded-full text-white pressable ${
                   phase === 'listening' ? 'bg-red-500' : 'bg-brand-500'
                 }`}
               >

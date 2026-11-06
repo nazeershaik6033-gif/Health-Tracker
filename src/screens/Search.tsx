@@ -155,7 +155,7 @@ export default function Search() {
     <div className="flex min-h-dvh flex-col">
       <PageHeader
         title={`Track For ${MEAL_SLOT_LABEL[slot]}`}
-        back={() => navigate(-1)}
+        back={-1}
         action={
           <button
             type="button"

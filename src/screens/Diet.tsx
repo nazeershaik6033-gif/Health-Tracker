@@ -15,12 +15,11 @@ import {
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { RingProgress } from '@/components/RingProgress';
 import { MacroBar } from '@/components/MacroBar';
-import { Card, EmptyState, ScoreCircle } from '@/components/ui';
+import { Card, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import {
   IconChevronLeft,
   IconChevronRight,
-  IconDiet,
   IconPlus,
   IconSparkle,
   IconTrash,
@@ -166,7 +165,13 @@ export default function Diet() {
             <Card key={slot} className="py-3">
               <div className="flex items-center gap-2 px-1">
                 <h2 className="flex-1 text-[15px] font-bold">{MEAL_SLOT_LABEL[slot]}</h2>
-                <span className="tabular text-[12.5px] text-secondary">
+                {/* Slot targets are a guide, so only a clear overshoot (25%+)
+                    gets flagged — a few calories over isn't news. */}
+                <span
+                  className={`tabular text-[12.5px] ${
+                    target > 0 && eaten > target * 1.25 ? 'font-semibold text-red-500' : 'text-secondary'
+                  }`}
+                >
                   {eaten}/{target} Cal
                 </span>
                 {/* Clearing a whole slot used to mean deleting every item. */}
@@ -287,13 +292,7 @@ export default function Diet() {
         })}
       </div>
 
-      {day.meals.length === 0 && (
-        <EmptyState
-          icon={<IconDiet width={22} height={22} />}
-          title="No food logged for this day"
-          body="Snap a photo, scan a barcode, or search the database to get started."
-        />
-      )}
+
 
       <div className="h-4" />
 

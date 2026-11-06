@@ -60,7 +60,7 @@ export default function GlobalSearch() {
 
   return (
     <div className="pb-10">
-      <PageHeader title="Search" back={() => navigate(-1)} />
+      <PageHeader title="Search" back={-1} />
 
       <div className="px-4 pt-3">
         <div className="hairline flex items-center gap-2 rounded-xl border px-3.5 py-2.5">

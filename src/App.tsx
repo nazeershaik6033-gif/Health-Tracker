@@ -1,10 +1,11 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useLayoutEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useTheme } from '@/lib/theme';
 import { BottomNav } from '@/components/BottomNav';
 import { Toast } from '@/components/Toast';
 import { Skeleton } from '@/components/ui';
+import { prefetchWhenIdle, useNavDirection } from '@/lib/nav';
 
 // The daily-use path is eager so the first paint after launch is immediate.
 import Home from '@/screens/Home';
@@ -16,30 +17,76 @@ import Onboarding from '@/screens/Onboarding';
 // Everything else is lazy. Two groups dominate the bundle and neither is
 // needed to open the app: the charting library behind every tracker and the
 // Streaks view, and the camera / wasm-decoder / OCR stack.
-const Settings = lazy(() => import('@/screens/Settings'));
+const loadSettings = () => import('@/screens/Settings');
+const Settings = lazy(loadSettings);
 // Lazy: it pulls in RingProgress-per-cell and the day bundle, and it is a
 // deliberate navigation rather than part of the launch path.
-const CalendarScreen = lazy(() => import('@/screens/Calendar'));
-const FoodEditor = lazy(() => import('@/screens/FoodEditor'));
+const loadCalendarScreen = () => import('@/screens/Calendar');
+const CalendarScreen = lazy(loadCalendarScreen);
+const loadFoodEditor = () => import('@/screens/FoodEditor');
+const FoodEditor = lazy(loadFoodEditor);
 // Lazy: the zip/XML reader is dead weight for everyone who never imports.
-const ImportHealth = lazy(() => import('@/screens/ImportHealth'));
-const GlobalSearch = lazy(() => import('@/screens/GlobalSearch'));
-const RecipeBuilder = lazy(() => import('@/screens/RecipeBuilder'));
-const Streaks = lazy(() => import('@/screens/Streaks'));
-const Plans = lazy(() => import('@/screens/Plans'));
-const Coach = lazy(() => import('@/screens/Coach'));
-const MealScore = lazy(() => import('@/screens/MealScore'));
-const Water = lazy(() => import('@/screens/trackers/Water'));
-const Sleep = lazy(() => import('@/screens/trackers/Sleep'));
-const Weight = lazy(() => import('@/screens/trackers/Weight'));
-const Workout = lazy(() => import('@/screens/trackers/Workout'));
-const Steps = lazy(() => import('@/screens/trackers/Steps'));
-const ExerciseDetail = lazy(() => import('@/screens/ExerciseDetail'));
-const Snap = lazy(() => import('@/screens/Snap'));
-const SnapGallery = lazy(() => import('@/screens/SnapGallery'));
-const Scan = lazy(() => import('@/screens/Scan'));
-const Voice = lazy(() => import('@/screens/Voice'));
-const Label = lazy(() => import('@/screens/Label'));
+const loadImportHealth = () => import('@/screens/ImportHealth');
+const ImportHealth = lazy(loadImportHealth);
+const loadGlobalSearch = () => import('@/screens/GlobalSearch');
+const GlobalSearch = lazy(loadGlobalSearch);
+const loadRecipeBuilder = () => import('@/screens/RecipeBuilder');
+const RecipeBuilder = lazy(loadRecipeBuilder);
+const loadStreaks = () => import('@/screens/Streaks');
+const Streaks = lazy(loadStreaks);
+const loadPlans = () => import('@/screens/Plans');
+const Plans = lazy(loadPlans);
+const loadCoach = () => import('@/screens/Coach');
+const Coach = lazy(loadCoach);
+const loadMealScore = () => import('@/screens/MealScore');
+const MealScore = lazy(loadMealScore);
+const loadWater = () => import('@/screens/trackers/Water');
+const Water = lazy(loadWater);
+const loadSleep = () => import('@/screens/trackers/Sleep');
+const Sleep = lazy(loadSleep);
+const loadWeight = () => import('@/screens/trackers/Weight');
+const Weight = lazy(loadWeight);
+const loadWorkout = () => import('@/screens/trackers/Workout');
+const Workout = lazy(loadWorkout);
+const loadSteps = () => import('@/screens/trackers/Steps');
+const Steps = lazy(loadSteps);
+const loadExerciseDetail = () => import('@/screens/ExerciseDetail');
+const ExerciseDetail = lazy(loadExerciseDetail);
+const loadSnap = () => import('@/screens/Snap');
+const Snap = lazy(loadSnap);
+const loadSnapGallery = () => import('@/screens/SnapGallery');
+const SnapGallery = lazy(loadSnapGallery);
+const loadScan = () => import('@/screens/Scan');
+const Scan = lazy(loadScan);
+const loadVoice = () => import('@/screens/Voice');
+const Voice = lazy(loadVoice);
+const loadLabel = () => import('@/screens/Label');
+const Label = lazy(loadLabel);
+
+/** Every lazy screen, warmed in the background once the app is up. */
+const LAZY_LOADERS = [
+  loadSettings,
+  loadCalendarScreen,
+  loadFoodEditor,
+  loadImportHealth,
+  loadGlobalSearch,
+  loadRecipeBuilder,
+  loadStreaks,
+  loadPlans,
+  loadCoach,
+  loadMealScore,
+  loadWater,
+  loadSleep,
+  loadWeight,
+  loadWorkout,
+  loadSteps,
+  loadExerciseDetail,
+  loadSnap,
+  loadSnapGallery,
+  loadScan,
+  loadVoice,
+  loadLabel,
+];
 
 /** Routes that own the full viewport — no bottom nav, no page padding. */
 const FULLSCREEN = [
@@ -63,13 +110,22 @@ export default function App() {
   const location = useLocation();
   useTheme(settings.theme);
 
+  const direction = useNavDirection(location);
+
   useEffect(() => {
     void init();
   }, [init]);
 
-  // Reset scroll between screens; without this a deep-scrolled Diet view
-  // carries its offset into the next screen.
+  // Fetch the rest of the app in the background once launch has settled, so
+  // later navigations are instant rather than flashing a skeleton.
   useEffect(() => {
+    if (ready) prefetchWhenIdle(LAZY_LOADERS);
+  }, [ready]);
+
+  // Reset scroll between screens; without this a deep-scrolled Diet view
+  // carries its offset into the next screen. Layout effect so the new screen
+  // never paints at the old offset first.
+  useLayoutEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
@@ -87,17 +143,17 @@ export default function App() {
 
   return (
     <div className="mx-auto min-h-dvh w-full max-w-lg">
-      <main className={fullscreen ? '' : 'pb-24'}>
+      <main className={fullscreen ? '' : 'pb-nav'}>
         {/*
-          Keyed on the path so each screen replays its entrance. React Router
-          already swaps the route component underneath; the key just gives the
-          wrapper a new identity so the CSS animation restarts. Chosen over the
-          View Transitions API because a transition has to wrap the DOM change
-          itself, and by the time an effect could call it React has committed —
-          and this way Safari and Firefox get the same motion as Chrome.
+          Keyed on the path so each screen replays its entrance, in the
+          direction of travel: deeper screens slide in from the trailing edge,
+          going back slides from the leading edge, tabs cross-fade. Chosen over
+          the View Transitions API because a transition has to wrap the DOM
+          change itself, and by the time an effect could call it React has
+          committed — and this way Safari and Firefox get the same motion.
         */}
-        <Suspense fallback={<BootSkeleton />}>
-          <div key={location.pathname} className="animate-route-in">
+        <Suspense fallback={<RouteFallback />}>
+          <div key={location.pathname} className={`route-${direction}`}>
           <Routes>
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/" element={<Home />} />
@@ -134,6 +190,17 @@ export default function App() {
 
       <Toast />
       {!fullscreen && <BottomNav />}
+    </div>
+  );
+}
+
+/** Shown only if a screen's chunk hasn't been prefetched yet — deliberately quiet. */
+function RouteFallback() {
+  return (
+    <div className="mx-auto w-full max-w-lg space-y-3 px-4 pt-safe">
+      <Skeleton className="mt-3 h-10 w-40 rounded-xl" />
+      <Skeleton className="h-44 w-full rounded-3xl" />
+      <Skeleton className="h-28 w-full rounded-3xl" />
     </div>
   );
 }

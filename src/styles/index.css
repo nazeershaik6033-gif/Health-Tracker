@@ -1,3 +1,4 @@
+@import '@fontsource-variable/inter/wght.css';
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
@@ -5,40 +6,55 @@
    Sampled from the reference app: emerald primary, orange on food actions,
    warm off-white canvas, white cards, pastel tracker rings.
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   Design tokens
+   Brand and accent ramps resolve through per-theme variables (`@theme inline`)
+   so a class like `text-brand-600` stays legible on every canvas — on dark
+   themes the same class lands on a lighter step instead of a muddy green.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', system-ui, sans-serif;
+
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-accent-50: var(--accent-50);
+  --color-accent-100: var(--accent-100);
+  --color-accent-300: var(--accent-300);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+}
+
 @theme {
-  --color-brand-50: #e9f8f1;
-  --color-brand-100: #cdefe0;
-  --color-brand-200: #9fe0c4;
-  --color-brand-300: #66cca3;
-  --color-brand-400: #33b985;
-  --color-brand-500: #14a06a;
-  --color-brand-600: #0f8557;
-  --color-brand-700: #0e6b4f;
-  --color-brand-800: #0b5340;
-  --color-brand-900: #093f32;
-
-  --color-accent-50: #fff3ea;
-  --color-accent-100: #ffe1cb;
-  --color-accent-300: #ffb27a;
-  --color-accent-500: #ff7a2f;
-  --color-accent-600: #ea5f12;
-
-  /* Tracker ring hues — deliberately distinct at a glance, all AA on white */
-  --color-ring-weight: #14a06a;
-  --color-ring-workout: #e8467c;
-  --color-ring-walk: #7c5cf0;
-  --color-ring-sleep: #0e9aa7;
-  --color-ring-water: #4f7df3;
+  /* Tracker hues — distinct at a glance, tuned to glow on dark canvases and
+     still clear 3:1 as graphics on white. */
+  --color-ring-weight: #10b981;
+  --color-ring-workout: #f43f6e;
+  --color-ring-walk: #8b5cf6;
+  --color-ring-sleep: #06b6d4;
+  --color-ring-water: #3b82f6;
   --color-ring-calorie: #ff7a2f;
 
   /* Macro bars */
-  --color-macro-protein: #f0b429;
-  --color-macro-fat: #e8467c;
-  --color-macro-carb: #7c5cf0;
-  --color-macro-fibre: #14a06a;
+  --color-macro-protein: #f5a524;
+  --color-macro-fat: #f43f6e;
+  --color-macro-carb: #8b5cf6;
+  --color-macro-fibre: #10b981;
 
-  --radius-card: 1.25rem;
-  --radius-sheet: 1.75rem;
+  --radius-card: 1.5rem;
+  --radius-sheet: 2rem;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 /* Semantic surface variables, selected by [data-theme] on <html>. Kept as CSS
@@ -51,37 +67,66 @@
    class, so `bg-brand-50` stayed pale on a black canvas. Every tinted card and
    icon chip in the app reads these instead, which is what makes them follow the
    theme. Foregrounds are checked to clear 4.5:1 on their own fill. */
+/* Semantic surface variables, selected by [data-theme] on <html>. Kept as CSS
+   vars rather than Tailwind `dark:` variants so every component reads one name.
+   Order matters: these all have the same specificity, so the block that wins is
+   the last one matching. `.dark` is set alongside data-theme for dark and black.
+   Tinted surfaces come as a hue triple — fill, foreground, leading rule — and
+   every foreground clears 4.5:1 on its own fill. */
 :root,
 [data-theme='light'] {
-  --surface-canvas: #f7f7f5;
+  --surface-canvas: #f3f4f6;
   --surface-card: #ffffff;
-  --surface-sunken: #f1f2f0;
-  --surface-border: #e8e9e6;
-  --text-primary: #101413;
-  --text-secondary: #5c6360;
-  --text-muted: #8b918e;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef0f3;
+  --surface-border: #e5e7eb;
+  --surface-glass: rgb(255 255 255 / 0.72);
+  --text-primary: #0b0f14;
+  --text-secondary: #545d6b;
+  --text-muted: #858e9c;
+  --shadow-card: 0 0 0 1px rgb(15 23 42 / 0.04), 0 1px 2px rgb(15 23 42 / 0.04),
+    0 10px 30px -14px rgb(15 23 42 / 0.14);
+  --shadow-float: 0 0 0 1px rgb(15 23 42 / 0.05), 0 18px 40px -16px rgb(15 23 42 / 0.28);
+  --hero-from: #0b3b2c;
+  --hero-via: #0a5a43;
+  --hero-to: #0f7a58;
+  --brand-50: #e8f8f1;
+  --brand-100: #c9eedd;
+  --brand-200: #97dcbf;
+  --brand-300: #5cc59c;
+  --brand-400: #2aae7f;
+  --brand-500: #0e9a68;
+  --brand-600: #0b8058;
+  --brand-700: #0a6748;
+  --brand-800: #09503a;
+  --brand-900: #073d2d;
+  --accent-50: #fff3ea;
+  --accent-100: #ffe1cb;
+  --accent-300: #ffb27a;
+  --accent-500: #f76b1c;
+  --accent-600: #d9560c;
 
-  --tint-brand-bg: #e9f8f1;
-  --tint-brand-fg: #093f32;
-  --tint-brand-rule: #14a06a;
-  --tint-warm-bg: #fff3ea;
+  --tint-brand-bg: #e8f8f1;
+  --tint-brand-fg: #073d2d;
+  --tint-brand-rule: #0e9a68;
+  --tint-warm-bg: #fff2e8;
   --tint-warm-fg: #7a3b12;
-  --tint-warm-rule: #ff7a2f;
-  --tint-amber-bg: #fdf6e3;
+  --tint-warm-rule: #f76b1c;
+  --tint-amber-bg: #fdf5df;
   --tint-amber-fg: #6b4a10;
   --tint-amber-rule: #f0b429;
-  --tint-purple-bg: #f1eefe;
+  --tint-purple-bg: #f2eefe;
   --tint-purple-fg: #3f2d8f;
-  --tint-purple-rule: #7c5cf0;
-  --tint-blue-bg: #eaf0fe;
+  --tint-purple-rule: #8b5cf6;
+  --tint-blue-bg: #eaf1fe;
   --tint-blue-fg: #1e3a8a;
-  --tint-blue-rule: #4f7df3;
+  --tint-blue-rule: #3b82f6;
   --tint-danger-bg: #fdeeee;
   --tint-danger-fg: #7f1d1d;
   --tint-danger-rule: #dc2626;
   /* Pills sitting *on* a tinted card, so they lift off the fill rather than
      the canvas — white on light themes, a sliver of light on dark ones. */
-  --tint-pill: rgb(255 255 255 / 0.8);
+  --tint-pill: rgb(255 255 255 / 0.85);
   color-scheme: light;
 }
 
@@ -90,11 +135,18 @@
 [data-theme='sepia'] {
   --surface-canvas: #f4ecd8;
   --surface-card: #fbf6e8;
+  --surface-raised: #fdf9ee;
   --surface-sunken: #ebe0c8;
   --surface-border: #ddd0b0;
+  --surface-glass: rgb(251 246 232 / 0.78);
   --text-primary: #3a3229;
   --text-secondary: #6a5d4c;
   --text-muted: #8d8270;
+  --shadow-card: 0 0 0 1px rgb(80 60 20 / 0.06), 0 10px 28px -16px rgb(80 60 20 / 0.22);
+  --shadow-float: 0 0 0 1px rgb(80 60 20 / 0.08), 0 18px 40px -16px rgb(80 60 20 / 0.32);
+  --hero-from: #2f3b26;
+  --hero-via: #3f5233;
+  --hero-to: #55703f;
 
   --tint-brand-bg: #e6efdd;
   --tint-brand-fg: #274034;
@@ -120,67 +172,95 @@
 
 .dark,
 [data-theme='dark'] {
-  --surface-canvas: #0b1210;
-  --surface-card: #151d1a;
-  --surface-sunken: #1d2724;
-  --surface-border: #26302c;
-  --text-primary: #eef2f0;
-  --text-secondary: #a3aeaa;
-  --text-muted: #7b8683;
+  --surface-canvas: #08090b;
+  --surface-card: #111316;
+  --surface-raised: #181b1f;
+  --surface-sunken: #1a1d22;
+  --surface-border: #24282e;
+  --surface-glass: rgb(17 19 22 / 0.72);
+  --text-primary: #f3f5f7;
+  --text-secondary: #a3abb6;
+  --text-muted: #6f7884;
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.05), 0 12px 32px -18px rgb(0 0 0 / 0.8);
+  --shadow-float: 0 0 0 1px rgb(255 255 255 / 0.07), 0 20px 44px -16px rgb(0 0 0 / 0.9);
+  --hero-from: #06241b;
+  --hero-via: #0a3a2c;
+  --hero-to: #0d553f;
+  --brand-50: #0f2a20;
+  --brand-100: #123526;
+  --brand-200: #17543b;
+  --brand-300: #1f7a55;
+  --brand-400: #29a372;
+  --brand-500: #1db97e;
+  --brand-600: #3fd197;
+  --brand-700: #6fe0b2;
+  --brand-800: #a3edcd;
+  --brand-900: #d3f7e7;
+  --accent-50: #2a1609;
+  --accent-100: #3a1f0d;
+  --accent-300: #c9611f;
+  --accent-500: #ff8a3d;
+  --accent-600: #ffa364;
 
-  --tint-brand-bg: #12211b;
+  --tint-brand-bg: #0f1f19;
   --tint-brand-fg: #d7f0e3;
-  --tint-brand-rule: #33b985;
-  --tint-warm-bg: #241710;
+  --tint-brand-rule: #2fc48a;
+  --tint-warm-bg: #22150d;
   --tint-warm-fg: #f7ceac;
   --tint-warm-rule: #ff9152;
-  --tint-amber-bg: #221c0b;
+  --tint-amber-bg: #201a0b;
   --tint-amber-fg: #f3dda6;
   --tint-amber-rule: #f0b429;
-  --tint-purple-bg: #191634;
+  --tint-purple-bg: #17142e;
   --tint-purple-fg: #d3caf9;
-  --tint-purple-rule: #9b83f5;
-  --tint-blue-bg: #111c33;
+  --tint-purple-rule: #a28bf8;
+  --tint-blue-bg: #0f1a30;
   --tint-blue-fg: #c6d8fb;
-  --tint-blue-rule: #6f95f6;
-  --tint-danger-bg: #251313;
+  --tint-blue-rule: #6f9cf8;
+  --tint-danger-bg: #241212;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
-  --tint-pill: rgb(255 255 255 / 0.07);
+  --tint-pill: rgb(255 255 255 / 0.08);
   color-scheme: dark;
 }
 
-/* True black for OLED, where an unlit pixel actually draws no power — the
-   point Dark's near-black canvas misses. Cards stay slightly lifted so the
-   layout doesn't dissolve into one flat sheet. */
+/* True black for OLED, where an unlit pixel actually draws no power. Cards
+   stay slightly lifted so the layout doesn't dissolve into one flat sheet. */
 [data-theme='black'] {
   --surface-canvas: #000000;
-  --surface-card: #0c0c0c;
-  --surface-sunken: #161616;
-  --surface-border: #262626;
+  --surface-card: #0b0b0c;
+  --surface-raised: #131315;
+  --surface-sunken: #161618;
+  --surface-border: #232326;
+  --surface-glass: rgb(10 10 11 / 0.75);
   --text-primary: #f2f3f2;
   --text-secondary: #a6a9a7;
   --text-muted: #7c807e;
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-float: 0 0 0 1px rgb(255 255 255 / 0.08), 0 20px 44px -16px rgb(0 0 0 / 1);
+  --hero-from: #03140f;
+  --hero-via: #072a20;
+  --hero-to: #0a3f30;
 
-  --tint-brand-bg: #0b1712;
+  --tint-brand-bg: #0a1611;
   --tint-brand-fg: #d7f0e3;
-  --tint-brand-rule: #33b985;
-  --tint-warm-bg: #180f08;
+  --tint-brand-rule: #2fc48a;
+  --tint-warm-bg: #170e07;
   --tint-warm-fg: #f7ceac;
   --tint-warm-rule: #ff9152;
-  --tint-amber-bg: #171205;
+  --tint-amber-bg: #161104;
   --tint-amber-fg: #f3dda6;
   --tint-amber-rule: #f0b429;
-  --tint-purple-bg: #110f24;
+  --tint-purple-bg: #100e22;
   --tint-purple-fg: #d3caf9;
-  --tint-purple-rule: #9b83f5;
-  --tint-blue-bg: #0b1322;
+  --tint-purple-rule: #a28bf8;
+  --tint-blue-bg: #0a1220;
   --tint-blue-fg: #c6d8fb;
-  --tint-blue-rule: #6f95f6;
-  --tint-danger-bg: #190d0d;
+  --tint-blue-rule: #6f9cf8;
+  --tint-danger-bg: #180c0c;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
-  --tint-pill: rgb(255 255 255 / 0.06);
+  --tint-pill: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
 
@@ -193,13 +273,13 @@
   --swatch-light-fg: #101413;
   --swatch-sepia: #f4ecd8;
   --swatch-sepia-fg: #3a3229;
-  --swatch-dark: #151d1a;
-  --swatch-dark-fg: #eef2f0;
+  --swatch-dark: #111316;
+  --swatch-dark-fg: #f3f5f7;
   --swatch-black: #000000;
   --swatch-black-fg: #f2f3f2;
   /* System shows both halves; the letter sits on the seam, so it needs a grey
      that clears 4.5:1 against white and near-black alike. */
-  --swatch-system: linear-gradient(90deg, #ffffff 50%, #0b1210 50%);
+  --swatch-system: linear-gradient(90deg, #ffffff 50%, #08090b 50%);
   --swatch-system-fg: #767b79;
 }
 
@@ -211,18 +291,42 @@
   html {
     /* Prevent iOS rubber-band revealing the page background behind the app */
     background: var(--surface-canvas);
+    text-size-adjust: 100%;
   }
 
   body {
     margin: 0;
     background: var(--surface-canvas);
     color: var(--text-primary);
-    font-family:
-      'Inter var', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-      'Helvetica Neue', system-ui, sans-serif;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    font-family: var(--font-sans);
+    /* Inter's open digits, single-storey a off, disambiguated l/I */
+    font-feature-settings: 'cv11', 'ss03', 'cv05';
+    letter-spacing: -0.006em;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     overscroll-behavior-y: none;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.022em;
+  }
+
+  /* Theme changes cross-fade instead of snapping. Scoped to colour properties
+     so it never fights the transform animations below. */
+  html.theme-anim,
+  html.theme-anim * {
+    transition:
+      background-color 0.35s ease,
+      border-color 0.35s ease,
+      color 0.35s ease,
+      fill 0.35s ease !important;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--brand-500) 30%, transparent);
   }
 
   /* Numeric readouts (calories, macros, weights) line up in columns */
@@ -231,8 +335,21 @@
   }
 
   button,
-  [role='button'] {
+  [role='button'],
+  a {
     touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 2px;
+    border-radius: 10px;
+  }
+
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 
   /* Respect users who ask for less motion — rings and sheets both animate */
@@ -252,24 +369,58 @@
   .surface-card {
     background: var(--surface-card);
     border-radius: var(--radius-card);
-    box-shadow:
-      0 1px 2px rgb(16 20 19 / 0.04),
-      0 6px 16px -8px rgb(16 20 19 / 0.1);
+    box-shadow: var(--shadow-card);
   }
 
   .surface-sunken {
     background: var(--surface-sunken);
   }
 
+  .surface-glass {
+    background: var(--surface-glass);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .shadow-float {
+    box-shadow: var(--shadow-float);
+  }
+
   .hairline {
     border-color: var(--surface-border);
+  }
+
+  /* The deep-green gradient behind the Home hero. Same in every theme on
+     purpose — white type on it reads at well over 7:1. */
+  .hero-gradient {
+    background:
+      radial-gradient(120% 90% at 100% 0%, rgb(52 211 153 / 0.28) 0%, transparent 55%),
+      radial-gradient(90% 80% at 0% 100%, rgb(14 165 233 / 0.18) 0%, transparent 60%),
+      linear-gradient(150deg, var(--hero-from) 0%, var(--hero-via) 55%, var(--hero-to) 100%);
+    color: #fff;
+  }
+
+  .brand-gradient {
+    background: linear-gradient(140deg, #34d399 0%, var(--brand-500) 45%, #047857 100%);
+    color: #fff;
+  }
+
+  /* Anything tappable gets the same physical press: a small, quick sink that
+     springs back. Transform-only so it stays on the compositor. */
+  .pressable {
+    transition: transform 0.35s var(--ease-spring);
+    will-change: transform;
+  }
+  .pressable:active {
+    transform: scale(0.965);
+    transition-duration: 0.12s;
+    transition-timing-function: ease-out;
   }
 
   /* ------------------------------------------------------------------ tints
      `.accent-card` is the quote-card treatment: a tinted fill with a coloured
      rule down the leading edge. `.tint-*` sets the same hue on a small icon
-     chip. Both default to brand green; add a hue modifier to change it. Every
-     value resolves per theme from the block above. */
+     chip. Both default to brand green; add a hue modifier to change it. */
   .accent-card,
   .tint-brand {
     --tint-bg: var(--tint-brand-bg);
@@ -307,17 +458,20 @@
     --tint-rule: var(--tint-danger-rule);
   }
 
+  /* The leading bar is drawn as an inset glow rather than a border, so the
+     card keeps its full radius instead of a squared-off left edge. */
   .accent-card {
-    background: var(--tint-bg);
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--tint-rule) 10%, transparent), transparent 60%),
+      var(--tint-bg);
     color: var(--tint-fg);
     border-radius: var(--radius-card);
-    /* The leading rule from the reference. Logical inline-start rather than
-       left, so it stays on the leading edge under RTL. */
-    border-inline-start: 3px solid var(--tint-rule);
+    box-shadow:
+      inset 3px 0 0 var(--tint-rule),
+      inset 0 0 0 1px color-mix(in srgb, var(--tint-rule) 14%, transparent);
   }
 
-  /* Headings sit at full strength, body copy one step back. Both derive from
-     the same foreground so they stay legible on every fill. */
+  /* Headings sit at full strength, body copy one step back. */
   .accent-title {
     color: var(--tint-fg);
   }
@@ -345,8 +499,7 @@
     color: var(--tint-fg);
   }
 
-  /* Same fill without the rule — for chips and badges where a 3px bar would
-     overwhelm the element. */
+  /* Same fill without the rule — for chips and badges. */
   .tint-soft {
     background: var(--tint-bg);
     color: var(--tint-fg);
@@ -360,6 +513,15 @@
     color: var(--text-muted);
   }
 
+  /* Small uppercase label above a stat */
+  .eyebrow {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
   /* Safe-area helpers for the bottom nav and sheets on notched devices */
   .pb-safe {
     padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
@@ -367,6 +529,11 @@
 
   .pt-safe {
     padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
+
+  /* Clearance for the floating tab bar */
+  .pb-nav {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -379,12 +546,24 @@
   display: none;
 }
 
+/* ------------------------------------------------------------------ motion
+   One curve family for the whole app: expo-out for things arriving, a gentle
+   overshoot for things being pressed or popped in. Everything animates only
+   transform and opacity so it stays on the compositor at 120 Hz. */
 @keyframes sheet-up {
   from {
-    transform: translateY(100%);
+    transform: translate3d(0, 100%, 0);
   }
   to {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes sheet-down {
+  from {
+    transform: translate3d(0, var(--drag, 0px), 0);
+  }
+  to {
+    transform: translate3d(0, 100%, 0);
   }
 }
 @keyframes fade-in {
@@ -395,29 +574,6 @@
     opacity: 1;
   }
 }
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.75rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
-}
-@keyframes sheet-down {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(100%);
-  }
-}
 @keyframes fade-out {
   from {
     opacity: 1;
@@ -426,44 +582,141 @@
     opacity: 0;
   }
 }
-@keyframes rise-in {
+@keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(0.5rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes route-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.75rem) scale(0.995);
+    transform: translate3d(0, 1rem, 0) scale(0.96);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* Route enters. Push slides in from the trailing edge, pop from the leading
+   edge, tab switches cross-fade with a slight lift — the same grammar iOS uses,
+   so depth reads without thinking about it. */
+@keyframes route-push {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes route-pop {
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes route-fade {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: var(--len, 1000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
 
 .animate-sheet-up {
-  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
-}
-.animate-fade-in {
-  animation: fade-in 0.2s ease-out;
-}
-.animate-toast-in {
-  animation: toast-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: sheet-up 0.5s var(--ease-out-expo);
 }
 .animate-sheet-down {
-  animation: sheet-down 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: sheet-down 0.26s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
 }
 .animate-fade-out {
-  animation: fade-out 0.22s ease-in forwards;
+  animation: fade-out 0.24s ease-in forwards;
 }
-.animate-route-in {
-  animation: route-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+.animate-toast-in {
+  animation: toast-in 0.5s var(--ease-out-expo);
+}
+.animate-pop-in {
+  animation: pop-in 0.45s var(--ease-spring) both;
+}
+.animate-rise-in {
+  animation: rise-in 0.55s var(--ease-out-expo) both;
+}
+.animate-route-in,
+.route-fade {
+  animation: route-fade 0.45s var(--ease-out-expo) both;
+}
+.route-push {
+  animation: route-push 0.45s var(--ease-out-expo) both;
+}
+.route-pop {
+  animation: route-pop 0.45s var(--ease-out-expo) both;
+}
+.animate-pulse-soft {
+  animation: pulse-soft 1.6s ease-in-out infinite;
 }
 
 /* ---------------------------------------------------------------- stagger
@@ -471,8 +724,8 @@
    property set per item; the cap keeps a 60-row list from taking two seconds
    to finish, since anything past the fold is invisible anyway. */
 .stagger > * {
-  animation: rise-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
-  animation-delay: calc(min(var(--i, 0), 12) * 22ms);
+  animation: rise-in 0.55s var(--ease-out-expo) both;
+  animation-delay: calc(min(var(--i, 0), 12) * 40ms);
 }
 
 /* Long lists skip layout and paint for off-screen rows, which is what keeps
@@ -493,14 +746,9 @@
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(255 255 255 / 0.35),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
   animation: shimmer 1.4s infinite;
 }
 .dark .skeleton::after {
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.05), transparent);
 }

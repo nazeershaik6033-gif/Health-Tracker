@@ -65,7 +65,7 @@ export default function Water() {
               type="button"
               onClick={() => change(1)}
               aria-label="Add a glass"
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-ring-water)] text-white shadow-lg transition-transform active:scale-95"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-ring-water)] text-white shadow-lg pressable"
             >
               <IconPlus width={26} height={26} strokeWidth={2.25} />
             </button>

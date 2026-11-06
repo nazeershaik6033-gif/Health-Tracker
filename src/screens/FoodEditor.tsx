@@ -50,7 +50,7 @@ export default function FoodEditor() {
     void (async () => {
       const food = await getFood(id);
       if (!food) {
-        showToast({ message: 'That food no longer exists' });
+        showToast({ message: 'That food no longer exists', tone: 'warn' });
         navigate('/search', { replace: true });
         return;
       }
@@ -138,14 +138,14 @@ export default function FoodEditor() {
   if (!loaded) {
     return (
       <div className="min-h-dvh">
-        <PageHeader title="Edit food" back={() => navigate(-1)} />
+        <PageHeader title="Edit food" back={-1} />
       </div>
     );
   }
 
   return (
     <div className="pb-32">
-      <PageHeader title={editing ? 'Edit food' : 'Create a food'} back={() => navigate(-1)} />
+      <PageHeader title={editing ? 'Edit food' : 'Create a food'} back={-1} />
 
       {editing && (
         <p className="mx-4 mt-3 accent-card accent-amber p-3 text-[11.5px] leading-relaxed">

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { prefersReducedMotion } from '@/lib/motion';
 
 interface Props {
@@ -12,7 +19,10 @@ interface Props {
 }
 
 /** Matches the sheet-down / fade-out durations in styles/index.css. */
-const EXIT_MS = 220;
+const EXIT_MS = 260;
+/** Dragged further than this (px), or flicked faster than FLICK, closes. */
+const DISMISS_PX = 110;
+const FLICK = 0.6;
 
 export function BottomSheet({ open, onClose, title, children, footer, maxHeight = '85vh' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -70,14 +80,52 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
     };
   }, [open, requestClose]);
 
+  // Drag-to-dismiss on the grab handle and title. Only that strip is a drag
+  // target, so it never fights the scrolling content below it.
+  const [drag, setDrag] = useState(0);
+  const dragging = useRef<{ y: number; t: number; pointer: number } | null>(null);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (closing) return;
+    dragging.current = { y: e.clientY, t: performance.now(), pointer: e.pointerId };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const d = dragging.current;
+    if (!d || d.pointer !== e.pointerId) return;
+    const dy = e.clientY - d.y;
+    // Rubber-band upward pulls instead of letting the sheet leave the bottom.
+    setDrag(dy > 0 ? dy : dy / 6);
+  };
+  const onPointerUp = (e: ReactPointerEvent) => {
+    const d = dragging.current;
+    if (!d || d.pointer !== e.pointerId) return;
+    dragging.current = null;
+    const dy = e.clientY - d.y;
+    const velocity = dy / Math.max(1, performance.now() - d.t);
+    if (dy > DISMISS_PX || (dy > 24 && velocity > FLICK)) {
+      requestClose();
+    } else {
+      setDrag(0);
+    }
+  };
+
+  // A fresh open always starts seated, whatever the last close left behind.
+  useEffect(() => {
+    if (open) setDrag(0);
+  }, [open]);
+
   if (!mounted) return null;
+
+  const isDragging = dragging.current !== null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div
-        className={`absolute inset-0 bg-black/40 ${closing ? 'animate-fade-out' : 'animate-fade-in'}`}
+        className={`absolute inset-0 bg-black/45 backdrop-blur-[2px] ${closing ? 'animate-fade-out' : 'animate-fade-in'}`}
         onClick={requestClose}
         aria-hidden="true"
+        style={drag > 0 && !closing ? { opacity: Math.max(0.2, 1 - drag / 400) } : undefined}
       />
       <div
         ref={panelRef}
@@ -85,7 +133,7 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative flex w-full max-w-lg flex-col outline-none ${
+        className={`relative flex w-full max-w-lg flex-col shadow-[0_-12px_40px_-12px_rgb(0_0_0/0.35)] outline-none ${
           closing ? 'animate-sheet-down' : 'animate-sheet-up'
         }`}
         style={{
@@ -93,14 +141,29 @@ export function BottomSheet({ open, onClose, title, children, footer, maxHeight 
           background: 'var(--surface-card)',
           borderTopLeftRadius: 'var(--radius-sheet)',
           borderTopRightRadius: 'var(--radius-sheet)',
+          ['--drag' as string]: `${Math.max(0, drag)}px`,
+          ...(closing
+            ? {}
+            : {
+                transform: drag ? `translate3d(0, ${drag}px, 0)` : undefined,
+                transition: isDragging ? 'none' : 'transform 0.45s cubic-bezier(0.34, 1.3, 0.64, 1)',
+              }),
         }}
       >
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="surface-sunken h-1 w-10 rounded-full" />
+        <div
+          className="cursor-grab touch-none select-none active:cursor-grabbing"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <div className="flex justify-center pt-3 pb-1.5">
+            <div className="h-1.5 w-11 rounded-full bg-[var(--text-muted)] opacity-35" />
+          </div>
+          {title && (
+            <h2 className="px-5 pt-1.5 pb-2.5 text-[18px] font-bold tracking-tight">{title}</h2>
+          )}
         </div>
-        {title && (
-          <h2 className="px-5 pt-2 pb-2 text-[17px] font-bold tracking-tight">{title}</h2>
-        )}
         {/* pt-0.5 rather than 0: a child with a negative top margin would
             otherwise sit above scrollTop 0, where it is unreachable and gets
             clipped by the overflow. */}

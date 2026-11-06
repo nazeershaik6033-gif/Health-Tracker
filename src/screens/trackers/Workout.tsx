@@ -342,7 +342,7 @@ function SessionCard({
           type="button"
           onClick={onDeleteLegacy}
           aria-label={`Delete ${workout.type}`}
-          className="rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+          className="rounded-lg p-1.5 text-muted pressable"
         >
           <IconTrash width={15} height={15} />
         </button>
@@ -369,7 +369,7 @@ function SessionCard({
             <button
               type="button"
               onClick={() => onEdit(i, logged)}
-              className="min-w-0 flex-1 text-left transition-transform active:scale-[0.99]"
+              className="min-w-0 flex-1 text-left pressable"
             >
               <span className="block truncate text-[13.5px] font-semibold">{logged.name}</span>
               <span className="tabular block truncate text-[12px] text-secondary">
@@ -379,7 +379,7 @@ function SessionCard({
             <Link
               to={`/exercise/${encodeURIComponent(logged.exerciseId)}`}
               aria-label={`${logged.name} history`}
-              className="rounded-lg p-1 text-muted transition-transform active:scale-90"
+              className="rounded-lg p-1 text-muted pressable"
             >
               <IconChevronRight width={16} height={16} />
             </Link>
@@ -388,7 +388,7 @@ function SessionCard({
               type="button"
               onClick={() => onRemove(i)}
               aria-label={`Remove ${logged.name}`}
-              className="shrink-0 rounded-lg p-1.5 text-muted transition-transform active:scale-90"
+              className="shrink-0 rounded-lg p-1.5 text-muted pressable"
             >
               <IconTrash width={14} height={14} />
             </button>

@@ -208,7 +208,7 @@ export default function Scan() {
     <div className="flex min-h-dvh flex-col bg-black">
       <PageHeader
         title="Scan a barcode"
-        back={() => navigate(-1)}
+        back={-1}
         action={
           phase === 'scanning' && camera.torchAvailable ? (
             <button

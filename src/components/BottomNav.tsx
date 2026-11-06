@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { HAPTIC, haptic } from '@/lib/motion';
 import { IconDiet, IconHome, IconPlans, IconPlus, IconStreak } from './icons';
 
@@ -9,39 +9,60 @@ const ITEMS = [
   { to: '/streaks', label: 'Streaks', Icon: IconStreak, end: false },
 ];
 
+/** Slot order in the bar: two tabs, the log button, two tabs. */
+const SLOTS = [0, 1, -1, 2, 3];
+
 /**
- * Home · Diet · [+] · Plans · Streaks — the [+] is a raised FAB in the middle
- * of the bar, matching the reference app.
+ * Floating, frosted tab bar. The active pill is one element that slides
+ * between slots on a spring rather than each tab lighting up on its own, so a
+ * tab change reads as movement. The raised [+] in the middle opens the log
+ * sheet.
  */
 export function BottomNav() {
   const navigate = useNavigate();
-  const [left, right] = [ITEMS.slice(0, 2), ITEMS.slice(2)];
+  const { pathname } = useLocation();
+  const active = ITEMS.findIndex((item) =>
+    item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`),
+  );
+  const activeSlot = SLOTS.indexOf(active);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--surface-border)] bg-[var(--surface-card)]/95 backdrop-blur">
-      <div className="mx-auto flex max-w-lg items-stretch justify-between px-2 pt-1.5 pb-safe">
-        {left.map((item) => (
-          <NavItem key={item.to} {...item} />
-        ))}
-
-        <div className="flex w-16 shrink-0 justify-center">
-          <button
-            type="button"
-            onClick={() => {
-              haptic(HAPTIC.tap);
-              navigate('/log');
+    <nav
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4"
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)' }}
+    >
+      <div className="surface-glass shadow-float pointer-events-auto relative mx-auto flex h-[4.25rem] max-w-md items-center rounded-[1.75rem] px-1.5">
+        {/* Sliding highlight. Each slot is a fifth of the bar. */}
+        {activeSlot >= 0 && (
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 bottom-1.5 left-1.5 rounded-[1.35rem] bg-[color-mix(in_srgb,var(--brand-500)_13%,transparent)] transition-transform duration-500 ease-[cubic-bezier(0.34,1.3,0.64,1)]"
+            style={{
+              width: 'calc((100% - 0.75rem) / 5)',
+              transform: `translateX(${activeSlot * 100}%)`,
             }}
-            aria-label="Log food"
-            className="-mt-5 flex h-13 w-13 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition-transform active:scale-95"
-            style={{ height: '3.25rem', width: '3.25rem' }}
-          >
-            <IconPlus width={26} height={26} strokeWidth={2.25} />
-          </button>
-        </div>
+          />
+        )}
 
-        {right.map((item) => (
-          <NavItem key={item.to} {...item} />
-        ))}
+        {SLOTS.map((slot) =>
+          slot === -1 ? (
+            <div key="log" className="relative flex flex-1 justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  haptic(HAPTIC.tap);
+                  navigate('/log');
+                }}
+                aria-label="Log food"
+                className="pressable brand-gradient flex h-[3.4rem] w-[3.4rem] items-center justify-center rounded-[1.25rem] shadow-[0_12px_28px_-10px_rgb(14_154_104/0.8)]"
+              >
+                <IconPlus width={26} height={26} strokeWidth={2.4} />
+              </button>
+            </div>
+          ) : (
+            <NavItem key={ITEMS[slot].to} {...ITEMS[slot]} />
+          ),
+        )}
       </div>
     </nav>
   );
@@ -64,26 +85,19 @@ function NavItem({
       end={end}
       onClick={() => haptic(HAPTIC.tap)}
       className={({ isActive }) =>
-        `relative flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10.5px] font-semibold transition-colors ${
+        `relative z-10 flex flex-1 flex-col items-center gap-0.5 py-2 text-[10.5px] font-semibold transition-colors duration-300 ${
           isActive ? 'text-brand-600' : 'text-[var(--text-muted)]'
         }`
       }
     >
       {({ isActive }) => (
         <>
-          {/* A short rule above the active tab, scaled in rather than faded so
-              the movement reads as travel between tabs. */}
-          <span
-            aria-hidden="true"
-            className="absolute top-0 h-0.5 w-7 origin-center rounded-full bg-brand-500 transition-transform duration-250 ease-out"
-            style={{ transform: `scaleX(${isActive ? 1 : 0})` }}
-          />
           <Icon
             width={22}
             height={22}
-            strokeWidth={isActive ? 2.1 : 1.75}
-            className="transition-transform duration-200 ease-out"
-            style={{ transform: `scale(${isActive ? 1.08 : 1})` }}
+            strokeWidth={isActive ? 2.2 : 1.8}
+            className="transition-transform duration-500 ease-[cubic-bezier(0.34,1.5,0.64,1)]"
+            style={{ transform: `translateY(${isActive ? -1 : 0}px) scale(${isActive ? 1.1 : 1})` }}
           />
           {label}
         </>

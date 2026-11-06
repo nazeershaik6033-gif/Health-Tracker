@@ -92,8 +92,8 @@ export default defineConfig({
         scope: './',
         display: 'standalone',
         orientation: 'portrait',
-        background_color: '#F7F7F5',
-        theme_color: '#14A06A',
+        background_color: '#F3F4F6',
+        theme_color: '#0E9A68',
         categories: ['health', 'fitness', 'lifestyle'],
         // ?v=2 because these filenames never change, so a phone that cached
         // the earlier (half-transparent) icons would keep serving them.

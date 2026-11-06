@@ -258,7 +258,7 @@ export default function Snap() {
     <div className="flex h-svh flex-col overflow-hidden bg-black">
       <PageHeader
         title="Snap a meal"
-        back={() => navigate(-1)}
+        back={-1}
         action={
           <div className="flex items-center gap-1">
             {phase === 'capture' && camera.torchAvailable && (

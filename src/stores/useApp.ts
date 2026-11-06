@@ -6,6 +6,8 @@ import { today } from '@/lib/date';
 interface ToastState {
   id: number;
   message: string;
+  /** Drives the icon: a check for something done, a warning for a refusal. */
+  tone?: 'success' | 'warn';
   actionLabel?: string;
   onAction?: () => void | Promise<void>;
 }

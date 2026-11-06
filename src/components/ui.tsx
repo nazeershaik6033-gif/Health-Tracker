@@ -1,16 +1,21 @@
+import { useEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { IconSparkle, IconChevronLeft } from './icons';
+import { animateNumber } from '@/lib/motion';
+import { useGoBack } from '@/lib/nav';
 
 /* --------------------------------- Button -------------------------------- */
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700',
-  accent: 'bg-accent-500 text-white hover:bg-accent-600',
-  secondary: 'surface-sunken hairline border hover:brightness-95',
-  ghost: 'hover:surface-sunken',
+  primary:
+    'brand-gradient shadow-[0_10px_24px_-10px_rgb(14_154_104/0.65)] hover:brightness-[1.06]',
+  accent:
+    'bg-gradient-to-br from-[#ff9a52] to-accent-500 text-white shadow-[0_10px_24px_-10px_rgb(247_107_28/0.6)] hover:brightness-105',
+  secondary:
+    'bg-[var(--surface-sunken)] shadow-[inset_0_0_0_1px_var(--surface-border)] hover:brightness-[0.97]',
+  ghost: 'hover:bg-[var(--surface-sunken)]',
   danger: 'bg-red-600 text-white hover:bg-red-700',
 };
 
@@ -29,13 +34,13 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const sizes = {
-    sm: 'px-3 py-1.5 text-[13px] rounded-lg',
-    md: 'px-4 py-2.5 text-sm rounded-xl',
-    lg: 'px-5 py-3.5 text-[15px] rounded-2xl',
+    sm: 'px-3.5 py-2 text-[13px] rounded-xl',
+    md: 'px-4.5 py-3 text-sm rounded-2xl',
+    lg: 'px-5 py-4 text-[15px] rounded-[1.15rem]',
   };
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${VARIANTS[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${className}`}
+      className={`pressable inline-flex items-center justify-center gap-2 font-semibold tracking-[-0.01em] transition-[filter,opacity] disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none ${VARIANTS[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${className}`}
       {...rest}
     >
       {children}
@@ -59,8 +64,8 @@ export function Card({
 
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-2.5 flex items-center justify-between">
-      <h2 className="text-[15px] font-bold tracking-tight">{children}</h2>
+    <div className="mb-3 flex items-center justify-between">
+      <h2 className="text-[16px] font-bold tracking-tight">{children}</h2>
       {action}
     </div>
   );
@@ -78,10 +83,10 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
 export function Field({ label, hint, suffix, error, className = '', ...rest }: FieldProps) {
   return (
     <label className="block">
-      {label && <span className="mb-1.5 block text-[13px] font-medium text-secondary">{label}</span>}
+      {label && <span className="mb-1.5 block text-[13px] font-semibold text-secondary">{label}</span>}
       <span className="relative block">
         <input
-          className={`hairline w-full rounded-xl border bg-transparent px-3.5 py-2.5 text-[15px] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-brand-500 ${suffix ? 'pr-12' : ''} ${error ? 'border-red-500' : ''} ${className}`}
+          className={`w-full rounded-2xl border border-transparent bg-[var(--surface-sunken)] px-4 py-3 text-[15px] outline-none transition-[border-color,background-color,box-shadow] duration-200 placeholder:text-[var(--text-muted)] focus:border-brand-500 focus:bg-[var(--surface-card)] focus:shadow-[0_0_0_4px_color-mix(in_srgb,var(--brand-500)_16%,transparent)] ${suffix ? 'pr-12' : ''} ${error ? 'border-red-500' : ''} ${className}`}
           {...rest}
         />
         {suffix && (
@@ -116,8 +121,10 @@ export function Chip({
     <button
       type="button"
       onClick={onClick}
-      className={`hairline inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-        active ? 'border-brand-500 tint-soft tint-brand' : 'hover:surface-sunken'
+      className={`pressable inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition-[background-color,color,box-shadow] duration-300 ${
+        active
+          ? 'tint-soft tint-brand shadow-[inset_0_0_0_1.5px_var(--brand-500)]'
+          : 'surface-card text-secondary'
       }`}
     >
       {icon}
@@ -150,9 +157,9 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center px-6 py-10 text-center">
+    <div className="animate-rise-in flex flex-col items-center px-6 py-10 text-center">
       {icon && (
-        <div className="surface-sunken mb-3 flex h-14 w-14 items-center justify-center rounded-full text-[var(--text-muted)]">
+        <div className="surface-card mb-4 flex h-16 w-16 items-center justify-center rounded-[1.4rem] text-[var(--text-muted)]">
           {icon}
         </div>
       )}
@@ -172,32 +179,110 @@ export function PageHeader({
   subtitle,
 }: {
   title: string;
-  back?: string | (() => void);
+  /** A path, -1 for "where the user came from" (falls back to Home), or a handler. */
+  back?: string | -1 | (() => void);
   action?: ReactNode;
   subtitle?: string;
 }) {
+  const goBack = useGoBack();
+  // The bar is clear over the top of the page and frosts once content
+  // scrolls under it — the same cue native large-title bars give.
+  const scrolled = useScrolled();
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--surface-border)] bg-[var(--surface-canvas)]/95 px-3 pt-safe pb-2 backdrop-blur">
-      {typeof back === 'string' ? (
-        <Link to={back} aria-label="Back" className="rounded-full p-2 hover:surface-sunken">
-          <IconChevronLeft width={22} height={22} />
-        </Link>
-      ) : (
-        <button
-          type="button"
-          onClick={back}
-          aria-label="Back"
-          className="rounded-full p-2 hover:surface-sunken"
-        >
-          <IconChevronLeft width={22} height={22} />
-        </button>
-      )}
+    <header
+      className={`sticky top-0 z-20 flex items-center gap-1.5 px-2.5 pt-safe pb-2 transition-[background-color,box-shadow] duration-300 ${
+        scrolled
+          ? 'surface-glass shadow-[0_1px_0_var(--surface-border)]'
+          : 'bg-[var(--surface-canvas)]'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => (typeof back === 'function' ? back() : goBack(back))}
+        aria-label="Back"
+        className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-[var(--surface-sunken)]"
+      >
+        <IconChevronLeft width={22} height={22} strokeWidth={2.1} />
+      </button>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-[17px] font-bold tracking-tight">{title}</h1>
-        {subtitle && <p className="truncate text-[12px] text-secondary">{subtitle}</p>}
+        <h1 className="truncate text-[18px] font-bold tracking-tight">{title}</h1>
+        {subtitle && <p className="truncate text-[12px] font-medium text-secondary">{subtitle}</p>}
       </div>
       {action}
     </header>
+  );
+}
+
+/** True once the window has scrolled past a few pixels. */
+export function useScrolled(threshold = 6): boolean {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > threshold);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [threshold]);
+  return scrolled;
+}
+
+/* ---------------------------- Animated number ---------------------------- */
+
+/**
+ * A number that counts to its new value instead of snapping. Starts from zero
+ * on mount so a screen's headline figures roll up as it arrives.
+ */
+export function AnimatedNumber({
+  value,
+  format = (n) => Math.round(n).toLocaleString(),
+  duration = 900,
+  className = '',
+}: {
+  value: number;
+  format?: (n: number) => string;
+  duration?: number;
+  className?: string;
+}) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const stop = animateNumber(from.current, value, (n) => {
+      from.current = n;
+      setShown(n);
+    }, duration);
+    return stop;
+  }, [value, duration]);
+  return <span className={`tabular ${className}`}>{format(shown)}</span>;
+}
+
+/* ------------------------------ Progress bar ----------------------------- */
+
+export function ProgressBar({
+  value,
+  color,
+  height = 6,
+  className = '',
+}: {
+  /** 0–1; anything above 1 is drawn full in the over colour. */
+  value: number;
+  color: string;
+  height?: number;
+  className?: string;
+}) {
+  const over = value > 1.0001;
+  const pct = Math.max(0, Math.min(1, value)) * 100;
+  return (
+    <div
+      className={`w-full overflow-hidden rounded-full bg-[var(--surface-sunken)] ${className}`}
+      style={{ height }}
+    >
+      <div
+        className="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
+        style={{
+          width: `${pct}%`,
+          background: over ? '#ef4444' : `linear-gradient(90deg, color-mix(in srgb, ${color} 70%, white), ${color})`,
+        }}
+      />
+    </div>
   );
 }
 

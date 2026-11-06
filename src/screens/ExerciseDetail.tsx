@@ -62,7 +62,7 @@ export default function ExerciseDetail() {
   if (exercise === undefined) {
     return (
       <div className="pb-6">
-        <PageHeader title="Exercise" back={() => navigate(-1)} />
+        <PageHeader title="Exercise" back={-1} />
         <div className="space-y-3 px-4 pt-3">
           <Skeleton className="h-24 w-full rounded-2xl" />
           <Skeleton className="h-40 w-full rounded-2xl" />
@@ -74,7 +74,7 @@ export default function ExerciseDetail() {
   if (!exercise) {
     return (
       <div className="pb-6">
-        <PageHeader title="Exercise" back={() => navigate(-1)} />
+        <PageHeader title="Exercise" back={-1} />
         <Card className="mx-4 mt-3">
           <p className="text-[13.5px] text-secondary">
             This exercise is no longer in your catalog. Any sessions you logged with it are
@@ -87,7 +87,7 @@ export default function ExerciseDetail() {
 
   return (
     <div className="pb-6">
-      <PageHeader title={exercise.name} back={() => navigate(-1)} />
+      <PageHeader title={exercise.name} back={-1} />
 
       <div className="space-y-3 px-4 pt-3">
         <Card className="space-y-1">

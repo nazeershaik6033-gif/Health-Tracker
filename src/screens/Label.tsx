@@ -125,7 +125,7 @@ export default function Label() {
     <div className="flex min-h-dvh flex-col bg-black">
       <PageHeader
         title="Read a nutrition label"
-        back={() => navigate(-1)}
+        back={-1}
         action={
           phase === 'capture' && camera.torchAvailable ? (
             <button
