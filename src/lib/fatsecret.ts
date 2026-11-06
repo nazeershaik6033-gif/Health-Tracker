@@ -1,3 +1,4 @@
+import { toGtin13 } from './gtin';
 import type { FatSecretConfig, Food, Nutrients, Serving } from '@/types';
 
 /**
@@ -483,16 +484,6 @@ export async function getFatSecretFood(
   );
   const food = data.food as FSFood | undefined;
   return food ? mapFood(food, barcode) : null;
-}
-
-/**
- * FatSecret matches on GTIN-13, so shorter symbologies have to be zero-padded
- * — an unpadded UPC-A or EAN-8 simply returns "no match", which looks like a
- * missing product rather than a formatting problem.
- */
-export function toGtin13(barcode: string): string {
-  const digits = barcode.replace(/\D/g, '');
-  return digits.length >= 13 ? digits.slice(-13) : digits.padStart(13, '0');
 }
 
 export async function lookupFatSecretBarcode(

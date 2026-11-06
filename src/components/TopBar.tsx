@@ -53,7 +53,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
         <Link
           to="/settings"
           aria-label="Profile and settings"
-          className="pressable brand-gradient flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[16px] font-bold shadow-[0_8px_20px_-8px_rgb(14_154_104/0.7)]"
+          className="bg-brand-500 text-white flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[16px] font-bold"
         >
           {first ? first.charAt(0).toUpperCase() : '·'}
         </Link>
@@ -68,14 +68,14 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
         <Link
           to="/find"
           aria-label="Search foods and exercises"
-          className="pressable surface-card flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-secondary"
+          className="surface-card flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-secondary"
         >
           <IconSearch width={18} height={18} />
         </Link>
         <Link
           to="/calendar"
           aria-label="Calendar"
-          className="pressable surface-card flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-secondary"
+          className="surface-card flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-secondary"
         >
           <IconCalendar width={18} height={18} />
         </Link>
@@ -87,7 +87,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
             type="button"
             onClick={() => pick(addDays(start, -7))}
             aria-label="Previous week"
-            className="pressable flex h-7 w-7 items-center justify-center rounded-full text-secondary hover:bg-[var(--surface-sunken)]"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-secondary hover:bg-[var(--surface-sunken)]"
           >
             <IconChevronLeft width={16} height={16} />
           </button>
@@ -101,7 +101,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
             onClick={() => pick(thisWeek ? today() : addDays(start, 7))}
             disabled={thisWeek}
             aria-label="Next week"
-            className="pressable flex h-7 w-7 items-center justify-center rounded-full text-secondary hover:bg-[var(--surface-sunken)] disabled:opacity-30"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-secondary hover:bg-[var(--surface-sunken)] disabled:opacity-30"
           >
             <IconChevronRight width={16} height={16} />
           </button>
@@ -109,7 +109,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
         {streakDays !== undefined && streakDays > 0 && (
           <Link
             to="/streaks"
-            className="pressable tint-soft tint-warm flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold"
+            className="tint-soft tint-warm flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold"
           >
             <IconStreak width={13} height={13} />
             {streakDays}-day streak
@@ -130,7 +130,7 @@ export function TopBar({ streakDays }: { streakDays?: number }) {
               onClick={() => pick(d)}
               aria-pressed={active}
               aria-label={fromISODate(d).toDateString()}
-              className={`pressable relative flex flex-col items-center gap-1 rounded-2xl pt-1.5 pb-2 transition-[background-color,box-shadow,color] duration-300 disabled:opacity-35 ${
+              className={`relative flex flex-col items-center gap-1 rounded-2xl pt-1.5 pb-2 disabled:opacity-35 ${
                 active ? 'surface-card' : ''
               }`}
             >

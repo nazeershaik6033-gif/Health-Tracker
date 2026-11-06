@@ -152,6 +152,14 @@ export function createOpenRouter(apiKey: string, model?: string): ProviderAdapte
     if (data.choices?.[0]?.finish_reason === 'content_filter') {
       throw new AIError('Model declined the request', 'refused');
     }
+    // See the note in the Anthropic adapter: a reply cut off at the token
+    // ceiling is its own failure, not an unreadable one.
+    if (data.choices?.[0]?.finish_reason === 'length') {
+      throw new AIError(
+        `Reply hit the ${opts.maxTokens ?? 2048} token output limit`,
+        'truncated',
+      );
+    }
     const text = data.choices?.[0]?.message?.content ?? '';
     if (!text) throw new AIError('Model returned no text', 'bad-response');
     return text;

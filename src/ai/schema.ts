@@ -15,6 +15,44 @@ const NUTRIENT_PROPS = {
   fibre: { type: 'number', description: 'Grams of dietary fibre' },
 } as const;
 
+/**
+ * The tracked micronutrients, per 100 g, in each nutrient's own unit.
+ *
+ * Attached only to the single-food schemas. A meal analysis returns many items
+ * at once, and asking for twenty-four extra figures on each one trades a large
+ * increase in tokens and latency for numbers the model is guessing at from a
+ * photograph — the food-level call is where it has a real chance of being
+ * right, and where the answer gets stored and reused.
+ */
+const MICRO_PROPS = {
+  iron: { type: 'number', description: 'Iron in mg' },
+  calcium: { type: 'number', description: 'Calcium in mg' },
+  magnesium: { type: 'number', description: 'Magnesium in mg' },
+  zinc: { type: 'number', description: 'Zinc in mg' },
+  potassium: { type: 'number', description: 'Potassium in mg' },
+  sodium: { type: 'number', description: 'Sodium in mg' },
+  iodine: { type: 'number', description: 'Iodine in µg' },
+  selenium: { type: 'number', description: 'Selenium in µg' },
+  copper: { type: 'number', description: 'Copper in mg' },
+  manganese: { type: 'number', description: 'Manganese in mg' },
+  chromium: { type: 'number', description: 'Chromium in µg' },
+  vitaminA: { type: 'number', description: 'Vitamin A in µg RAE' },
+  vitaminC: { type: 'number', description: 'Vitamin C in mg' },
+  vitaminD: { type: 'number', description: 'Vitamin D in µg' },
+  vitaminE: { type: 'number', description: 'Vitamin E (alpha-tocopherol) in mg' },
+  vitaminB1: { type: 'number', description: 'Vitamin B1 (thiamin) in mg' },
+  vitaminB2: { type: 'number', description: 'Vitamin B2 (riboflavin) in mg' },
+  vitaminB3: { type: 'number', description: 'Vitamin B3 (niacin) in mg NE' },
+  vitaminB5: { type: 'number', description: 'Vitamin B5 (pantothenic acid) in mg' },
+  vitaminB6: { type: 'number', description: 'Vitamin B6 (pyridoxine) in mg' },
+  vitaminB12: { type: 'number', description: 'Vitamin B12 in µg' },
+  folate: { type: 'number', description: 'Folate in µg DFE' },
+  epa: { type: 'number', description: 'EPA (eicosapentaenoic acid, an omega-3) in mg' },
+  dha: { type: 'number', description: 'DHA (docosahexaenoic acid, an omega-3) in mg' },
+} as const;
+
+export const MICRO_KEYS = Object.keys(MICRO_PROPS);
+
 const ITEM_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -51,18 +89,39 @@ export const MEAL_ANALYSIS_SCHEMA = {
   },
 } as const;
 
+/**
+ * `brand` is required despite being optional in practice.
+ *
+ * Strict schema mode — which both Anthropic and OpenRouter enforce, and which
+ * this file's header already commits to — rejects a schema that declares
+ * `additionalProperties: false` while leaving a declared property out of
+ * `required`. That made this schema invalid, so every call carrying it failed
+ * before the model saw it: reading a nutrition label and generating a food with
+ * AI were both broken outright. An empty string is the "no brand" value, and
+ * `toFoodDraft` already maps it back to undefined.
+ */
 export const FOOD_GENERATION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['name', 'per100g', 'servings'],
+  required: ['name', 'brand', 'per100g', 'micros', 'servings'],
   properties: {
     name: { type: 'string' },
-    brand: { type: 'string' },
+    brand: {
+      type: 'string',
+      description: 'Brand name, or "" for a generic or home-cooked food',
+    },
     per100g: {
       type: 'object',
       additionalProperties: false,
       required: ['kcal', 'protein', 'fat', 'carbs', 'fibre'],
       properties: NUTRIENT_PROPS,
+    },
+    micros: {
+      type: 'object',
+      description: 'Micronutrients per 100 g. Use 0 only where the food genuinely has none.',
+      additionalProperties: false,
+      required: Object.keys(MICRO_PROPS),
+      properties: MICRO_PROPS,
     },
     servings: {
       type: 'array',
@@ -94,6 +153,45 @@ export const INSIGHT_SCHEMA = {
       type: 'array',
       description: 'Two very short actionable suggestions, three or four words each',
       items: { type: 'string' },
+    },
+  },
+} as const;
+
+/**
+ * Suggestions for the next meal of the day.
+ *
+ * Each option carries its own calories and protein so the card can show what
+ * logging it would do to the day's remaining budget, rather than making the
+ * user guess whether "a bowl of dal" fits in 243 calories.
+ */
+export const MEAL_SUGGESTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['headline', 'options', 'tip'],
+  properties: {
+    headline: {
+      type: 'string',
+      description: 'One sentence naming the gap this meal should close, citing real numbers',
+    },
+    options: {
+      type: 'array',
+      description: 'Two or three concrete things to eat',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'portion', 'kcal', 'protein', 'why'],
+        properties: {
+          name: { type: 'string', description: 'The dish, e.g. "Rajma with brown rice"' },
+          portion: { type: 'string', description: 'e.g. "1 katori rajma + 1 katori rice"' },
+          kcal: { type: 'number' },
+          protein: { type: 'number', description: 'Grams of protein in that portion' },
+          why: { type: 'string', description: 'One short clause on why this one fits' },
+        },
+      },
+    },
+    tip: {
+      type: 'string',
+      description: 'One sentence on the rest of the day, or what to avoid',
     },
   },
 } as const;

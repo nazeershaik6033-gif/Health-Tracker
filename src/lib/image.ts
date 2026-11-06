@@ -94,25 +94,71 @@ export function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Converts a rectangle expressed as fractions of the *displayed* video box into
+ * pixel coordinates in the video's own frame, undoing `object-cover`.
+ *
+ * This is the whole barcode bug. Every preview in the app renders the stream
+ * with `object-cover`, which scales the frame to fill the element and throws
+ * away whatever overflows — on a portrait phone showing a landscape sensor,
+ * that is a large slice off both sides. The guide box the user aims with is
+ * positioned in element percentages, but the crop fed to the decoder was
+ * reading the same percentages straight off the raw frame. The two only agree
+ * when the element and the frame happen to share an aspect ratio, which on a
+ * phone they never do, so the region being decoded sat somewhere off the region
+ * being aimed at. A barcode centred perfectly in the box could be half outside
+ * the strip that was actually read, and simply never decoded.
+ */
+export function displayRectToFrame(video: HTMLVideoElement, roi: Rect): Rect {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  // Before metadata arrives there is no frame to map into.
+  if (!vw || !vh) return { x: 0, y: 0, w: 0, h: 0 };
+
+  const ew = video.clientWidth || vw;
+  const eh = video.clientHeight || vh;
+
+  // `object-cover`: scale so the frame covers the box, centred, overflow clipped.
+  const scale = Math.max(ew / vw, eh / vh);
+  const cropX = (vw * scale - ew) / 2;
+  const cropY = (vh * scale - eh) / 2;
+
+  const x = (roi.x * ew + cropX) / scale;
+  const y = (roi.y * eh + cropY) / scale;
+  const w = (roi.w * ew) / scale;
+  const h = (roi.h * eh) / scale;
+
+  // Clamp, so a guide box larger than the visible frame still yields a legal
+  // source rect rather than a drawImage that silently produces nothing.
+  const left = Math.max(0, Math.min(vw, x));
+  const top = Math.max(0, Math.min(vh, y));
+  return {
+    x: Math.round(left),
+    y: Math.round(top),
+    w: Math.round(Math.max(1, Math.min(w, vw - left))),
+    h: Math.round(Math.max(1, Math.min(h, vh - top))),
+  };
+}
+
 /**
  * Grabs the current video frame, optionally cropping to a region of interest.
  * The ROI crop is what makes barcode decoding reliable: it removes the
  * background clutter around the guide box before the decoder ever sees it.
+ *
+ * `roi` is given in fractions of the **displayed** element, the same numbers
+ * that position the guide box, so what gets decoded is what the user framed.
  */
-export function captureFrame(
-  video: HTMLVideoElement,
-  roi?: { x: number; y: number; w: number; h: number },
-): HTMLCanvasElement {
+export function captureFrame(video: HTMLVideoElement, roi?: Rect): HTMLCanvasElement {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
-  const region = roi
-    ? {
-        x: Math.round(roi.x * vw),
-        y: Math.round(roi.y * vh),
-        w: Math.round(roi.w * vw),
-        h: Math.round(roi.h * vh),
-      }
-    : { x: 0, y: 0, w: vw, h: vh };
+  const region = roi ? displayRectToFrame(video, roi) : { x: 0, y: 0, w: vw, h: vh };
 
   const canvas = document.createElement('canvas');
   canvas.width = region.w;

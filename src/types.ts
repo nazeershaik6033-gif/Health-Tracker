@@ -27,6 +27,47 @@ export const MEAL_SLOT_SHARE: Record<MealSlot, number> = {
   dinner: 0.25,
 };
 
+/**
+ * Parts of the day. Slots roll up into these so macros can be tracked against
+ * a stretch of the day, not only the day as a whole.
+ */
+export type DayPeriod = 'morning' | 'afternoon' | 'night';
+
+export const DAY_PERIODS: DayPeriod[] = ['morning', 'afternoon', 'night'];
+
+export const DAY_PERIOD_LABEL: Record<DayPeriod, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  night: 'Night',
+};
+
+/** Which slots make up each period. Order matches MEAL_SLOTS. */
+export const DAY_PERIOD_SLOTS: Record<DayPeriod, MealSlot[]> = {
+  morning: ['breakfast', 'morning_snack'],
+  afternoon: ['lunch', 'evening_snack'],
+  night: ['dinner'],
+};
+
+/** The slot whose header carries the period's expand button. */
+export const DAY_PERIOD_ANCHOR: Record<DayPeriod, MealSlot> = {
+  morning: 'breakfast',
+  afternoon: 'lunch',
+  night: 'dinner',
+};
+
+/**
+ * Default share of the day's macros per period, summed from the member slots'
+ * calorie shares so the two splits can never drift apart. Overridable per
+ * profile via `Profile.periodShares`.
+ */
+export const DAY_PERIOD_SHARE: Record<DayPeriod, number> = DAY_PERIODS.reduce(
+  (acc, period) => {
+    acc[period] = DAY_PERIOD_SLOTS[period].reduce((sum, slot) => sum + MEAL_SLOT_SHARE[slot], 0);
+    return acc;
+  },
+  {} as Record<DayPeriod, number>,
+);
+
 export interface Nutrients {
   kcal: number;
   protein: number;
@@ -36,6 +77,60 @@ export interface Nutrients {
 }
 
 export const ZERO_NUTRIENTS: Nutrients = { kcal: 0, protein: 0, fat: 0, carbs: 0, fibre: 0 };
+
+/**
+ * The micronutrients tracked per day.
+ *
+ * The original twelve were chosen because they are (a) commonly short in real
+ * diets, (b) present in the bundled food-composition tables, and (c)
+ * meaningful over a single day — and chromium was named explicitly as one to
+ * leave out, since it is neither commonly short nor reliably tabulated.
+ * Requested anyway, along with the rest of the B-complex, five more trace
+ * minerals and the two headline omega-3s: added here, in `MICROS` and in the
+ * AI schema, so an AI-read label, an AI-generated food, or one typed in by
+ * hand can all carry them from day one. The bundled 170-food catalog in
+ * `foods.seed.ts` / `micros.seed.ts` is *not* backfilled for them — inventing
+ * plausible-looking chromium or EPA figures for a home-cooked dal is exactly
+ * the "inventing precision" the original twelve were chosen to avoid, and
+ * unlike the original twelve there is no verified composition table backing
+ * numbers for these across the whole catalog. A barcode scan against Open
+ * Food Facts (`lib/openfoodfacts.ts`) does carry real values for most of
+ * these when the product's label reports them.
+ */
+export type MicroId =
+  | 'iron'
+  | 'calcium'
+  | 'magnesium'
+  | 'zinc'
+  | 'potassium'
+  | 'sodium'
+  | 'iodine'
+  | 'selenium'
+  | 'copper'
+  | 'manganese'
+  | 'chromium'
+  | 'vitaminA'
+  | 'vitaminC'
+  | 'vitaminD'
+  | 'vitaminE'
+  | 'vitaminB1'
+  | 'vitaminB2'
+  | 'vitaminB3'
+  | 'vitaminB5'
+  | 'vitaminB6'
+  | 'vitaminB12'
+  | 'folate'
+  | 'epa'
+  | 'dha';
+
+/**
+ * Micronutrient amounts, in each nutrient's own unit (see `MICROS`).
+ *
+ * Partial on purpose: a missing key means "not known for this food", which is
+ * a different thing from zero, and the day view reports that gap as coverage
+ * rather than quietly counting it as nothing.
+ */
+export type Micros = Partial<Record<MicroId, number>>;
 
 /** One selectable portion of a food, e.g. "1 katori" or "2 roti/chapati". */
 export interface Serving {
@@ -54,6 +149,8 @@ export interface Food {
   barcode?: string;
   /** Nutrients per 100 g — the canonical basis for all maths. */
   per100g: Nutrients;
+  /** Micronutrients per 100 g. Absent where the source carries none. */
+  micros?: Micros;
   servings: Serving[];
   source: FoodSource;
   tags: string[];
@@ -71,6 +168,8 @@ export interface MealItem {
   servingLabel: string;
   grams: number;
   nutrients: Nutrients;
+  /** Micronutrients for this portion. Absent when the food carries none. */
+  micros?: Micros;
   /** 0–10 ingredient score from the AI meal analysis. */
   score?: number;
   note?: string;
@@ -87,12 +186,44 @@ export interface Meal {
   createdAt: number;
 }
 
+/**
+ * A portion you pinned to a meal slot.
+ *
+ * The unit here is a *saved portion*, not a saved food: "2 rotis" is a fact
+ * about your breakfast, not about roti, so a flag on `Food` could never hold
+ * it. Storing `MealItem[]` — the same shape a `Meal` already stores — means one
+ * favourite covers both "1 katori dal" and the whole "2 roti + dal + curd"
+ * usual, with no second concept, and the macros are frozen exactly as you
+ * entered them rather than drifting when the underlying food is edited.
+ *
+ * Nothing is ever added here automatically. `order` is yours to set.
+ */
+export interface Favourite {
+  id: string;
+  slot: MealSlot;
+  /** Defaults to the single item's name; set explicitly for a combo. */
+  label?: string;
+  items: MealItem[];
+  /** Manual position within the slot, ascending. */
+  order: number;
+  useCount: number;
+  lastUsedAt?: number;
+  createdAt: number;
+}
+
 export type SnapStatus = 'pending' | 'analysing' | 'ready' | 'logged' | 'failed';
 
+/**
+ * A photo's metadata and its thumbnail.
+ *
+ * The full-resolution capture deliberately lives in a separate table. IndexedDB
+ * hands back whole records, so with the full image on this row every listing —
+ * the Home rail, the gallery — deserialised megabytes of JPEG just to draw
+ * 80px squares. The thumb stays here because a listing genuinely needs it.
+ */
 export interface Snap {
   id: string;
   date: string;
-  blob: Blob;
   thumb: Blob;
   width: number;
   height: number;
@@ -103,6 +234,12 @@ export interface Snap {
   analysis?: SnapAnalysis;
   error?: string;
   createdAt: number;
+}
+
+/** The full-resolution capture, keyed by its snap's id. */
+export interface SnapImage {
+  id: string;
+  blob: Blob;
 }
 
 export interface SnapAnalysis {
@@ -326,6 +463,11 @@ export interface Profile {
   targets: Nutrients;
   /** Set when the user overrides the computed calorie target. */
   targetsManual: boolean;
+  /**
+   * Fraction of the day's targets allotted to each period, as decimals that
+   * add up to 1. Absent means the DAY_PERIOD_SHARE defaults.
+   */
+  periodShares?: Record<DayPeriod, number>;
   units: UnitSystem;
   waterGoalGlasses: number;
   sleepGoalMin: number;
@@ -350,6 +492,32 @@ export const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'sepia', label: 'Sepia' },
   { id: 'dark', label: 'Dark' },
   { id: 'black', label: 'Black' },
+];
+
+/**
+ * Typeface options. All four are system-available or already-bundled stacks —
+ * no new webfont fetch — so the offline-first guarantee (see the font-face
+ * comment in styles/index.css) holds for every choice, not just the default.
+ */
+export type FontFamilyId = 'sans' | 'system' | 'serif' | 'mono';
+
+export const FONT_FAMILIES: { id: FontFamilyId; label: string }[] = [
+  { id: 'sans', label: 'Default' },
+  { id: 'system', label: 'System' },
+  { id: 'serif', label: 'Serif' },
+  { id: 'mono', label: 'Mono' },
+];
+
+/** Overall text/UI scale. Applied as a page zoom, so it grows everything a
+ *  browser's own zoom would — including the many components sized in
+ *  fixed pixels, which a root `font-size` change alone would not reach. */
+export type FontSizeId = 'sm' | 'md' | 'lg' | 'xl';
+
+export const FONT_SIZES: { id: FontSizeId; label: string }[] = [
+  { id: 'sm', label: 'S' },
+  { id: 'md', label: 'M' },
+  { id: 'lg', label: 'L' },
+  { id: 'xl', label: 'XL' },
 ];
 
 export type ProviderId = 'anthropic' | 'gemini' | 'openrouter';
@@ -393,10 +561,29 @@ export interface Settings {
   fatsecret: FatSecretConfig;
   autoTrack: boolean;
   theme: ThemeId;
+  fontFamily: FontFamilyId;
+  fontSize: FontSizeId;
   onboardingDone: boolean;
   lastInsightDate?: string;
   /** Set on every successful export, so the app can say how stale a backup is. */
   lastBackupAt?: number;
   /** Days before the overdue nudge appears. 0 disables it. */
   backupRemindDays?: number;
+  /**
+   * Which micronutrient back-fill has been applied to already-logged meals.
+   * Absent on installs that predate micronutrients, which is exactly the case
+   * the back-fill exists to repair. Bumped when the seed data gains figures
+   * that earlier logs should retroactively pick up.
+   */
+  microBackfillVersion?: number;
+  /**
+   * Whether walking counts toward the day's calories burned.
+   *
+   * On by default, but switchable because the app cannot tell a logged walking
+   * workout apart from the steps that same walk produced. Anyone who logs both
+   * is counting one walk twice, and only they know which they meant.
+   */
+  countStepKcal?: boolean;
+  /** Shows the frame-rate readout. Off by default; a diagnostic, not a feature. */
+  showFps?: boolean;
 }

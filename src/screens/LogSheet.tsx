@@ -6,6 +6,7 @@ import {
   IconBarcode,
   IconCamera,
   IconChevronRight,
+  IconDumbbell,
   IconGallery,
   IconMic,
   IconPlus,
@@ -35,8 +36,8 @@ export default function LogSheet() {
     {
       to: '/scan',
       icon: <IconBarcode width={21} height={21} />,
-      title: 'Scan a barcode',
-      body: 'Packaged food, straight from the label',
+      title: 'Scan a barcode or QR',
+      body: 'Packaged food, or a QR on the pack',
       ai: false,
       tint: 'tint-soft tint-warm',
     },
@@ -65,6 +66,17 @@ export default function LogSheet() {
       tint: 'tint-soft tint-blue',
     },
     {
+      // Logging a workout is a peer of logging a meal, but it was reachable
+      // only by opening Home, expanding "Track More" and finding the tile —
+      // which is why the tracker read as missing rather than merely hidden.
+      to: '/trackers/workout',
+      icon: <IconDumbbell width={21} height={21} />,
+      title: 'Log a workout',
+      body: 'Sets, reps and time — with the calories worked out for you',
+      ai: false,
+      tint: 'tint-soft tint-pink',
+    },
+    {
       // Last because it is the most effort, but present because it is the only
       // route in for a home-cooked dish no database will ever carry.
       to: '/food/new',
@@ -88,7 +100,7 @@ export default function LogSheet() {
               key={opt.to}
               type="button"
               onClick={() => navigate(blocked ? '/settings' : opt.to)}
-              className="surface-card flex w-full items-center gap-3.5 p-4 text-left pressable"
+              className="surface-card flex w-full items-center gap-3.5 p-4 text-left transition-transform active:scale-[0.99]"
             >
               <span
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${opt.tint}`}

@@ -53,7 +53,7 @@ export class ErrorBoundary extends Component<Props, State> {
       .join('\n');
 
     return (
-      <div className="mx-auto min-h-dvh w-full max-w-lg px-5 py-8">
+      <div className="mx-auto min-h-dvh w-full shell-w px-5 py-8">
         <h1 className="text-lg font-semibold">Something broke</h1>
         <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
           This screen hit an error. Your logged data is stored separately and is safe.

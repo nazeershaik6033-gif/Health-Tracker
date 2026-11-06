@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood } from '@/db/repo';
 import { readNutritionLabel, draftToFood } from '@/ai/service';
@@ -7,7 +7,7 @@ import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
 import { useCamera } from '@/lib/camera';
 import { blobToImagePart, canvasToBlob, captureFrame } from '@/lib/image';
-import { readLabelOffline, terminateOCR, type LabelReading } from '@/lib/ocr';
+import { readLabelOffline, terminateOCR, warmOCR, type LabelReading } from '@/lib/ocr';
 import { buildMealItem, scaleNutrients } from '@/lib/nutrition';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { Button, Card, Field, PageHeader, Skeleton } from '@/components/ui';
@@ -21,6 +21,14 @@ const ROI = { x: 0.08, y: 0.16, w: 0.84, h: 0.62 };
 
 export default function Label() {
   const navigate = useNavigate();
+  /**
+   * Set when the user arrives here from a barcode that no database could
+   * answer. Attaching it to whatever the panel yields is the whole point of
+   * that route: the product stays unknown to the world, but this install
+   * recognises it instantly, offline, every time after.
+   */
+  const [params] = useSearchParams();
+  const barcode = params.get('barcode')?.replace(/\D/g, '') || undefined;
   const { settings, selectedDate, showToast } = useApp();
   const camera = useCamera();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -35,8 +43,43 @@ export default function Label() {
   const [qty, setQty] = useState('1');
   const [servingLabel, setServingLabel] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  /**
+   * The in-flight read, so it can be called off.
+   *
+   * A deadline in the AI layer stops a stalled request eventually; this is what
+   * lets the user stop waiting *now*, which matters more when the answer is
+   * "this is taking too long" rather than "this is broken".
+   */
+  const abortRef = useRef<AbortController | null>(null);
 
   const keyed = hasKey(settings);
+
+  /**
+   * Pull the OCR runtime down while the user is framing the shot, for the
+   * users who are actually going to need it. It is several megabytes, and
+   * spending them here rather than after the shutter is the difference
+   * between a wait with a viewfinder in front of it and a wait with a
+   * spinner. Torn down on the way out so an abandoned screen doesn't leave a
+   * worker holding a wasm heap.
+   */
+  useEffect(() => {
+    if (keyed) return;
+    void warmOCR();
+    return () => void terminateOCR();
+  }, [keyed]);
+
+  function cancelRead() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    // The AI path stops on the signal. The OCR path has none to stop on —
+    // `recognize()` takes no AbortSignal — so tearing the worker down is the
+    // only thing that actually ends the work rather than just hiding it.
+    void terminateOCR();
+    setPhase('capture');
+    setError('');
+    setProgress(0);
+    void camera.start();
+  }
 
   async function readCanvas(canvas: HTMLCanvasElement) {
     setPhase('reading');
@@ -45,21 +88,37 @@ export default function Label() {
     setProgress(0.1);
     camera.stop();
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       if (keyed) {
         // The vision model reads panels far more reliably than OCR, including
         // rotated, curved and glare-affected labels.
         const blob = await canvasToBlob(canvas, 0.9);
-        const draft = await readNutritionLabel(settings, await blobToImagePart(blob));
-        const created = await createFood(draftToFood(draft, 'ai'));
+        const draft = await readNutritionLabel(
+          settings,
+          await blobToImagePart(blob),
+          controller.signal,
+        );
+        const created = await createFood(draftToFood(draft, 'ai', barcode));
+        if (controller.signal.aborted) return;
         setFood(created);
         setServingLabel(created.servings[0]?.label ?? '100 g');
-        setNote('Read by AI — check the numbers against the pack');
+        setNote(
+          barcode
+            ? 'Read by AI — check the numbers against the pack. Saved against the barcode, so the next scan finds it.'
+            : 'Read by AI — check the numbers against the pack',
+        );
         setPhase('result');
         return;
       }
 
       const reading: LabelReading = await readLabelOffline(canvas, setProgress);
+      // Terminating the worker can make a cancelled recognise resolve rather
+      // than throw, so a late result is checked against the signal instead of
+      // trusted — otherwise Cancel would flicker back into a result screen.
+      if (controller.signal.aborted) return;
       if (reading.matched === 0) {
         setRawText(reading.raw);
         setError(
@@ -70,24 +129,39 @@ export default function Label() {
       }
       const created = await createFood({
         name: reading.name,
+        barcode,
         per100g: reading.per100g,
         servings: reading.servings,
         source: 'custom',
         tags: ['scanned'],
         verified: false,
       });
+      if (controller.signal.aborted) return;
       setFood(created);
       setServingLabel(created.servings[0]?.label ?? '100 g');
       setRawText(reading.raw);
       setNote(
-        `Read on-device — found ${reading.matched} of 5 values. Check them before saving.`,
+        `Read on-device — found ${reading.matched} of 5 values. Check them before saving.${
+          barcode ? ' Saved against the barcode, so the next scan finds it.' : ''
+        }`,
       );
       setPhase('result');
     } catch (err) {
+      // A read the user called off is not a failure to report back to them —
+      // and a cancelled OCR run throws whatever the torn-down worker threw,
+      // which is not always an AbortError, so the signal is what decides.
+      if (controller.signal.aborted) return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(describeError(err));
       setPhase('error');
     } finally {
-      void terminateOCR();
+      // Only clean up if this read is still the current one. Cancel already
+      // tore down the worker and the user may have started another read since;
+      // a late `finally` from the abandoned run must not kill the new one.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        void terminateOCR();
+      }
     }
   }
 
@@ -121,8 +195,11 @@ export default function Label() {
     ? scaleNutrients(food.per100g, ((serving?.grams ?? 100) * (Number(qty) || 0)) / 100)
     : null;
 
+  // svh with a hard overflow clip, matching Snap and Scan: `min-h-dvh` let this
+  // column grow past the screen, so the shutter sat below the fold and had to
+  // be scrolled to. Each phase below owns its own scrolling.
   return (
-    <div className="flex min-h-dvh flex-col bg-black">
+    <div className="flex h-svh flex-col overflow-hidden bg-black">
       <PageHeader
         title="Read a nutrition label"
         back={-1}
@@ -168,8 +245,10 @@ export default function Label() {
       />
 
       {phase === 'capture' && (
-        <div className="flex flex-1 flex-col">
-          <div className="relative flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col">
+          {/* min-h-0 so the preview yields space to the shutter bar below
+              rather than shoving it off the bottom of the screen. */}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             <video
               ref={camera.videoRef}
               playsInline
@@ -206,7 +285,7 @@ export default function Label() {
             )}
           </div>
 
-          <div className="bg-black px-6 pt-4 pb-safe">
+          <div className="bg-black px-6 pt-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
             <p className="text-center text-[12.5px] text-white/60">
               Fill the box with the nutrition panel. Flatten the pack if you can.
             </p>
@@ -234,7 +313,7 @@ export default function Label() {
       )}
 
       {phase === 'reading' && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-6">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-6">
           <Card className="space-y-3">
             <div className="flex items-center gap-2">
               <IconSparkle width={16} height={16} className="animate-pulse text-brand-600" />
@@ -253,11 +332,26 @@ export default function Label() {
             <Skeleton className="h-3 w-2/3 rounded" />
             <Skeleton className="h-3 w-1/2 rounded" />
           </Card>
+          {/*
+            The only way out while a read is in flight. The header's back arrow
+            leaves the screen but not the request, and until this existed a
+            stalled call left the user watching a pulse with nothing to press.
+          */}
+          <div className="mt-3 flex justify-center">
+            <Button variant="secondary" onClick={cancelRead}>
+              Cancel
+            </Button>
+          </div>
+          <p className="mt-2 text-center text-[11.5px] text-muted">
+            {keyed
+              ? 'Sending the photo to your AI provider. This usually takes a few seconds.'
+              : 'Recognising text on this device. Larger photos take longer.'}
+          </p>
         </div>
       )}
 
       {phase === 'result' && food && (
-        <div className="flex-1 bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface-canvas)] px-4 pt-3 pb-32">
           <Card className="space-y-3">
             <Field
               label="Product"
@@ -337,7 +431,7 @@ export default function Label() {
             </details>
           )}
 
-          <div className="fixed inset-x-0 bottom-0 mx-auto flex max-w-lg gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
+          <div className="dock inset-x-0 mx-auto flex shell-w gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
             <Button
               variant="secondary"
               onClick={() => {
@@ -355,7 +449,7 @@ export default function Label() {
       )}
 
       {phase === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-canvas)] px-8 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto bg-[var(--surface-canvas)] px-8 py-6 text-center">
           <IconWarning width={30} height={30} className="text-amber-500" />
           <p className="max-w-xs text-[14px] font-semibold">{error}</p>
           {rawText && (

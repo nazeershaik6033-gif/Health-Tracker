@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type {
   ChatMessage,
   Exercise,
+  Favourite,
   Food,
   Insight,
   Meal,
@@ -10,6 +11,7 @@ import type {
   Settings,
   SleepEntry,
   Snap,
+  SnapImage,
   StepsEntry,
   WaterEntry,
   WeightEntry,
@@ -22,6 +24,8 @@ export class HealthifyDB extends Dexie {
   foods!: Table<Food, string>;
   meals!: Table<Meal, string>;
   snaps!: Table<Snap, string>;
+  snapImages!: Table<SnapImage, string>;
+  favourites!: Table<Favourite, string>;
   water!: Table<WaterEntry, string>;
   sleep!: Table<SleepEntry, string>;
   weight!: Table<WeightEntry, string>;
@@ -59,6 +63,38 @@ export class HealthifyDB extends Dexie {
     this.version(2).stores({
       exercises: 'id, name, kind, equipment, source, useCount, lastUsedAt',
     });
+
+    // v3 adds favourites, and moves full-resolution snap images off the `snaps`
+    // row into their own table.
+    //
+    // The split is the point of the upgrade: IndexedDB returns whole records,
+    // so every `db.snaps` listing was deserialising each full-size JPEG to draw
+    // a thumbnail. Keyed by the snap's own id, so the two halves need no
+    // bookkeeping to stay in step.
+    this.version(3)
+      .stores({
+        // `[slot+order]` is what the pinned list reads: one index scan, already
+        // in the user's chosen order, no sort on the main thread.
+        favourites: 'id, slot, order, [slot+order], createdAt',
+        snapImages: 'id',
+      })
+      .upgrade(async (tx) => {
+        const snaps = tx.table<Snap & { blob?: Blob }, string>('snaps');
+        const images = tx.table<SnapImage, string>('snapImages');
+
+        // Read-then-write rather than an async `modify`: Dexie's modify
+        // callback is synchronous, and the blobs have to land in the new table
+        // before they are stripped from the old rows or they are simply lost.
+        const rows = await snaps.toArray();
+        const moved = rows
+          .filter((row): row is Snap & { blob: Blob } => row.blob instanceof Blob)
+          .map((row) => ({ id: row.id, blob: row.blob }));
+
+        if (moved.length) await images.bulkPut(moved);
+        await snaps.toCollection().modify((row) => {
+          delete (row as { blob?: Blob }).blob;
+        });
+      });
   }
 }
 

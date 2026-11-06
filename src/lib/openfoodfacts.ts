@@ -1,4 +1,6 @@
-import type { Food, Nutrients, Serving } from '@/types';
+import type { Food, MicroId, Micros, Nutrients, Serving } from '@/types';
+import { hasMicros } from './micros';
+import { gtinCandidates } from './gtin';
 
 /**
  * Open Food Facts lookup — free, keyless, ~3M barcoded products.
@@ -25,6 +27,63 @@ const FIELDS = [
   'nova_group',
   'categories_tags',
 ].join(',');
+
+/**
+ * Open Food Facts nutriment key → the micronutrient it maps to, with the
+ * factor that converts OFF's unit to ours.
+ *
+ * OFF normalises every `_100g` value to grams regardless of how the label
+ * printed it, so milligram nutrients are ×1000 and microgram nutrients ×1e6.
+ * Getting this wrong is invisible rather than loud — a thousand-fold error
+ * still renders as a plausible-looking bar — hence the explicit table.
+ */
+const MICRO_FIELDS: { key: string; id: MicroId; factor: number }[] = [
+  { key: 'iron_100g', id: 'iron', factor: 1e3 },
+  { key: 'calcium_100g', id: 'calcium', factor: 1e3 },
+  { key: 'magnesium_100g', id: 'magnesium', factor: 1e3 },
+  { key: 'zinc_100g', id: 'zinc', factor: 1e3 },
+  { key: 'potassium_100g', id: 'potassium', factor: 1e3 },
+  { key: 'sodium_100g', id: 'sodium', factor: 1e3 },
+  { key: 'iodine_100g', id: 'iodine', factor: 1e6 },
+  { key: 'selenium_100g', id: 'selenium', factor: 1e6 },
+  { key: 'copper_100g', id: 'copper', factor: 1e3 },
+  { key: 'manganese_100g', id: 'manganese', factor: 1e3 },
+  { key: 'chromium_100g', id: 'chromium', factor: 1e6 },
+  { key: 'vitamin-a_100g', id: 'vitaminA', factor: 1e6 },
+  { key: 'vitamin-c_100g', id: 'vitaminC', factor: 1e3 },
+  { key: 'vitamin-d_100g', id: 'vitaminD', factor: 1e6 },
+  { key: 'vitamin-e_100g', id: 'vitaminE', factor: 1e3 },
+  { key: 'vitamin-b1_100g', id: 'vitaminB1', factor: 1e3 },
+  { key: 'vitamin-b2_100g', id: 'vitaminB2', factor: 1e3 },
+  { key: 'vitamin-pp_100g', id: 'vitaminB3', factor: 1e3 },
+  { key: 'pantothenic-acid_100g', id: 'vitaminB5', factor: 1e3 },
+  { key: 'vitamin-b6_100g', id: 'vitaminB6', factor: 1e3 },
+  { key: 'vitamin-b12_100g', id: 'vitaminB12', factor: 1e6 },
+  { key: 'vitamin-b9_100g', id: 'folate', factor: 1e6 },
+  // Least certain pair here: most products that report omega-3 at all only
+  // report the combined `omega-3-fat_100g`, not the EPA/DHA split OFF's
+  // taxonomy technically supports. A product missing these two specific keys
+  // just leaves epa/dha unset, same as any other nutrient it doesn't declare.
+  { key: 'eicosapentaenoic-acid_100g', id: 'epa', factor: 1e3 },
+  { key: 'docosahexaenoic-acid_100g', id: 'dha', factor: 1e3 },
+];
+
+/**
+ * Pulls whatever micronutrients the product declares.
+ *
+ * Only keys actually present are copied: a label that lists calcium and
+ * nothing else should count its calcium and stay silent on the rest, not
+ * report eleven zeroes and drag the day's totals down.
+ */
+function readMicros(n: Record<string, number | string | undefined>): Micros | undefined {
+  const micros: Micros = {};
+  for (const { key, id, factor } of MICRO_FIELDS) {
+    if (n[key] === undefined || n[key] === '') continue;
+    const value = toNum(n[key]) * factor;
+    if (Number.isFinite(value)) micros[id] = Math.round(value * 100) / 100;
+  }
+  return hasMicros(micros) ? micros : undefined;
+}
 
 interface OFFResponse {
   status?: number;
@@ -59,10 +118,39 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
 
+/**
+ * Looks a barcode up, trying each plausible form of the code.
+ *
+ * The scanner reads whatever symbology is printed on the pack, and Open Food
+ * Facts stores whichever form its contributor entered — usually GTIN-13. A
+ * UPC-A or UPC-E scanned verbatim therefore misses products that are in the
+ * database, which is indistinguishable, from the user's side, from the product
+ * being absent. `gtinCandidates` caps the attempts, so the worst case is three
+ * requests rather than one.
+ *
+ * A product that exists but carries no nutrition is remembered rather than
+ * discarded: knowing its name is worth far more than a bare "not found", both
+ * to show the user and to give the AI fallback something real to work from.
+ */
 export async function lookupBarcode(
   barcode: string,
   signal?: AbortSignal,
+  format?: string,
 ): Promise<OFFResult> {
+  let partialHit: OFFResult | undefined;
+
+  for (const candidate of gtinCandidates(barcode, format)) {
+    const hit = await lookupExact(candidate, signal);
+    if (hit.found && !hit.partial) return hit;
+    // Keep the first named-but-empty product; a later candidate may still
+    // turn up the same product with a full panel.
+    if (hit.found && !partialHit) partialHit = hit;
+  }
+
+  return partialHit ?? { found: false };
+}
+
+async function lookupExact(barcode: string, signal?: AbortSignal): Promise<OFFResult> {
   const res = await fetch(`${BASE}/${encodeURIComponent(barcode)}.json?fields=${FIELDS}`, {
     signal,
     headers: { accept: 'application/json' },
@@ -100,6 +188,8 @@ export async function lookupBarcode(
     fibre: round1(toNum(n.fiber_100g)),
   };
 
+  const micros = readMicros(n);
+
   const servings: Serving[] = [];
   const servingGrams = toNum(p.serving_quantity);
   if (servingGrams > 0) {
@@ -126,6 +216,7 @@ export async function lookupBarcode(
       brand: p.brands?.split(',')[0]?.trim() || undefined,
       barcode: p.code ?? barcode,
       per100g,
+      micros,
       servings,
       source: 'openfoodfacts',
       tags: ['packaged', ...(p.categories_tags ?? []).slice(0, 4).map((t) => t.replace(/^en:/, ''))],

@@ -3,7 +3,8 @@ import { useHistory, useStreak } from '@/stores/useDay';
 import { useApp } from '@/stores/useApp';
 import { addDays, fromISODate, rangeDays, today } from '@/lib/date';
 import { TrendChart } from '@/components/TrendChart';
-import { AnimatedNumber, Card, EmptyState, SectionTitle } from '@/components/ui';
+import { Card, EmptyState, SectionTitle } from '@/components/ui';
+import { CountUp } from '@/components/CountUp';
 import { IconFlame, IconStreak } from '@/components/icons';
 
 const BADGES: { days: number; label: string; note: string }[] = [
@@ -64,7 +65,7 @@ export default function Streaks() {
     <div className="px-4 pt-safe pb-6">
       <h1 className="py-3 text-[22px] font-extrabold tracking-tight">Streaks</h1>
 
-      <div className="hero-gradient relative flex flex-col items-center gap-1 overflow-hidden rounded-[1.75rem] py-8 shadow-[0_24px_48px_-24px_rgb(6_78_59/0.75)]">
+      <div className="hero-gradient relative flex flex-col items-center gap-1 overflow-hidden rounded-[1.75rem] py-8">
         <span
           aria-hidden="true"
           className="pointer-events-none absolute -top-10 h-40 w-40 rounded-full bg-orange-400/25 blur-3xl"
@@ -74,7 +75,7 @@ export default function Streaks() {
           height={40}
           className={`relative ${current > 0 ? 'text-orange-300' : 'text-white/40'}`}
         />
-        <AnimatedNumber value={current} className="relative mt-1 text-[52px] leading-none font-bold tracking-tight" />
+        <CountUp value={current} format={(n) => String(Math.round(n))} className="relative mt-1 text-[52px] leading-none font-bold tracking-tight" />
         <p className="relative text-[13px] font-semibold text-white/75">
           day{current === 1 ? '' : 's'} in a row
         </p>
@@ -109,7 +110,7 @@ export default function Streaks() {
                     future ? 'upcoming' : active ? 'logged' : 'nothing logged'
                   }`}
                   className={`aspect-square w-full rounded-[5px] ${
-                    future ? 'surface-sunken opacity-30' : active ? 'brand-gradient' : 'surface-sunken'
+                    future ? 'surface-sunken opacity-30' : active ? 'bg-brand-500' : 'surface-sunken'
                   } ${day === today() ? 'ring-2 ring-brand-500/40 ring-offset-1 ring-offset-[var(--surface-card)]' : ''}`}
                 />
               );

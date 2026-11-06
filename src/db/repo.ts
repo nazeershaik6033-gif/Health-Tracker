@@ -1,17 +1,21 @@
+import Dexie, { type Table } from 'dexie';
 import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
 import { seedExercises } from '@/data/exercises.seed';
 import { today } from '@/lib/date';
-import { computeTargets } from '@/lib/nutrition';
+import { computeTargets, portionMicros } from '@/lib/nutrition';
+import { hasMicros } from '@/lib/micros';
 import { DEFAULT_FATSECRET } from '@/types';
 import type {
   ChatMessage,
   Exercise,
+  Favourite,
   Food,
   Insight,
   Meal,
   MealItem,
   MealSlot,
+  Micros,
   Plan,
   Profile,
   Settings,
@@ -23,6 +27,13 @@ import type {
   WorkoutEntry,
 } from '@/types';
 
+/**
+ * Bumped whenever already-logged meals should be re-scanned for
+ * micronutrients — a new install starts at the current version and skips the
+ * walk entirely, since nothing it logged could ever predate the data.
+ */
+export const MICRO_BACKFILL_VERSION = 1;
+
 export const DEFAULT_SETTINGS: Settings = {
   id: 'app',
   provider: 'anthropic',
@@ -31,8 +42,12 @@ export const DEFAULT_SETTINGS: Settings = {
   fatsecret: DEFAULT_FATSECRET,
   autoTrack: false,
   theme: 'system',
+  fontFamily: 'sans',
+  fontSize: 'md',
   onboardingDone: false,
   backupRemindDays: 14,
+  countStepKcal: true,
+  microBackfillVersion: MICRO_BACKFILL_VERSION,
 };
 
 /**
@@ -71,6 +86,16 @@ export async function ensureSeeded(): Promise<void> {
   const missing = seeds.filter((_, i) => !existing[i]);
   if (missing.length) await db.foods.bulkPut(missing);
 
+  // Seed rows written before micronutrients existed carry none, and the loop
+  // above deliberately never rewrites a row that is already there. Back-fill
+  // just the micros, leaving the user's edits, useCount and lastUsedAt intact —
+  // without this an existing install would show 0% micro coverage forever.
+  const needMicros = existing.flatMap((stored, i) => {
+    if (!stored || stored.micros || !seeds[i].micros) return [];
+    return [{ ...stored, micros: seeds[i].micros }];
+  });
+  if (needMicros.length) await db.foods.bulkPut(needMicros);
+
   // Same shape for exercises. Only the rows that aren't already there are
   // written, so a user's `useCount` on a seeded exercise survives every
   // subsequent launch and every catalog addition.
@@ -82,6 +107,103 @@ export async function ensureSeeded(): Promise<void> {
   if (!(await db.settings.get('app'))) {
     await db.settings.put(DEFAULT_SETTINGS);
   }
+
+  // Strictly after the food back-fill above: this reads micronutrients off the
+  // catalog, so running it first would find nothing and then mark itself done.
+  await backfillMealMicros();
+}
+
+/**
+ * Gives already-logged meals their micronutrients.
+ *
+ * A `MealItem` is a snapshot, not a lookup — it keeps its own nutrients so that
+ * renaming or deleting a food never rewrites what you ate last month. That is
+ * the right design, and it is also why every meal logged before micronutrients
+ * existed carries none: back-filling the food catalog fixed what you log
+ * *next*, and did nothing for months of history. Those days read as 0%
+ * coverage, which is indistinguishable from a real gap in the data.
+ *
+ * So this recomputes them from the food each item was built from, scaled by the
+ * grams already stored on the item. Items with no `foodId` — anything from a
+ * photo or a voice log — and items whose food carries no micronutrients are
+ * left alone: unknown stays unknown rather than becoming a confident zero, and
+ * the coverage figure keeps telling the truth about them.
+ */
+export async function backfillMealMicros(): Promise<void> {
+  // The raw row, deliberately not `getSettings()`: that merges DEFAULT_SETTINGS
+  // in, and the default carries the current version — so every pre-micros
+  // install would read as already migrated and skip the one walk it needs.
+  // Absent on those rows, present on anything written since, which is exactly
+  // the signal wanted here.
+  const stored = await db.settings.get('app');
+  if ((stored?.microBackfillVersion ?? 0) >= MICRO_BACKFILL_VERSION) return;
+
+  // One pass over the catalog rather than a lookup per item: a year of logs is
+  // thousands of items against a few hundred foods.
+  const catalog = new Map<string, Micros>();
+  for (const food of await db.foods.toArray()) {
+    if (hasMicros(food.micros)) catalog.set(food.id, food.micros);
+  }
+
+  if (catalog.size) {
+    await backfillItems(db.meals, catalog);
+    // Favourites hold the same snapshots, so a pinned meal would otherwise go
+    // on logging micro-less items long after the history itself was repaired.
+    await backfillItems(db.favourites, catalog);
+  }
+
+  await saveSettings({ microBackfillVersion: MICRO_BACKFILL_VERSION });
+}
+
+/**
+ * Shared by meals and favourites, which both store `MealItem[]`.
+ *
+ * Returns how many items were filled in, so a caller acting on one food can
+ * tell the user what just happened to their history.
+ */
+async function backfillItems<T extends { items: MealItem[] }>(
+  table: Table<T, string>,
+  catalog: Map<string, Micros>,
+): Promise<number> {
+  const updated: T[] = [];
+  let filled = 0;
+
+  for (const row of await table.toArray()) {
+    let changed = false;
+    const items = row.items.map((item) => {
+      if (hasMicros(item.micros) || !item.foodId) return item;
+      const micros = portionMicros(catalog.get(item.foodId), item.grams);
+      if (!micros) return item;
+      changed = true;
+      filled += 1;
+      return { ...item, micros };
+    });
+    if (changed) updated.push({ ...row, items });
+  }
+
+  if (updated.length) await table.bulkPut(updated);
+  return filled;
+}
+
+/**
+ * Fills in one food's micronutrients across everything already logged.
+ *
+ * Typing a pack's iron and calcium into the food editor otherwise only helps
+ * from the next meal onwards, because a `MealItem` is a snapshot. The screen
+ * that sent the user here would go on naming that same food as missing data
+ * they had just supplied — the fix visibly not working.
+ *
+ * This only ever fills a blank: items that already carry micronutrients are
+ * left exactly as logged, so the snapshot rule still holds where it matters.
+ * Nothing that was recorded is rewritten; something that was never recorded is
+ * finally known.
+ */
+export async function applyFoodMicrosToHistory(foodId: string, micros: Micros): Promise<number> {
+  if (!hasMicros(micros)) return 0;
+  const catalog = new Map([[foodId, micros]]);
+  const meals = await backfillItems(db.meals, catalog);
+  const favourites = await backfillItems(db.favourites, catalog);
+  return meals + favourites;
 }
 
 /* -------------------------------- settings ------------------------------- */
@@ -224,9 +346,15 @@ export async function updateMeal(id: string, patch: Partial<Meal>): Promise<void
   const meal = await db.meals.get(id);
   if (!meal) return;
   const next = { ...meal, ...patch };
-  // An emptied meal is deleted rather than left as a stray heading.
-  if (next.items.length === 0) await db.meals.delete(id);
-  else await db.meals.put(next);
+  // An emptied meal is deleted rather than left as a stray heading — and its
+  // snap has to be released with it, or the gallery keeps a "Logged" badge
+  // pointing at a meal that is gone.
+  if (next.items.length === 0) {
+    await db.meals.delete(id);
+    await detachSnap(meal);
+  } else {
+    await db.meals.put(next);
+  }
 }
 
 export async function removeMealItem(mealId: string, index: number): Promise<void> {
@@ -234,6 +362,51 @@ export async function removeMealItem(mealId: string, index: number): Promise<voi
   if (!meal) return;
   const items = meal.items.filter((_, i) => i !== index);
   await updateMeal(mealId, { items });
+}
+
+/**
+ * Puts a removed item back where it was.
+ *
+ * Deleting the last item of a meal deletes the meal row itself, so an undo
+ * cannot assume the row still exists — it is addressed by (date, slot) and
+ * recreated when gone. Splicing at the original index means undo restores the
+ * order too, not just the item.
+ */
+export async function restoreMealItem(
+  date: string,
+  slot: MealSlot,
+  index: number,
+  item: MealItem,
+): Promise<void> {
+  const meal = await db.meals.where('[date+slot]').equals([date, slot]).first();
+  if (!meal) {
+    await addMealItems(date, slot, [item]);
+    return;
+  }
+  const items = [...meal.items];
+  items.splice(Math.min(Math.max(0, index), items.length), 0, item);
+  await db.meals.put({ ...meal, items });
+}
+
+/**
+ * Puts a deleted meal back, id and all.
+ *
+ * `deleteMeal` also detaches the snap that produced the meal, so this reattaches
+ * it — otherwise undo leaves the gallery showing a photo as un-logged while its
+ * meal is back on the Diet screen.
+ */
+export async function restoreMeal(meal: Meal): Promise<void> {
+  await db.meals.put(meal);
+  if (!meal.snapId) return;
+  const snap = await db.snaps.get(meal.snapId);
+  if (snap && !snap.mealId) {
+    await db.snaps.put({ ...snap, mealId: meal.id, status: 'logged' });
+  }
+}
+
+/** Puts a deleted workout session back, id and all. */
+export async function restoreWorkout(entry: WorkoutEntry): Promise<void> {
+  await db.workouts.put(entry);
 }
 
 /**
@@ -254,6 +427,178 @@ export async function replaceMealItem(
   await updateMeal(mealId, { items });
 }
 
+/** Where moved items ended up, so the move can be undone exactly. */
+export interface MoveResult {
+  /** The meal the items now live in. */
+  mealId: string;
+  /** Their positions in that meal. */
+  indices: number[];
+  /** The slot they came from. */
+  from: MealSlot;
+}
+
+/**
+ * Moves logged items from one meal slot to another on the same day.
+ *
+ * Putting food under the wrong heading is the easiest logging mistake to make —
+ * a late dinner entered as an evening snack, a whole breakfast logged while the
+ * screen still said Lunch. Until now the only repair was to delete each row and
+ * re-enter it, portion and all.
+ *
+ * Items are appended to whatever is already in the target slot, because the app
+ * keeps one meal row per (date, slot) and the Diet screen groups on that.
+ */
+export async function moveMealItems(
+  mealId: string,
+  indices: number[],
+  targetSlot: MealSlot,
+): Promise<MoveResult | undefined> {
+  return db.transaction('rw', db.meals, db.snaps, async () => {
+    const meal = await db.meals.get(mealId);
+    if (!meal || meal.slot === targetSlot) return undefined;
+
+    const picked = [...new Set(indices)].sort((a, b) => a - b).filter((i) => meal.items[i]);
+    if (picked.length === 0) return undefined;
+
+    const taken = new Set(picked);
+    const moving = picked.map((i) => meal.items[i]);
+    const remaining = meal.items.filter((_, i) => !taken.has(i));
+    const target = await db.meals.where('[date+slot]').equals([meal.date, targetSlot]).first();
+
+    // Everything moved and there is nothing to merge with: the meal row itself
+    // changes slot. Its photo and AI score survive, because they still describe
+    // exactly these items — only the heading was wrong.
+    if (remaining.length === 0 && !target) {
+      await db.meals.put({ ...meal, slot: targetSlot });
+      return { mealId: meal.id, indices: meal.items.map((_, i) => i), from: meal.slot };
+    }
+
+    // Any other shape changes what a meal contains, so a score written for the
+    // old contents no longer describes either side and is dropped rather than
+    // left over-claiming.
+    const landedAt = target ? target.items.length : 0;
+    const next: Meal = target
+      ? { ...target, items: [...target.items, ...moving], healthScore: undefined, aiNote: undefined }
+      : {
+          id: uid('meal_'),
+          date: meal.date,
+          slot: targetSlot,
+          items: moving,
+          createdAt: Date.now(),
+        };
+    await db.meals.put(next);
+
+    if (remaining.length > 0) {
+      await db.meals.put({ ...meal, items: remaining, healthScore: undefined, aiNote: undefined });
+    } else {
+      await db.meals.delete(meal.id);
+      await detachSnap(meal);
+    }
+
+    return { mealId: next.id, indices: moving.map((_, i) => landedAt + i), from: meal.slot };
+  });
+}
+
+/* ------------------------------ favourites ------------------------------- */
+
+/**
+ * The pinned list for one slot, in the user's own order.
+ *
+ * Reads the `[slot+order]` index directly, so this stays one bounded scan
+ * rather than a whole-table read plus a sort — the pinned list renders on
+ * every visit to the food search.
+ */
+export async function favouritesForSlot(slot: MealSlot): Promise<Favourite[]> {
+  return db.favourites
+    .where('[slot+order]')
+    .between([slot, Dexie.minKey], [slot, Dexie.maxKey])
+    .toArray();
+}
+
+export async function allFavourites(): Promise<Favourite[]> {
+  return db.favourites.toArray();
+}
+
+/**
+ * Pins a portion to a slot. New entries go to the end of the list rather than
+ * the top: the order is the user's to arrange, so nothing already placed moves
+ * because something new was added.
+ */
+export async function addFavourite(
+  input: Omit<Favourite, 'id' | 'order' | 'useCount' | 'createdAt'>,
+): Promise<Favourite> {
+  const siblings = await favouritesForSlot(input.slot);
+  const order = siblings.reduce((max, f) => Math.max(max, f.order), -1) + 1;
+  const favourite: Favourite = {
+    ...input,
+    id: uid('fav_'),
+    order,
+    useCount: 0,
+    createdAt: Date.now(),
+  };
+  await db.favourites.add(favourite);
+  return favourite;
+}
+
+export async function updateFavourite(id: string, patch: Partial<Favourite>): Promise<void> {
+  const existing = await db.favourites.get(id);
+  if (!existing) return;
+  const next = { ...existing, ...patch };
+  // A favourite with nothing in it has no meaning; drop it rather than leaving
+  // an empty row that logs nothing when tapped.
+  if (next.items.length === 0) await db.favourites.delete(id);
+  else await db.favourites.put(next);
+}
+
+export async function removeFavourite(id: string): Promise<void> {
+  await db.favourites.delete(id);
+}
+
+/**
+ * Writes a new manual order for one slot. `orderedIds` is the full list as the
+ * user arranged it; positions are rewritten from scratch so repeated drags
+ * can't drift into ties.
+ */
+export async function reorderFavourites(orderedIds: string[]): Promise<void> {
+  await db.transaction('rw', db.favourites, async () => {
+    for (const [index, id] of orderedIds.entries()) {
+      const existing = await db.favourites.get(id);
+      if (existing) await db.favourites.put({ ...existing, order: index });
+    }
+  });
+}
+
+/**
+ * Logs a favourite into a day at its saved quantity, and counts the use.
+ *
+ * The stored items are copied, not referenced: editing the favourite later
+ * must not rewrite meals already logged from it.
+ */
+export async function logFavourite(
+  date: string,
+  favourite: Favourite,
+  slotOverride?: MealSlot,
+): Promise<Meal> {
+  const meal = await addMealItems(
+    date,
+    slotOverride ?? favourite.slot,
+    favourite.items.map((item) => ({ ...item, nutrients: { ...item.nutrients } })),
+  );
+  await db.favourites.put({
+    ...favourite,
+    useCount: favourite.useCount + 1,
+    lastUsedAt: Date.now(),
+  });
+  return meal;
+}
+
+/** Display name: the explicit label, or the single item's name. */
+export function favouriteLabel(favourite: Favourite): string {
+  if (favourite.label?.trim()) return favourite.label.trim();
+  if (favourite.items.length === 1) return favourite.items[0].name;
+  return `${favourite.items.length} items`;
+}
+
 /**
  * Which days in a range have anything logged, and how many calories each.
  * One pass per table rather than a query per day: a month view would otherwise
@@ -262,6 +607,17 @@ export async function replaceMealItem(
 export interface DaySummary {
   date: string;
   kcal: number;
+  /**
+   * Macros for the day, summed the same way `kcal` is.
+   *
+   * Carried here so the month view can describe a day by more than its calorie
+   * count — 1900 kcal that hit its protein and 1900 kcal that did not are the
+   * same number and not the same day.
+   */
+  protein: number;
+  fat: number;
+  carbs: number;
+  fibre: number;
   meals: number;
   water: boolean;
   sleep: boolean;
@@ -287,6 +643,10 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
       row = {
         date,
         kcal: 0,
+        protein: 0,
+        fat: 0,
+        carbs: 0,
+        fibre: 0,
         meals: 0,
         water: false,
         sleep: false,
@@ -302,7 +662,13 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
   for (const meal of meals) {
     const row = at(meal.date);
     row.meals += 1;
-    for (const item of meal.items) row.kcal += item.nutrients.kcal;
+    for (const item of meal.items) {
+      row.kcal += item.nutrients.kcal;
+      row.protein += item.nutrients.protein;
+      row.fat += item.nutrients.fat;
+      row.carbs += item.nutrients.carbs;
+      row.fibre += item.nutrients.fibre;
+    }
   }
   // A zero-glass row is a goal that was set, not water that was drunk.
   for (const w of water) if (w.glasses > 0) at(w.date).water = true;
@@ -311,7 +677,13 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
   for (const s of steps) if (s.count > 0) at(s.date).steps = true;
   for (const w of workouts) at(w.date).workouts = true;
 
-  for (const row of map.values()) row.kcal = Math.round(row.kcal);
+  for (const row of map.values()) {
+    row.kcal = Math.round(row.kcal);
+    row.protein = Math.round(row.protein);
+    row.fat = Math.round(row.fat);
+    row.carbs = Math.round(row.carbs);
+    row.fibre = Math.round(row.fibre);
+  }
   return map;
 }
 
@@ -325,18 +697,39 @@ export async function summariseRange(from: string, to: string): Promise<Map<stri
 export async function deleteMeal(id: string): Promise<void> {
   const meal = await db.meals.get(id);
   await db.meals.delete(id);
+  await detachSnap(meal);
+}
+
+/**
+ * Releases the snap a meal was logged from, once that meal no longer exists.
+ * Shared by every path that removes one, so a photo can never be left pointing
+ * at a missing meal.
+ */
+async function detachSnap(meal: Meal | undefined): Promise<void> {
   if (!meal?.snapId) return;
   const snap = await db.snaps.get(meal.snapId);
-  if (snap?.mealId === id) {
+  if (snap?.mealId === meal.id) {
     await db.snaps.put({ ...snap, mealId: undefined, status: 'ready', autoTracked: false });
   }
 }
 
 /* --------------------------------- snaps --------------------------------- */
 
-export async function addSnap(snap: Omit<Snap, 'id' | 'createdAt'>): Promise<Snap> {
+/**
+ * Writes the metadata row and the full image together.
+ *
+ * Both halves land in one transaction, so a snap can never exist as a row
+ * pointing at an image that was never stored.
+ */
+export async function addSnap(
+  snap: Omit<Snap, 'id' | 'createdAt'>,
+  blob: Blob,
+): Promise<Snap> {
   const next: Snap = { ...snap, id: uid('snap_'), createdAt: Date.now() };
-  await db.snaps.add(next);
+  await db.transaction('rw', db.snaps, db.snapImages, async () => {
+    await db.snaps.add(next);
+    await db.snapImages.put({ id: next.id, blob });
+  });
   return next;
 }
 
@@ -350,6 +743,14 @@ export async function getSnap(id: string): Promise<Snap | undefined> {
 }
 
 /**
+ * The full-resolution capture. Fetched only by the two callers that genuinely
+ * need it — the detail preview and the vision request — never by a listing.
+ */
+export async function getSnapImage(id: string): Promise<Blob | undefined> {
+  return (await db.snapImages.get(id))?.blob;
+}
+
+/**
  * Deletes a snap, and by default the meal it was logged as.
  *
  * Deleting the photo used to leave the calories behind, so a meal you thought
@@ -359,7 +760,10 @@ export async function getSnap(id: string): Promise<Snap | undefined> {
  */
 export async function deleteSnap(id: string, keepMeal = false): Promise<void> {
   const snap = await db.snaps.get(id);
-  await db.snaps.delete(id);
+  await db.transaction('rw', db.snaps, db.snapImages, async () => {
+    await db.snaps.delete(id);
+    await db.snapImages.delete(id);
+  });
   if (keepMeal || !snap?.mealId) return;
   // Delete directly: deleteMeal would try to repair a snap that is now gone.
   await db.meals.delete(snap.mealId);
@@ -560,12 +964,14 @@ export type DayBundle = Awaited<ReturnType<typeof dayBundle>>;
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.profile, db.meals, db.snaps, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises],
+    [db.profile, db.meals, db.snaps, db.snapImages, db.favourites, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises],
     async () => {
       await Promise.all([
         db.profile.clear(),
         db.meals.clear(),
         db.snaps.clear(),
+        db.snapImages.clear(),
+        db.favourites.clear(),
         db.water.clear(),
         db.sleep.clear(),
         db.weight.clear(),

@@ -154,6 +154,15 @@ export function createGemini(apiKey: string, model?: string): ProviderAdapter {
     const text = (data.candidates?.[0]?.content?.parts ?? [])
       .map((p) => p.text ?? '')
       .join('');
+
+    // See the note in the Anthropic adapter: a reply cut off at the token
+    // ceiling is its own failure, not an unreadable one.
+    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      throw new AIError(
+        `Reply hit the ${opts.maxTokens ?? 2048} token output limit`,
+        'truncated',
+      );
+    }
     if (!text) throw new AIError('Model returned no text', 'bad-response');
     return text;
   }

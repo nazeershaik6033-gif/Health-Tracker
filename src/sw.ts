@@ -150,8 +150,16 @@ registerRoute(
 );
 
 // Lazy-loaded wasm/worker assets (zxing, tesseract) — immutable, cache hard.
+//
+// The Tesseract runtime is matched by directory, not extension: its cores are
+// `.wasm.js` (the binary is inline) and its worker is plain `.js`, so an
+// extension test would cache the 3 MB model and re-download the 4 MB core on
+// every read. They are excluded from the precache, so this route is the only
+// thing standing between the offline reader and the network.
 registerRoute(
-  ({ url }) => /\.(?:wasm|traineddata(?:\.gz)?)$/.test(url.pathname),
+  ({ url }) =>
+    /\.(?:wasm|traineddata(?:\.gz)?)$/.test(url.pathname) ||
+    url.pathname.startsWith(path('tesseract/')),
   new CacheFirst({ cacheName: 'healthify-wasm-v1' }),
 );
 

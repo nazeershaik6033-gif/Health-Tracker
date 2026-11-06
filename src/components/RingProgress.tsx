@@ -44,7 +44,7 @@ export function RingProgress({
   const primary = Math.max(0, Math.min(1, shown));
   const overflow = Math.max(0, Math.min(1, shown - 1));
   const track = trackColor ?? `color-mix(in srgb, ${color} 14%, var(--surface-sunken))`;
-  const transition = 'stroke-dashoffset 1.1s cubic-bezier(0.16, 1, 0.3, 1)';
+  const transition = 'stroke-dashoffset 900ms var(--ease-settle)';
 
   return (
     <div

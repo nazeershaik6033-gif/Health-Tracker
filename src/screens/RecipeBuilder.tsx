@@ -6,6 +6,7 @@ import { useApp } from '@/stores/useApp';
 import { addMealItems, createFood } from '@/db/repo';
 import { searchFoods } from '@/lib/foodSearch';
 import { scaleNutrients, sumNutrients, roundNutrients, buildMealItemFromGrams } from '@/lib/nutrition';
+import { hasMicros, roundMicros, scaleMicros, sumMicros } from '@/lib/micros';
 import { today } from '@/lib/date';
 import { BottomSheet } from '@/components/BottomSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -17,6 +18,29 @@ import { MEAL_SLOT_LABEL, ZERO_NUTRIENTS, type Food, type MealSlot } from '@/typ
 interface Ingredient {
   food: Food;
   grams: number;
+  /**
+   * The raw text of the grams field.
+   *
+   * The input was bound straight to `grams`, so every keystroke round-tripped
+   * through `Number()` before being rendered back: typing "12." produced
+   * `Number("12.") === 12`, which re-rendered as "12" and ate the decimal point
+   * on the way in. Same defect the set-weight field had, and the same fix —
+   * hold the text, parse alongside it.
+   */
+  draft: string;
+}
+
+const makeIngredient = (food: Food, grams: number): Ingredient => ({
+  food,
+  grams,
+  draft: String(grams),
+});
+
+/** Digits and at most one decimal point, so "1.2.5" can never be typed. */
+function sanitiseDecimal(raw: string): string {
+  const cleaned = raw.replace(/[^0-9.]/g, '');
+  const [head, ...rest] = cleaned.split('.');
+  return rest.length ? `${head}.${rest.join('')}` : head;
 }
 
 /**
@@ -57,6 +81,29 @@ export default function RecipeBuilder() {
   const per100g =
     totalGrams > 0 ? scaleNutrients(totals, 100 / totalGrams) : { ...ZERO_NUTRIENTS };
 
+  /**
+   * Micros are summed the same way, but only from ingredients that carry them.
+   * A recipe whose ingredients are half unknown would otherwise claim a
+   * complete micronutrient profile while quietly under-counting every value,
+   * so the whole recipe reports none unless the data is essentially complete.
+   */
+  const knownMicroGrams = ingredients
+    .filter((i) => hasMicros(i.food.micros))
+    .reduce((sum, i) => sum + i.grams, 0);
+  const microsPer100g =
+    totalGrams > 0 && knownMicroGrams / totalGrams >= 0.9
+      ? roundMicros(
+          scaleMicros(
+            sumMicros(
+              ingredients
+                .filter((i) => hasMicros(i.food.micros))
+                .map((i) => scaleMicros(i.food.micros!, i.grams / 100)),
+            ),
+            100 / totalGrams,
+          ),
+        )
+      : undefined;
+
   const servings = Math.max(1, Math.round(Number(servingsCount) || 1));
   const servingGrams = totalGrams / servings;
   const perServing = roundNutrients(scaleNutrients(per100g, servingGrams / 100));
@@ -69,14 +116,21 @@ export default function RecipeBuilder() {
     setIngredients((prev) =>
       prev.some((i) => i.food.id === food.id)
         ? prev
-        : [...prev, { food, grams: food.servings[0]?.grams ?? 100 }],
+        : [...prev, makeIngredient(food, food.servings[0]?.grams ?? 100)],
     );
     setAddOpen(false);
     setQuery('');
   }
 
-  function setGrams(index: number, grams: number) {
-    setIngredients((prev) => prev.map((i, j) => (j === index ? { ...i, grams } : i)));
+  function setGrams(index: number, draft: string) {
+    const grams = Number(draft);
+    setIngredients((prev) =>
+      prev.map((i, j) =>
+        j === index
+          ? { ...i, draft, grams: draft === '' || !Number.isFinite(grams) ? 0 : grams }
+          : i,
+      ),
+    );
   }
 
   function removeIngredient(index: number) {
@@ -87,6 +141,7 @@ export default function RecipeBuilder() {
     return createFood({
       name: trimmedName,
       per100g,
+      micros: microsPer100g,
       servings: [
         { label: servingLabel, grams: servingGrams },
         ...(Math.round(servingGrams) === 100 ? [] : [{ label: '100 g', grams: 100 }]),
@@ -175,11 +230,8 @@ export default function RecipeBuilder() {
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={ing.grams}
-                      onChange={(e) => {
-                        const n = Number(e.target.value.replace(/[^0-9.]/g, ''));
-                        setGrams(i, Number.isFinite(n) ? n : 0);
-                      }}
+                      value={ing.draft}
+                      onChange={(e) => setGrams(i, sanitiseDecimal(e.target.value))}
                       aria-label={`${ing.food.name} quantity in grams`}
                       className="hairline w-16 rounded-lg border bg-transparent px-2 py-1.5 text-right text-[13px] tabular"
                     />
@@ -236,7 +288,7 @@ export default function RecipeBuilder() {
         )}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-lg gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
+      <div className="dock inset-x-0 z-20 mx-auto flex shell-w gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
         <Button variant="secondary" disabled={!valid || saving} onClick={saveOnly}>
           Save only
         </Button>
@@ -264,7 +316,7 @@ export default function RecipeBuilder() {
             body="Not in your food database yet. Add it as a custom food first, then come back here."
           />
         )}
-        <ul className="max-h-[50vh] overflow-y-auto pb-2">
+        <ul className="scroll-y max-h-[50vh] pb-2">
           {results.map((food) => (
             <FoodRow
               key={food.id}

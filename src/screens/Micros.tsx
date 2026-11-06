@@ -1,0 +1,294 @@
+import { useMemo } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/db/schema';
+import { useApp } from '@/stores/useApp';
+import { useDay } from '@/stores/useDay';
+import { MicroBar } from '@/components/MicroBar';
+import { RingProgress } from '@/components/RingProgress';
+import { Card, EmptyState, PageHeader, SectionTitle, StatusPill } from '@/components/ui';
+import { IconCheck, IconLeaf, IconWarning } from '@/components/icons';
+import { relativeDayLabel, today } from '@/lib/date';
+import {
+  biggestGaps,
+  formatMicro,
+  microRows,
+  suggestFoods,
+  type MicroGroup,
+  type MicroRow,
+} from '@/lib/micros';
+import type { MealItem } from '@/types';
+
+/**
+ * The day's micronutrients.
+ *
+ * The hard part is not the arithmetic, it is honesty. Micronutrient data is
+ * patchy everywhere — a barcode may declare calcium and nothing else, a photo
+ * analysis declares none at all — so a bare "42% of your iron" is a claim the
+ * data cannot support. Everything here is framed against coverage: what share
+ * of the day's calories the figures actually saw, and which items they missed.
+ */
+export default function Micros() {
+  const navigate = useNavigate();
+  const { selectedDate } = useApp();
+  // The date travels in the query string, matching the macro breakdown, so
+  // Calendar can open any past day without moving the app's selected date
+  // underneath it. Micronutrients are a per-day figure like any other, and a
+  // day in March has to be as readable as today.
+  const [params] = useSearchParams();
+  const date = params.get('date') ?? selectedDate;
+  const day = useDay(date);
+
+  const rows = useMemo(
+    () => microRows(day.micros, day.microTargets),
+    [day.micros, day.microTargets],
+  );
+  const gaps = useMemo(() => biggestGaps(rows), [rows]);
+  const onTrack = rows.filter((r) => r.status === 'good').length;
+  const coveragePct = Math.round(day.microCoverage * 100);
+
+  // The whole catalog, for "what would close this gap". Cheap: a few hundred
+  // rows, and Dexie keeps it live so a food added mid-session appears here.
+  const foods = useLiveQuery(async () => db.foods.toArray(), []);
+
+  const logged = day.meals.length > 0;
+  const isToday = date === today();
+  const completed = logged && rows.length > 0 && onTrack === rows.length;
+
+  return (
+    <>
+      <PageHeader
+        title="Micronutrients"
+        subtitle={relativeDayLabel(date)}
+        back="/"
+        action={
+          // Every nutrient at 90%+ of target (or under the sodium ceiling) —
+          // named as a label at the top rather than left to be inferred from
+          // a wall of green rows, the same way the day's other done states (a
+          // finished streak, a closed ring) get their own badge.
+          completed ? (
+            <StatusPill icon={<IconCheck width={12} height={12} />}>Completed</StatusPill>
+          ) : undefined
+        }
+      />
+
+      <div className="px-4 pt-3 pb-6">
+      {!logged ? (
+        <EmptyState
+          icon={<IconLeaf width={22} height={22} />}
+          title="Nothing logged for this day"
+          body="Micronutrients are counted from what you eat. Log a meal and the numbers appear here."
+        />
+      ) : (
+        <div className="space-y-3">
+          {/* ---------------------------- summary --------------------------- */}
+          <Card className="space-y-3.5">
+            <div className="flex items-center gap-3">
+              <RingProgress
+                value={onTrack / rows.length}
+                size={52}
+                stroke={4}
+                color="var(--color-macro-fibre)"
+                label={`${onTrack} of ${rows.length} micronutrients on track`}
+              >
+                <div className="text-center leading-none">
+                  <p className="tabular text-[13px] font-extrabold">{onTrack}</p>
+                  <p className="text-[8px] text-muted">of {rows.length}</p>
+                </div>
+              </RingProgress>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-bold tracking-tight">
+                  {onTrack === rows.length
+                    ? 'Every micro on track'
+                    : `${rows.length - onTrack} still short${isToday ? ' today' : ''}`}
+                </p>
+                <p className="text-[12.5px] text-secondary">
+                  Targets are ICMR-NIN 2020 for your age and sex.
+                </p>
+              </div>
+            </div>
+
+            <CoverageNote pct={coveragePct} unknown={day.microUnknown} />
+          </Card>
+
+          {/* ----------------------------- gaps ----------------------------- */}
+          {gaps.length > 0 && foods && (
+            <Card className="space-y-3">
+              <SectionTitle>{isToday ? "Close today's gaps" : 'Where this day fell short'}</SectionTitle>
+              {gaps.map((row) => {
+                const picks = suggestFoods(foods, row.def.id, row.target, 3).filter(
+                  // Suggesting more of something already eaten that day is
+                  // advice they have already taken.
+                  (p) => !day.meals.some((m) => m.items.some((i) => i.foodId === p.foodId)),
+                );
+                return (
+                  <div key={row.def.id}>
+                    <p className="text-[13px] font-semibold">
+                      {row.def.label}
+                      <span className="ml-1.5 font-normal text-secondary">
+                        {formatMicro(row.def.id, Math.max(0, row.target - row.value))} to go
+                      </span>
+                    </p>
+                    {picks.length ? (
+                      <div className="no-scrollbar -mx-1 mt-1.5 flex gap-1.5 overflow-x-auto px-1">
+                        {picks.map((p) => (
+                          <button
+                            key={p.foodId}
+                            type="button"
+                            onClick={() => navigate(`/search?q=${encodeURIComponent(p.name)}`)}
+                            className="surface-sunken shrink-0 rounded-lg px-2.5 py-1.5 text-left transition-transform active:scale-95"
+                          >
+                            <span className="block text-[12.5px] font-semibold">{p.name}</span>
+                            <span className="block text-[11px] text-secondary">
+                              {p.servingLabel} · {Math.round(p.share * 100)}% of the day
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[12px] text-muted">
+                        Nothing in your food list is a strong source — worth adding one.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* --------------------------- the nutrients ---------------------- */}
+          <MicroGroupCard title="Vitamins" group="vitamin" rows={rows} date={date} />
+          <MicroGroupCard title="Minerals" group="mineral" rows={rows} date={date} />
+          <MicroGroupCard title="Omega-3" group="omega3" rows={rows} date={date} />
+
+          <p className="px-1 text-center text-[11px] leading-relaxed text-muted">
+            Reference intakes are for a healthy adult and are not medical advice. Supplements,
+            pregnancy and diagnosed deficiencies all change these numbers — a doctor or dietitian
+            should set them, not an app.
+          </p>
+        </div>
+      )}
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------- coverage -------------------------------- */
+
+/**
+ * Says out loud how much of the day these numbers are built on.
+ *
+ * Without this the screen would read as a complete picture of the day, when a
+ * photo-logged lunch contributes nothing to it. Under-reporting a nutrient as
+ * "low" when the data is simply absent is the failure worth designing against.
+ */
+function CoverageNote({ pct, unknown }: { pct: number; unknown: MealItem[] }) {
+  if (pct >= 95) {
+    return (
+      <p className="hairline border-t pt-3 text-[12px] text-secondary">
+        Counted across everything you logged that day.
+      </p>
+    );
+  }
+
+  // One chip per distinct food, not per portion: eating the same yoghurt at
+  // breakfast and again at night is one gap to fill, not two.
+  const foods = [...new Map(unknown.map((i) => [i.foodId ?? i.name, i])).values()];
+  // Items logged from a photo or typed straight into a meal have no food row
+  // behind them, so there is nothing to open and nowhere to put the numbers.
+  const fixable = foods.filter((i) => i.foodId);
+
+  return (
+    <div className="accent-card accent-amber flex items-start gap-2.5 p-3">
+      <IconWarning width={16} height={16} className="accent-rule-fg mt-0.5 shrink-0" />
+      <div className="min-w-0">
+        <p className="accent-title text-[12.5px] font-bold">
+          Based on {pct}% of today&apos;s calories
+        </p>
+        <p className="accent-body text-[11.5px] leading-relaxed">
+          Treat every figure below as a floor — you have had at least this much.
+        </p>
+
+        {foods.length > 0 && (
+          <>
+            <p className="accent-body mt-2 text-[11.5px] leading-relaxed">
+              {fixable.length > 0
+                ? 'No micronutrient data for these. Tap one to type in what its label says — it counts from then on, everywhere.'
+                : 'No micronutrient data for these.'}
+            </p>
+            {/*
+              The names used to be a flat sentence, which named the problem and
+              offered nothing to do about it — and until the food editor could
+              take micronutrients, there genuinely was nothing. Now each one is
+              a way in to fix it, on the food itself rather than this one meal,
+              so filling it in once fixes every day it appears on.
+            */}
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {foods.slice(0, 6).map((item) =>
+                item.foodId ? (
+                  <Link
+                    key={item.foodId}
+                    to={`/food/${item.foodId}/edit`}
+                    className="hairline accent-title rounded-full border px-2.5 py-1 text-[11.5px] font-semibold"
+                  >
+                    {item.name}
+                  </Link>
+                ) : (
+                  <span
+                    key={item.name}
+                    className="accent-body rounded-full px-2.5 py-1 text-[11.5px] opacity-70"
+                  >
+                    {item.name}
+                  </span>
+                ),
+              )}
+              {foods.length > 6 && (
+                <span className="accent-body self-center text-[11.5px]">
+                  and {foods.length - 6} more
+                </span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- groups --------------------------------- */
+
+/**
+ * A group of nutrient rows, each linking out to its own breakdown — the same
+ * shape as tapping Protein or Carbs on the day summary. That screen is where
+ * "where did this come from" gets answered in full, filtered and sorted the
+ * same way as the macro breakdown, so this list stays a fast scan rather than
+ * an accordion of its own.
+ */
+function MicroGroupCard({
+  title,
+  group,
+  rows,
+  date,
+}: {
+  title: string;
+  group: MicroGroup;
+  rows: MicroRow[];
+  date: string;
+}) {
+  const shown = rows.filter((r) => r.def.group === group);
+
+  return (
+    <Card className="py-2">
+      <div className="px-1 pt-1 pb-0.5">
+        <SectionTitle>{title}</SectionTitle>
+      </div>
+      <ul className="divide-y divide-[var(--surface-border)]">
+        {shown.map((row) => (
+          <li key={row.def.id}>
+            <MicroBar row={row} to={`/micro/${row.def.id}?date=${date}`} />
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}

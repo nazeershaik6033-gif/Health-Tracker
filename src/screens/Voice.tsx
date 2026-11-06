@@ -194,7 +194,7 @@ export default function Voice() {
                 type="button"
                 onClick={phase === 'listening' ? stopListening : startListening}
                 aria-label={phase === 'listening' ? 'Stop listening' : 'Start listening'}
-                className={`relative flex h-24 w-24 items-center justify-center rounded-full text-white pressable ${
+                className={`relative flex h-24 w-24 items-center justify-center rounded-full text-white transition-transform active:scale-95 ${
                   phase === 'listening' ? 'bg-red-500' : 'bg-brand-500'
                 }`}
               >
@@ -325,7 +325,7 @@ export default function Voice() {
               </div>
             )}
 
-            <div className="fixed inset-x-0 bottom-0 mx-auto flex max-w-lg gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
+            <div className="dock inset-x-0 mx-auto flex shell-w gap-2 border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-4 pt-3 pb-safe">
               <Button variant="secondary" onClick={() => setPhase('idle')}>
                 Redo
               </Button>

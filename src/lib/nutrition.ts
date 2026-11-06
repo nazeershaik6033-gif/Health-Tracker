@@ -1,16 +1,19 @@
 import type {
   ActivityLevel,
+  DayPeriod,
   Food,
   Goal,
   Meal,
   MealItem,
   MealSlot,
+  Micros,
   Nutrients,
   Profile,
   Sex,
   WorkoutIntensity,
 } from '@/types';
-import { MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
+import { DAY_PERIOD_SHARE, DAY_PERIOD_SLOTS, MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
+import { hasMicros, roundMicros, scaleMicros } from './micros';
 
 export const ACTIVITY_FACTOR: Record<ActivityLevel, number> = {
   sedentary: 1.2,
@@ -92,6 +95,31 @@ export function slotTarget(profile: Profile | undefined, slot: MealSlot): number
   return Math.round(profile.targets.kcal * MEAL_SLOT_SHARE[slot]);
 }
 
+/**
+ * Fraction of the day a period is allotted. The profile's own split wins when
+ * it is set; a share that is missing or not a usable number falls back to the
+ * default rather than silently zeroing the period's targets.
+ */
+export function periodShare(profile: Profile | undefined, period: DayPeriod): number {
+  const override = profile?.periodShares?.[period];
+  return typeof override === 'number' && Number.isFinite(override) && override >= 0
+    ? override
+    : DAY_PERIOD_SHARE[period];
+}
+
+/** The day's macro targets scaled down to one period. */
+export function periodTargets(profile: Profile | undefined, period: DayPeriod): Nutrients {
+  if (!profile) return ZERO_NUTRIENTS;
+  return roundNutrients(scaleNutrients(profile.targets, periodShare(profile, period)));
+}
+
+/** What has actually been eaten in a period, across all of its slots. */
+export function periodNutrients(meals: Meal[], period: DayPeriod): Nutrients {
+  const slots = DAY_PERIOD_SLOTS[period];
+  const inPeriod = meals.filter((m) => slots.includes(m.slot));
+  return inPeriod.length ? totalNutrients(inPeriod) : ZERO_NUTRIENTS;
+}
+
 /* --------------------------------- maths -------------------------------- */
 
 export function addNutrients(a: Nutrients, b: Nutrients): Nutrients {
@@ -149,7 +177,20 @@ export function buildMealItem(food: Food, servingLabel: string, qty: number): Me
     servingLabel: serving.label,
     grams,
     nutrients: roundNutrients(scaleNutrients(food.per100g, grams / 100)),
+    micros: portionMicros(food.micros, grams),
   };
+}
+
+/**
+ * Scales a food's per-100g micronutrients to a portion.
+ *
+ * Returns undefined rather than an empty object when the food has none, so
+ * "we don't know" stays distinguishable from "we know it's nothing" all the
+ * way down to the day's coverage figure.
+ */
+export function portionMicros(per100g: Micros | undefined, grams: number): Micros | undefined {
+  if (!hasMicros(per100g)) return undefined;
+  return roundMicros(scaleMicros(per100g, grams / 100));
 }
 
 /* ------------------------------- workouts -------------------------------- */
@@ -198,6 +239,39 @@ export function kcalFromMet(
   intensity: WorkoutIntensity,
 ): number {
   return Math.round(((met * INTENSITY_FACTOR[intensity] * 3.5 * weightKg) / 200) * minutes);
+}
+
+/* --------------------------------- steps ---------------------------------- */
+
+/**
+ * Steps per minute that counts as moderate walking. The usual cadence
+ * threshold, and what turns a bare step count into the minutes the ACSM
+ * formula needs.
+ */
+const WALKING_CADENCE = 100;
+
+/** MET for walking at that cadence, matching `WORKOUT_METS.Walking`. */
+const WALKING_MET = 3.5;
+
+/**
+ * Calories burned walking, from a step count.
+ *
+ * Returns **net** energy — the cost above simply existing — which is why the
+ * MET has 1 subtracted from it. That correction is the whole reason this is
+ * safe to subtract from the day. A calorie target here is already built on
+ * BMR × an activity factor of 1.2 to 1.9, and that factor is precisely an
+ * allowance for everyday moving about. Counting the gross figure would charge
+ * the day twice for the same walking and quietly hand back a few hundred
+ * calories that were never earned.
+ *
+ * Still an estimate: cadence and stride vary, and a phone in a bag misses
+ * steps a wrist catches. Treat it as the right order of magnitude, not a
+ * measurement — which is what the UI says where it shows up.
+ */
+export function stepKcal(steps: number, weightKg: number): number {
+  if (steps <= 0 || weightKg <= 0) return 0;
+  const minutes = steps / WALKING_CADENCE;
+  return Math.round((((WALKING_MET - 1) * 3.5 * weightKg) / 200) * minutes);
 }
 
 /** Seconds per rep — one concentric plus one eccentric at a standard tempo. */
@@ -308,6 +382,12 @@ export function per100gFromItem(item: MealItem): Nutrients {
   };
 }
 
+/** The micronutrient counterpart of `per100gFromItem`, for the same reasons. */
+export function microsPer100gFromItem(item: MealItem): Micros | undefined {
+  if (!hasMicros(item.micros)) return undefined;
+  return scaleMicros(item.micros, 100 / (item.grams || 100));
+}
+
 /**
  * Rescales a logged item to a new quantity when there is no food row to
  * rebuild from. Scales on grams so switching serving keeps the numbers honest.
@@ -322,6 +402,7 @@ export function rescaleMealItem(item: MealItem, qty: number, servingLabel: strin
     servingLabel,
     grams,
     nutrients: roundNutrients(scaleNutrients(item.nutrients, factor)),
+    micros: hasMicros(item.micros) ? roundMicros(scaleMicros(item.micros, factor)) : undefined,
   };
 }
 
@@ -341,5 +422,6 @@ export function buildMealItemFromGrams(food: Food, grams: number): MealItem {
     servingLabel: `${Math.round(safe * 10) / 10} g`,
     grams: safe,
     nutrients: roundNutrients(scaleNutrients(food.per100g, safe / 100)),
+    micros: portionMicros(food.micros, safe),
   };
 }

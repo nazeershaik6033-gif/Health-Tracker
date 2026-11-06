@@ -75,9 +75,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,json}'],
-        // The zxing wasm binary and tesseract worker are lazy-loaded; keep
-        // them out of the precache so first install stays small.
-        globIgnores: ['**/*.wasm', '**/tesseract*'],
+        // The zxing wasm binary and the vendored Tesseract runtime are
+        // lazy-loaded and add up to ~11 MB. Precaching them would make every
+        // first install pay for an OCR path most users with an AI key never
+        // touch; the service worker caches them hard on first *use* instead.
+        globIgnores: ['**/*.wasm', '**/tesseract/**'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: { enabled: false, type: 'module' },
@@ -91,9 +93,12 @@ export default defineConfig({
         start_url: '.',
         scope: './',
         display: 'standalone',
-        orientation: 'portrait',
-        background_color: '#F3F4F6',
-        theme_color: '#0E9A68',
+        // Was 'portrait', which locks the installed app and forces Android
+        // to letterbox it in landscape instead of actually rendering there.
+        // 'any' lets the OS rotate the app with the device.
+        orientation: 'any',
+        background_color: '#F7F7F5',
+        theme_color: '#14A06A',
         categories: ['health', 'fitness', 'lifestyle'],
         // ?v=2 because these filenames never change, so a phone that cached
         // the earlier (half-transparent) icons would keep serving them.

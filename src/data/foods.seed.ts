@@ -1,4 +1,5 @@
 import type { Food, Serving } from '@/types';
+import { seedMicroNames, seedMicrosFor } from './micros.seed';
 
 /**
  * Bundled offline food database — Indian staples first, then global basics.
@@ -231,10 +232,12 @@ export function seedId(name: string): string {
 
 export function seedFoods(): Food[] {
   const now = Date.now();
+  if (import.meta.env.DEV) warnOnMicroDrift();
   return ROWS.map(([name, kcal, protein, fat, carbs, fibre, servings, tags]) => ({
     id: seedId(name),
     name,
     per100g: { kcal, protein, fat, carbs, fibre },
+    micros: seedMicrosFor(name),
     servings: parseServings(servings),
     source: 'seed' as const,
     tags: tags.split(','),
@@ -242,6 +245,21 @@ export function seedFoods(): Food[] {
     createdAt: now,
     verified: true,
   }));
+}
+
+/**
+ * The micro table is joined on the food's exact name, so a rename in one file
+ * and not the other silently drops a food's micronutrients — it would show up
+ * only as an unexplained dip in the day's coverage. Shout about it in dev
+ * instead, where whoever made the edit is still looking.
+ */
+function warnOnMicroDrift(): void {
+  const foods = new Set(ROWS.map(([name]) => name));
+  const micros = new Set(seedMicroNames());
+  const missing = [...foods].filter((n) => !micros.has(n));
+  const orphaned = [...micros].filter((n) => !foods.has(n));
+  if (missing.length) console.warn('[seed] foods with no micronutrient row:', missing);
+  if (orphaned.length) console.warn('[seed] micronutrient rows with no food:', orphaned);
 }
 
 /**

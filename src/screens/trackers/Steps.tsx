@@ -49,6 +49,21 @@ export default function Steps() {
             </div>
           </RingProgress>
 
+          {/* Steps used to earn nothing — the ring filled and the day's calorie
+              maths never noticed. Net of resting energy, because the calorie
+              target already assumes you move about. */}
+          {day.stepsKcal > 0 && (
+            <p className="text-center text-[12.5px] text-secondary">
+              <span className="font-semibold text-[var(--color-ring-walk)]">
+                ~{day.stepsKcal} cal
+              </span>{' '}
+              burned walking
+              <span className="mt-0.5 block text-[11px] text-muted">
+                Estimated from your step count and weight
+              </span>
+            </p>
+          )}
+
           <div className="flex gap-2">
             {QUICK_ADD.map((n) => (
               <button

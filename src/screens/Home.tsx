@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -9,7 +9,8 @@ import { RingProgress } from '@/components/RingProgress';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { InsightCard } from '@/components/InsightCard';
 import { MiniBars, Sparkline } from '@/components/Spark';
-import { AnimatedNumber, ProgressBar } from '@/components/ui';
+import { ProgressBar } from '@/components/ui';
+import { CountUp } from '@/components/CountUp';
 import {
   IconBarcode,
   IconCamera,
@@ -19,6 +20,7 @@ import {
   IconDroplet,
   IconFlame,
   IconGallery,
+  IconLeaf,
   IconMic,
   IconMoon,
   IconPlans,
@@ -31,6 +33,7 @@ import {
 import { formatDuration, isToday, relativeDayLabel } from '@/lib/date';
 import { backupOverdue, describeLastBackup } from '@/lib/backup';
 import { bmr, kgToDisplay, tdee, weightUnit } from '@/lib/nutrition';
+import { MICRO_IDS, microRows } from '@/lib/micros';
 import {
   age,
   bmi,
@@ -64,6 +67,11 @@ export default function Home() {
   );
 
   const units = profile?.units ?? 'metric';
+  // Macros answer "how much"; this answers "of what". Summarised to one line
+  // here — the full breakdown lives on its own screen.
+  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+    (r) => r.status === 'good',
+  ).length;
   const workoutGoal = profile?.workoutKcalGoal || 300;
   const sleepGoal = profile?.sleepGoalMin || 480;
 
@@ -118,7 +126,7 @@ export default function Home() {
             </div>
             <Link
               to="/settings"
-              className="pressable accent-pill shrink-0 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold"
+              className="accent-pill shrink-0 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold"
             >
               Back up
             </Link>
@@ -126,7 +134,7 @@ export default function Home() {
               type="button"
               onClick={() => setBackupDismissed(true)}
               aria-label="Dismiss backup reminder"
-              className="pressable accent-body shrink-0 rounded-lg p-1"
+              className="accent-body shrink-0 rounded-lg p-1"
             >
               <IconClose width={15} height={15} />
             </button>
@@ -137,7 +145,8 @@ export default function Home() {
           <EnergyHero
             eaten={day.totals.kcal}
             target={day.targets.kcal}
-            burned={day.workoutKcal}
+            // Workouts plus steps, so moving changes the number people look at most.
+            burned={day.burnedKcal}
             totals={day.totals}
             targets={day.targets}
             dateLabel={relativeDayLabel(selectedDate)}
@@ -156,6 +165,29 @@ export default function Home() {
             icon={<IconSearch width={21} height={21} />}
           />
         </div>
+
+        <Link
+          style={next()}
+          to={`/micros?date=${selectedDate}`}
+          className="surface-card flex items-center gap-3 p-3.5"
+        >
+          <span className="tint-soft tint-brand flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+            <IconLeaf width={19} height={19} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-semibold">Micronutrients</span>
+            <span className="block truncate text-[12px] text-secondary">
+              {day.meals.length === 0
+                ? `${MICRO_IDS.length} micronutrients to hit today`
+                : `${microsOnTrack} of ${MICRO_IDS.length} on track${
+                    day.microCoverage < 0.95
+                      ? ` · ${Math.round(day.microCoverage * 100)}% of the day counted`
+                      : ''
+                  }`}
+            </span>
+          </span>
+          <IconChevronRight width={18} height={18} className="shrink-0 text-muted" />
+        </Link>
 
         <div style={next()}>
           <ScoreCard score={score} isToday={isToday(selectedDate)} />
@@ -192,7 +224,7 @@ export default function Home() {
                   void addGlass();
                 }}
                 aria-label="Add a glass of water"
-                className="pressable tint-blue flex h-8 w-8 items-center justify-center rounded-full"
+                className="tint-blue flex h-8 w-8 items-center justify-center rounded-full"
               >
                 <IconPlus width={16} height={16} strokeWidth={2.4} />
               </button>
@@ -260,7 +292,7 @@ export default function Home() {
                 See all
               </Link>
             </div>
-            <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1">
+            <div className="scroll-x no-scrollbar -mx-4 flex snap-x gap-2.5 px-4 pb-1">
               {snaps.map((s) => (
                 <SnapThumb key={s.id} snap={s} />
               ))}
@@ -270,7 +302,7 @@ export default function Home() {
 
         {/* ------------------------ AI coach / plan --------------------- */}
         <div style={next()} className="grid grid-cols-2 gap-3 pt-1">
-          <Link to="/coach" className="pressable surface-card flex flex-col gap-3 p-4">
+          <Link to="/coach" className="surface-card flex flex-col gap-3 p-4">
             <span className="tint-brand flex h-10 w-10 items-center justify-center rounded-2xl">
               <IconChat width={19} height={19} />
             </span>
@@ -281,7 +313,7 @@ export default function Home() {
               </span>
             </span>
           </Link>
-          <Link to="/plans" className="pressable surface-card flex flex-col gap-3 p-4">
+          <Link to="/plans" className="surface-card flex flex-col gap-3 p-4">
             <span className="tint-warm flex h-10 w-10 items-center justify-center rounded-2xl">
               <IconPlans width={19} height={19} />
             </span>
@@ -298,7 +330,7 @@ export default function Home() {
           <Link
             style={next()}
             to="/snap/gallery"
-            className="pressable surface-card flex items-center gap-3 p-3.5"
+            className="surface-card flex items-center gap-3 p-3.5"
           >
             <span className="tint-warm flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
               <IconGallery width={19} height={19} />
@@ -357,7 +389,10 @@ function EnergyHero({
   targets: { protein: number; carbs: number; fat: number; fibre: number };
   dateLabel: string;
 }) {
-  const left = Math.round(target - eaten);
+  // Net of what was burned, so the ring unwinds when you train or walk —
+  // the same reading the Diet screen gives.
+  const net = eaten - burned;
+  const left = Math.round(target - net);
   const over = left < 0;
   const macros = [
     { label: 'Protein', v: totals.protein, t: targets.protein, color: '#fbbf24' },
@@ -369,7 +404,7 @@ function EnergyHero({
   return (
     <Link
       to="/diet"
-      className="pressable hero-gradient relative block overflow-hidden rounded-[1.75rem] p-5 shadow-[0_24px_48px_-24px_rgb(6_78_59/0.75)]"
+      className="hero-gradient relative block overflow-hidden rounded-[1.75rem] p-5"
     >
       {/* Soft orb for depth */}
       <span
@@ -385,16 +420,17 @@ function EnergyHero({
 
       <div className="relative mt-3 flex items-center gap-5">
         <RingProgress
-          value={target > 0 ? eaten / target : 0}
+          value={target > 0 ? Math.max(0, net) / target : 0}
           size={132}
           stroke={11}
           color="#ff8a3d"
           trackColor="rgb(255 255 255 / 0.1)"
-          label={`${Math.round(eaten)} of ${target} calories`}
+          label={`${Math.round(net)} net of ${target} calories: ${Math.round(eaten)} eaten, ${Math.round(burned)} burned`}
         >
           <div className="text-center">
-            <AnimatedNumber
+            <CountUp
               value={Math.abs(left)}
+              format={(n) => Math.round(n).toLocaleString()}
               className="block text-[30px] leading-none font-bold tracking-tight"
             />
             <span className="mt-1 block text-[11px] font-semibold text-white/65">
@@ -442,7 +478,11 @@ function HeroStat({ label, value, dot }: { label: string; value: number; dot: st
     <div className="flex items-center gap-2.5">
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
       <span className="flex-1 text-[12.5px] font-medium text-white/70">{label}</span>
-      <AnimatedNumber value={Math.round(value)} className="text-[16px] font-bold" />
+      <CountUp
+        value={Math.round(value)}
+        format={(n) => Math.round(n).toLocaleString()}
+        className="tabular text-[16px] font-bold"
+      />
     </div>
   );
 }
@@ -466,7 +506,7 @@ function QuickAction({
       <span className="text-[12px] font-semibold">{label}</span>
     </>
   );
-  const cls = 'pressable surface-card flex flex-col items-center gap-2 py-3.5';
+  const cls = 'surface-card flex flex-col items-center gap-2 py-3.5';
   return to ? (
     <Link to={to} className={cls}>
       {body}
@@ -493,7 +533,11 @@ function ScoreCard({ score, isToday: today }: { score: ReturnType<typeof scoreDa
         className="flex w-full items-center gap-4 text-left"
       >
         <RingProgress value={score.score / 100} size={64} stroke={6} color={color} label={`Health score ${score.score}`}>
-          <AnimatedNumber value={score.score} className="text-[19px] font-bold" />
+          <CountUp
+            value={score.score}
+            format={(n) => String(Math.round(n))}
+            className="tabular text-[19px] font-bold"
+          />
         </RingProgress>
         <div className="min-w-0 flex-1">
           <p className="eyebrow">Health score</p>
@@ -572,7 +616,7 @@ function TrackerCard({
   action?: ReactNode;
 }) {
   return (
-    <Link to={to} className="pressable surface-card flex flex-col p-3.5">
+    <Link to={to} className="surface-card flex flex-col p-3.5">
       <div className="flex items-center gap-2">
         <span className={`${tint} flex h-8 w-8 items-center justify-center rounded-xl`} style={{ color }}>
           {icon}
@@ -627,7 +671,7 @@ function BodyCard({
   const burnDay = Math.round(tdee(burnRest, profile.activity));
 
   return (
-    <Link to="/trackers/weight" className="pressable surface-card block p-4">
+    <Link to="/trackers/weight" className="surface-card block p-4">
       <div className="flex items-center gap-2">
         <span className="tint-brand flex h-8 w-8 items-center justify-center rounded-xl">
           <IconScale width={17} height={17} />
@@ -799,11 +843,13 @@ function WeekSummary({
 }
 
 /**
- * One object URL per thumbnail, made once and revoked on unmount. Creating it
- * inline in render (as before) minted a fresh URL on every re-render, so the
- * images reloaded and flickered whenever anything on Home changed.
+ * One thumbnail in the snaps rail.
+ *
+ * The URL is minted in an effect keyed on the blob, not during render. Doing it
+ * inline created a fresh object URL on *every* render, so any re-render — a
+ * water tap, a live-query tick — reloaded the images and leaked the old URL.
  */
-function SnapThumb({ snap }: { snap: Snap }) {
+const SnapThumb = memo(function SnapThumb({ snap }: { snap: Snap }) {
   const [url, setUrl] = useState<string>();
   useEffect(() => {
     const u = URL.createObjectURL(snap.thumb);
@@ -815,7 +861,7 @@ function SnapThumb({ snap }: { snap: Snap }) {
   return (
     <Link
       to={snap.mealId ? `/meal/${snap.mealId}` : `/snap?id=${snap.id}`}
-      className="pressable relative h-28 w-24 shrink-0 snap-start overflow-hidden rounded-2xl bg-[var(--surface-sunken)]"
+      className="relative h-28 w-24 shrink-0 snap-start overflow-hidden rounded-2xl bg-[var(--surface-sunken)]"
     >
       {url && (
         <img
@@ -834,7 +880,7 @@ function SnapThumb({ snap }: { snap: Snap }) {
       )}
     </Link>
   );
-}
+});
 
 function MetabolismNote() {
   return (

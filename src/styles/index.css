@@ -1,60 +1,94 @@
-@import '@fontsource-variable/inter/wght.css';
 @import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Typeface
+
+   Archivo, self-hosted. Two reasons it is a file in `public/` and not a
+   Google Fonts <link>: this is an offline-first PWA, so a webfont that needs
+   the network is a webfont that vanishes on a plane; and a third-party
+   stylesheet is a second render-blocking round trip before any text paints.
+   `woff2` is already in the service worker's precache glob, so it installs
+   with the app.
+
+   One file, two axes. Archivo is variable on *both* weight (100-900) and
+   width (62-125%), which is the whole reason it was chosen over a
+   two-family pairing: the condensed uppercase headings and the normal-width
+   body text in the reference app are the same typeface at different widths,
+   and shipping that as one 88KB file rather than two static families is what
+   keeps the cost honest.
+
+   `latin-ext` is a separate face rather than one merged file: `unicode-range`
+   means a phone only ever downloads it if a food name actually contains one
+   of those characters, so the common case pays 88KB, not 172KB.
+
+   `font-display: swap` deliberately. The fallback stack below is metrically
+   close enough that the reflow is not violent, and on a cold install showing
+   nothing until a font arrives is worse than showing the system face for a
+   frame.
+--------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url('/fonts/archivo-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url('/fonts/archivo-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 /* ---------------------------------------------------------------------------
    Design tokens
    Sampled from the reference app: emerald primary, orange on food actions,
    warm off-white canvas, white cards, pastel tracker rings.
 --------------------------------------------------------------------------- */
-/* ---------------------------------------------------------------------------
-   Design tokens
-   Brand and accent ramps resolve through per-theme variables (`@theme inline`)
-   so a class like `text-brand-600` stays legible on every canvas — on dark
-   themes the same class lands on a lighter step instead of a muddy green.
---------------------------------------------------------------------------- */
-@theme inline {
-  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', system-ui, sans-serif;
-
-  --color-brand-50: var(--brand-50);
-  --color-brand-100: var(--brand-100);
-  --color-brand-200: var(--brand-200);
-  --color-brand-300: var(--brand-300);
-  --color-brand-400: var(--brand-400);
-  --color-brand-500: var(--brand-500);
-  --color-brand-600: var(--brand-600);
-  --color-brand-700: var(--brand-700);
-  --color-brand-800: var(--brand-800);
-  --color-brand-900: var(--brand-900);
-
-  --color-accent-50: var(--accent-50);
-  --color-accent-100: var(--accent-100);
-  --color-accent-300: var(--accent-300);
-  --color-accent-500: var(--accent-500);
-  --color-accent-600: var(--accent-600);
-}
-
 @theme {
-  /* Tracker hues — distinct at a glance, tuned to glow on dark canvases and
-     still clear 3:1 as graphics on white. */
-  --color-ring-weight: #10b981;
-  --color-ring-workout: #f43f6e;
-  --color-ring-walk: #8b5cf6;
-  --color-ring-sleep: #06b6d4;
-  --color-ring-water: #3b82f6;
+  --color-brand-50: #e9f8f1;
+  --color-brand-100: #cdefe0;
+  --color-brand-200: #9fe0c4;
+  --color-brand-300: #66cca3;
+  --color-brand-400: #33b985;
+  --color-brand-500: #14a06a;
+  --color-brand-600: #0f8557;
+  --color-brand-700: #0e6b4f;
+  --color-brand-800: #0b5340;
+  --color-brand-900: #093f32;
+
+  --color-accent-50: #fff3ea;
+  --color-accent-100: #ffe1cb;
+  --color-accent-300: #ffb27a;
+  --color-accent-500: #ff7a2f;
+  --color-accent-600: #ea5f12;
+
+  /* Tracker ring hues — deliberately distinct at a glance, all AA on white */
+  --color-ring-weight: #14a06a;
+  --color-ring-workout: #e8467c;
+  --color-ring-walk: #7c5cf0;
+  --color-ring-sleep: #0e9aa7;
+  --color-ring-water: #4f7df3;
   --color-ring-calorie: #ff7a2f;
 
   /* Macro bars */
-  --color-macro-protein: #f5a524;
-  --color-macro-fat: #f43f6e;
-  --color-macro-carb: #8b5cf6;
-  --color-macro-fibre: #10b981;
+  --color-macro-protein: #f0b429;
+  --color-macro-fat: #e8467c;
+  --color-macro-carb: #7c5cf0;
+  --color-macro-fibre: #14a06a;
 
-  --radius-card: 1.5rem;
-  --radius-sheet: 2rem;
-
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --radius-card: 1.25rem;
+  --radius-sheet: 1.75rem;
 }
 
 /* Semantic surface variables, selected by [data-theme] on <html>. Kept as CSS
@@ -67,66 +101,40 @@
    class, so `bg-brand-50` stayed pale on a black canvas. Every tinted card and
    icon chip in the app reads these instead, which is what makes them follow the
    theme. Foregrounds are checked to clear 4.5:1 on their own fill. */
-/* Semantic surface variables, selected by [data-theme] on <html>. Kept as CSS
-   vars rather than Tailwind `dark:` variants so every component reads one name.
-   Order matters: these all have the same specificity, so the block that wins is
-   the last one matching. `.dark` is set alongside data-theme for dark and black.
-   Tinted surfaces come as a hue triple — fill, foreground, leading rule — and
-   every foreground clears 4.5:1 on its own fill. */
 :root,
 [data-theme='light'] {
-  --surface-canvas: #f3f4f6;
+  --surface-canvas: #f7f7f5;
   --surface-card: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-sunken: #eef0f3;
-  --surface-border: #e5e7eb;
-  --surface-glass: rgb(255 255 255 / 0.72);
-  --text-primary: #0b0f14;
-  --text-secondary: #545d6b;
-  --text-muted: #858e9c;
-  --shadow-card: 0 0 0 1px rgb(15 23 42 / 0.04), 0 1px 2px rgb(15 23 42 / 0.04),
-    0 10px 30px -14px rgb(15 23 42 / 0.14);
-  --shadow-float: 0 0 0 1px rgb(15 23 42 / 0.05), 0 18px 40px -16px rgb(15 23 42 / 0.28);
-  --hero-from: #0b3b2c;
-  --hero-via: #0a5a43;
-  --hero-to: #0f7a58;
-  --brand-50: #e8f8f1;
-  --brand-100: #c9eedd;
-  --brand-200: #97dcbf;
-  --brand-300: #5cc59c;
-  --brand-400: #2aae7f;
-  --brand-500: #0e9a68;
-  --brand-600: #0b8058;
-  --brand-700: #0a6748;
-  --brand-800: #09503a;
-  --brand-900: #073d2d;
-  --accent-50: #fff3ea;
-  --accent-100: #ffe1cb;
-  --accent-300: #ffb27a;
-  --accent-500: #f76b1c;
-  --accent-600: #d9560c;
+  --surface-sunken: #f1f2f0;
+  --surface-border: #e8e9e6;
+  --text-primary: #101413;
+  --text-secondary: #5c6360;
+  --text-muted: #8b918e;
 
-  --tint-brand-bg: #e8f8f1;
-  --tint-brand-fg: #073d2d;
-  --tint-brand-rule: #0e9a68;
-  --tint-warm-bg: #fff2e8;
+  --tint-brand-bg: #e9f8f1;
+  --tint-brand-fg: #093f32;
+  --tint-brand-rule: #14a06a;
+  --tint-warm-bg: #fff3ea;
   --tint-warm-fg: #7a3b12;
-  --tint-warm-rule: #f76b1c;
-  --tint-amber-bg: #fdf5df;
+  --tint-warm-rule: #ff7a2f;
+  --tint-amber-bg: #fdf6e3;
   --tint-amber-fg: #6b4a10;
   --tint-amber-rule: #f0b429;
-  --tint-purple-bg: #f2eefe;
+  --tint-purple-bg: #f1eefe;
   --tint-purple-fg: #3f2d8f;
-  --tint-purple-rule: #8b5cf6;
-  --tint-blue-bg: #eaf1fe;
+  --tint-purple-rule: #7c5cf0;
+  --tint-blue-bg: #eaf0fe;
   --tint-blue-fg: #1e3a8a;
-  --tint-blue-rule: #3b82f6;
+  --tint-blue-rule: #4f7df3;
   --tint-danger-bg: #fdeeee;
   --tint-danger-fg: #7f1d1d;
   --tint-danger-rule: #dc2626;
+  --tint-pink-bg: #fdecf3;
+  --tint-pink-fg: #7a1338;
+  --tint-pink-rule: #e8467c;
   /* Pills sitting *on* a tinted card, so they lift off the fill rather than
      the canvas — white on light themes, a sliver of light on dark ones. */
-  --tint-pill: rgb(255 255 255 / 0.85);
+  --tint-pill: rgb(255 255 255 / 0.8);
   color-scheme: light;
 }
 
@@ -135,18 +143,11 @@
 [data-theme='sepia'] {
   --surface-canvas: #f4ecd8;
   --surface-card: #fbf6e8;
-  --surface-raised: #fdf9ee;
   --surface-sunken: #ebe0c8;
   --surface-border: #ddd0b0;
-  --surface-glass: rgb(251 246 232 / 0.78);
   --text-primary: #3a3229;
   --text-secondary: #6a5d4c;
   --text-muted: #8d8270;
-  --shadow-card: 0 0 0 1px rgb(80 60 20 / 0.06), 0 10px 28px -16px rgb(80 60 20 / 0.22);
-  --shadow-float: 0 0 0 1px rgb(80 60 20 / 0.08), 0 18px 40px -16px rgb(80 60 20 / 0.32);
-  --hero-from: #2f3b26;
-  --hero-via: #3f5233;
-  --hero-to: #55703f;
 
   --tint-brand-bg: #e6efdd;
   --tint-brand-fg: #274034;
@@ -166,101 +167,82 @@
   --tint-danger-bg: #f6e0da;
   --tint-danger-fg: #6f2118;
   --tint-danger-rule: #c53030;
+  --tint-pink-bg: #f4dfe2;
+  --tint-pink-fg: #6b2036;
+  --tint-pink-rule: #d43a70;
   --tint-pill: rgb(255 255 255 / 0.62);
   color-scheme: light;
 }
 
 .dark,
 [data-theme='dark'] {
-  --surface-canvas: #08090b;
-  --surface-card: #111316;
-  --surface-raised: #181b1f;
-  --surface-sunken: #1a1d22;
-  --surface-border: #24282e;
-  --surface-glass: rgb(17 19 22 / 0.72);
-  --text-primary: #f3f5f7;
-  --text-secondary: #a3abb6;
-  --text-muted: #6f7884;
-  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.05), 0 12px 32px -18px rgb(0 0 0 / 0.8);
-  --shadow-float: 0 0 0 1px rgb(255 255 255 / 0.07), 0 20px 44px -16px rgb(0 0 0 / 0.9);
-  --hero-from: #06241b;
-  --hero-via: #0a3a2c;
-  --hero-to: #0d553f;
-  --brand-50: #0f2a20;
-  --brand-100: #123526;
-  --brand-200: #17543b;
-  --brand-300: #1f7a55;
-  --brand-400: #29a372;
-  --brand-500: #1db97e;
-  --brand-600: #3fd197;
-  --brand-700: #6fe0b2;
-  --brand-800: #a3edcd;
-  --brand-900: #d3f7e7;
-  --accent-50: #2a1609;
-  --accent-100: #3a1f0d;
-  --accent-300: #c9611f;
-  --accent-500: #ff8a3d;
-  --accent-600: #ffa364;
+  --surface-canvas: #0b1210;
+  --surface-card: #151d1a;
+  --surface-sunken: #1d2724;
+  --surface-border: #26302c;
+  --text-primary: #eef2f0;
+  --text-secondary: #a3aeaa;
+  --text-muted: #7b8683;
 
-  --tint-brand-bg: #0f1f19;
+  --tint-brand-bg: #12211b;
   --tint-brand-fg: #d7f0e3;
-  --tint-brand-rule: #2fc48a;
-  --tint-warm-bg: #22150d;
+  --tint-brand-rule: #33b985;
+  --tint-warm-bg: #241710;
   --tint-warm-fg: #f7ceac;
   --tint-warm-rule: #ff9152;
-  --tint-amber-bg: #201a0b;
+  --tint-amber-bg: #221c0b;
   --tint-amber-fg: #f3dda6;
   --tint-amber-rule: #f0b429;
-  --tint-purple-bg: #17142e;
+  --tint-purple-bg: #191634;
   --tint-purple-fg: #d3caf9;
-  --tint-purple-rule: #a28bf8;
-  --tint-blue-bg: #0f1a30;
+  --tint-purple-rule: #9b83f5;
+  --tint-blue-bg: #111c33;
   --tint-blue-fg: #c6d8fb;
-  --tint-blue-rule: #6f9cf8;
-  --tint-danger-bg: #241212;
+  --tint-blue-rule: #6f95f6;
+  --tint-danger-bg: #251313;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
-  --tint-pill: rgb(255 255 255 / 0.08);
+  --tint-pink-bg: #2a1220;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
+  --tint-pill: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
 
-/* True black for OLED, where an unlit pixel actually draws no power. Cards
-   stay slightly lifted so the layout doesn't dissolve into one flat sheet. */
+/* True black for OLED, where an unlit pixel actually draws no power — the
+   point Dark's near-black canvas misses. Cards stay slightly lifted so the
+   layout doesn't dissolve into one flat sheet. */
 [data-theme='black'] {
   --surface-canvas: #000000;
-  --surface-card: #0b0b0c;
-  --surface-raised: #131315;
-  --surface-sunken: #161618;
-  --surface-border: #232326;
-  --surface-glass: rgb(10 10 11 / 0.75);
+  --surface-card: #0c0c0c;
+  --surface-sunken: #161616;
+  --surface-border: #262626;
   --text-primary: #f2f3f2;
   --text-secondary: #a6a9a7;
   --text-muted: #7c807e;
-  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.06);
-  --shadow-float: 0 0 0 1px rgb(255 255 255 / 0.08), 0 20px 44px -16px rgb(0 0 0 / 1);
-  --hero-from: #03140f;
-  --hero-via: #072a20;
-  --hero-to: #0a3f30;
 
-  --tint-brand-bg: #0a1611;
+  --tint-brand-bg: #0b1712;
   --tint-brand-fg: #d7f0e3;
-  --tint-brand-rule: #2fc48a;
-  --tint-warm-bg: #170e07;
+  --tint-brand-rule: #33b985;
+  --tint-warm-bg: #180f08;
   --tint-warm-fg: #f7ceac;
   --tint-warm-rule: #ff9152;
-  --tint-amber-bg: #161104;
+  --tint-amber-bg: #171205;
   --tint-amber-fg: #f3dda6;
   --tint-amber-rule: #f0b429;
-  --tint-purple-bg: #100e22;
+  --tint-purple-bg: #110f24;
   --tint-purple-fg: #d3caf9;
-  --tint-purple-rule: #a28bf8;
-  --tint-blue-bg: #0a1220;
+  --tint-purple-rule: #9b83f5;
+  --tint-blue-bg: #0b1322;
   --tint-blue-fg: #c6d8fb;
-  --tint-blue-rule: #6f9cf8;
-  --tint-danger-bg: #180c0c;
+  --tint-blue-rule: #6f95f6;
+  --tint-danger-bg: #190d0d;
   --tint-danger-fg: #f7cdcb;
   --tint-danger-rule: #ef4444;
-  --tint-pill: rgb(255 255 255 / 0.07);
+  --tint-pink-bg: #1c0c15;
+  --tint-pink-fg: #f9c9dd;
+  --tint-pink-rule: #f2649a;
+  --tint-pill: rgb(255 255 255 / 0.06);
   color-scheme: dark;
 }
 
@@ -273,14 +255,110 @@
   --swatch-light-fg: #101413;
   --swatch-sepia: #f4ecd8;
   --swatch-sepia-fg: #3a3229;
-  --swatch-dark: #111316;
-  --swatch-dark-fg: #f3f5f7;
+  --swatch-dark: #151d1a;
+  --swatch-dark-fg: #eef2f0;
   --swatch-black: #000000;
   --swatch-black-fg: #f2f3f2;
   /* System shows both halves; the letter sits on the seam, so it needs a grey
      that clears 4.5:1 against white and near-black alike. */
-  --swatch-system: linear-gradient(90deg, #ffffff 50%, #08090b 50%);
+  --swatch-system: linear-gradient(90deg, #ffffff 50%, #0b1210 50%);
   --swatch-system-fg: #767b79;
+}
+
+/* ---------------------------------------------------------------------- motion
+   One set of easings for the whole app, so nothing reads as hand-rolled.
+   Ported from the Premium Daily Tracker's motion system, values unchanged:
+
+     --ease-spring   overshoots. Things that should feel physical — taps,
+                     pops, the active-tab indicator.
+     --ease-settle   arrives without overshoot. Things that carry content —
+                     sheets, screen transitions, anything with text on it,
+                     where a bounce makes the copy hard to read on arrival.
+     --ease-standard the plain in-out for colour and opacity, which have no
+                     spatial momentum to imply.
+
+   Durations live here too so a change lands everywhere at once. --dur-screen
+   is the 360ms screen slide; --dur-sheet the 440ms sheet entrance.
+--------------------------------------------------------------------------- */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --dur-screen: 360ms;
+  --dur-sheet: 440ms;
+  --dur-scrim: 300ms;
+  --dur-count: 560ms;
+}
+
+/* ------------------------------------------------------------------ type
+   One family at two widths. The fallbacks are listed so that a cold install
+   with the font still in flight, or a browser that rejects the file, lands on
+   the platform grotesque rather than on Times. */
+:root {
+  --font-sans:
+    'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', system-ui, sans-serif;
+  /* Same stack; the condensed look comes from `font-stretch`, not a second
+     family, so the fallback degrades to normal-width rather than to nothing. */
+  --font-display: var(--font-sans);
+}
+
+/* Font style picker (Settings → Appearance). Every alternative is a system
+   stack already resident on the device — never a webfont fetch — so switching
+   away from Archivo costs nothing offline. Selected by `data-font-family` on
+   <html>, set by `useTypography`; overriding the two vars above is enough
+   because every heading and body element already reads through them. */
+[data-font-family='system'] {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    system-ui, sans-serif;
+  --font-display: var(--font-sans);
+}
+[data-font-family='serif'] {
+  --font-sans: Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-display: var(--font-sans);
+}
+[data-font-family='mono'] {
+  --font-sans: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-display: var(--font-sans);
+}
+
+/* Font size picker (Settings → Appearance). Implemented as a page zoom rather
+   than a root `font-size` change: most of the app's type is set in fixed
+   pixels (`text-[12.5px]` and the like), which a `font-size` percentage on
+   <html> never reaches since px is an absolute unit. `zoom` scales the
+   rendered page the same way a browser's own zoom does, reaching every
+   pixel-sized label, icon and tap target along with the text. */
+:root {
+  --font-zoom: 1;
+}
+[data-font-size='sm'] {
+  --font-zoom: 0.925;
+}
+[data-font-size='lg'] {
+  --font-zoom: 1.1;
+}
+[data-font-size='xl'] {
+  --font-zoom: 1.225;
+}
+
+/* ---------------------------------------------------------------- landscape
+   The app shell is one centered column everywhere — the routes below, the
+   bottom nav, every screen's sticky action dock, and sheet content all share
+   `shell-w` instead of a fixed `max-w-lg` so they stay in lockstep. Portrait
+   keeps the original 32rem (Tailwind's `lg`): it was sized for a phone held
+   upright and there is no extra width to give it there. Landscape is the
+   width a phone actually gains by rotating, and without this the column stays
+   32rem and the extra width just sits empty on both sides. `min()` still caps
+   it well short of full-bleed on a tablet or a desktop browser window. */
+:root {
+  --shell-w: 32rem;
+}
+@media (orientation: landscape) {
+  :root {
+    --shell-w: min(64rem, 94vw);
+  }
 }
 
 @layer base {
@@ -291,7 +369,13 @@
   html {
     /* Prevent iOS rubber-band revealing the page background behind the app */
     background: var(--surface-canvas);
-    text-size-adjust: 100%;
+    zoom: var(--font-zoom);
+  }
+
+  /* The one shared content column — see the landscape comment above for why
+     every screen reads this instead of a literal `max-w-lg`. */
+  .shell-w {
+    max-width: var(--shell-w);
   }
 
   body {
@@ -299,34 +383,40 @@
     background: var(--surface-canvas);
     color: var(--text-primary);
     font-family: var(--font-sans);
-    /* Inter's open digits, single-storey a off, disambiguated l/I */
-    font-feature-settings: 'cv11', 'ss03', 'cv05';
-    letter-spacing: -0.006em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
+    /* iOS inflates text in some containers when the page is rotated or a
+       column is narrow, which silently breaks the type scale below. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     overscroll-behavior-y: none;
+  }
+
+  /* -------------------------------------------------------------- display
+     Section headings. The reference app sets every one of them in condensed
+     uppercase with tracking pulled tight, which is what makes a plain list of
+     sections read as a designed hierarchy rather than as bold body text.
+
+     `font-stretch` is the whole point of shipping a variable font with a
+     width axis: this is the same file as the body text, so a heading costs no
+     extra bytes. 78% is narrow enough to read as condensed at a glance and
+     wide enough to stay legible at 13px, which is where most of these land.
+
+     `text-wrap: balance` because these are 2-4 words and a one-word orphan on
+     the second line is the usual failure. */
+  .display {
+    font-family: var(--font-display);
+    font-stretch: 78%;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
   }
 
   h1,
   h2,
   h3 {
-    letter-spacing: -0.022em;
-  }
-
-  /* Theme changes cross-fade instead of snapping. Scoped to colour properties
-     so it never fights the transform animations below. */
-  html.theme-anim,
-  html.theme-anim * {
-    transition:
-      background-color 0.35s ease,
-      border-color 0.35s ease,
-      color 0.35s ease,
-      fill 0.35s ease !important;
-  }
-
-  ::selection {
-    background: color-mix(in srgb, var(--brand-500) 30%, transparent);
+    text-wrap: balance;
   }
 
   /* Numeric readouts (calories, macros, weights) line up in columns */
@@ -335,21 +425,36 @@
   }
 
   button,
-  [role='button'],
-  a {
+  [role='button'] {
     touch-action: manipulation;
   }
 
-  :focus-visible {
-    outline: 2px solid var(--brand-500);
-    outline-offset: 2px;
-    border-radius: 10px;
+  /* Native tap feedback is switched off above, so anything tappable has to
+     supply its own or a press reads as a dead tap. The app has ~125 buttons and
+     only a fifth carried a pressed state, which is much of why it felt
+     unresponsive — the rest gave nothing back at all, and the ones styled only
+     with `hover:` gave nothing on a touchscreen by definition.
+
+     Deliberately in `@layer base`: Tailwind utilities sit in a later layer, so
+     any element that wants a different press — `active:scale-90` on the slot
+     header icons, say — still overrides this by layer order, not by a
+     specificity fight. `:active` also paints the instant a finger lands, before
+     any handler runs, so the feedback stays immediate even when the work behind
+     the tap is not. Disabled controls are excluded; they should not appear to
+     respond to a press they will ignore. */
+  button:not(:disabled),
+  [role='button'],
+  a[href] {
+    transition:
+      transform 90ms ease-out,
+      opacity 90ms ease-out;
   }
 
-  input,
-  select,
-  textarea {
-    font: inherit;
+  button:not(:disabled):active,
+  [role='button']:not([aria-disabled='true']):active,
+  a[href]:active {
+    transform: scale(0.97);
+    opacity: 0.8;
   }
 
   /* Respect users who ask for less motion — rings and sheets both animate */
@@ -366,61 +471,39 @@
 }
 
 @layer components {
+  /* Flat, with a hairline instead of a drop shadow. Two reasons, and they
+     happen to be the same change.
+
+     Visually, the reference app separates content with edges and whitespace
+     and casts no shadows at all; a soft shadow under every card is what made
+     this app read as a 2016 material sheet next to it.
+
+     Mechanically, a 16px-blur shadow on every card is a large blurred region
+     the compositor has to re-raster whenever the card moves, and during a
+     scroll every card moves. An inset hairline has no blur radius and no
+     spread, so it rasters as part of the card's own tile.
+
+     Inset rather than a `border` so the ring costs no layout: adding a real
+     1px border to every card would shift the contents of all of them. */
   .surface-card {
     background: var(--surface-card);
     border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
+    box-shadow: inset 0 0 0 1px var(--surface-border);
   }
 
   .surface-sunken {
     background: var(--surface-sunken);
   }
 
-  .surface-glass {
-    background: var(--surface-glass);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    backdrop-filter: saturate(180%) blur(20px);
-  }
-
-  .shadow-float {
-    box-shadow: var(--shadow-float);
-  }
-
   .hairline {
     border-color: var(--surface-border);
-  }
-
-  /* The deep-green gradient behind the Home hero. Same in every theme on
-     purpose — white type on it reads at well over 7:1. */
-  .hero-gradient {
-    background:
-      radial-gradient(120% 90% at 100% 0%, rgb(52 211 153 / 0.28) 0%, transparent 55%),
-      radial-gradient(90% 80% at 0% 100%, rgb(14 165 233 / 0.18) 0%, transparent 60%),
-      linear-gradient(150deg, var(--hero-from) 0%, var(--hero-via) 55%, var(--hero-to) 100%);
-    color: #fff;
-  }
-
-  .brand-gradient {
-    background: linear-gradient(140deg, #34d399 0%, var(--brand-500) 45%, #047857 100%);
-    color: #fff;
-  }
-
-  /* Anything tappable gets the same physical press: a small, quick sink that
-     springs back. Transform-only so it stays on the compositor. */
-  .pressable {
-    transition: transform 0.35s var(--ease-spring);
-    will-change: transform;
-  }
-  .pressable:active {
-    transform: scale(0.965);
-    transition-duration: 0.12s;
-    transition-timing-function: ease-out;
   }
 
   /* ------------------------------------------------------------------ tints
      `.accent-card` is the quote-card treatment: a tinted fill with a coloured
      rule down the leading edge. `.tint-*` sets the same hue on a small icon
-     chip. Both default to brand green; add a hue modifier to change it. */
+     chip. Both default to brand green; add a hue modifier to change it. Every
+     value resolves per theme from the block above. */
   .accent-card,
   .tint-brand {
     --tint-bg: var(--tint-brand-bg);
@@ -457,21 +540,26 @@
     --tint-fg: var(--tint-danger-fg);
     --tint-rule: var(--tint-danger-rule);
   }
-
-  /* The leading bar is drawn as an inset glow rather than a border, so the
-     card keeps its full radius instead of a squared-off left edge. */
-  .accent-card {
-    background:
-      linear-gradient(90deg, color-mix(in srgb, var(--tint-rule) 10%, transparent), transparent 60%),
-      var(--tint-bg);
-    color: var(--tint-fg);
-    border-radius: var(--radius-card);
-    box-shadow:
-      inset 3px 0 0 var(--tint-rule),
-      inset 0 0 0 1px color-mix(in srgb, var(--tint-rule) 14%, transparent);
+  /* Matches --color-ring-workout, so exercise reads as one colour wherever it
+     appears — the tracker ring, the log sheet entry, the Home tile. */
+  .accent-pink,
+  .tint-pink {
+    --tint-bg: var(--tint-pink-bg);
+    --tint-fg: var(--tint-pink-fg);
+    --tint-rule: var(--tint-pink-rule);
   }
 
-  /* Headings sit at full strength, body copy one step back. */
+  .accent-card {
+    background: var(--tint-bg);
+    color: var(--tint-fg);
+    border-radius: var(--radius-card);
+    /* The leading rule from the reference. Logical inline-start rather than
+       left, so it stays on the leading edge under RTL. */
+    border-inline-start: 3px solid var(--tint-rule);
+  }
+
+  /* Headings sit at full strength, body copy one step back. Both derive from
+     the same foreground so they stay legible on every fill. */
   .accent-title {
     color: var(--tint-fg);
   }
@@ -494,12 +582,14 @@
   .tint-amber,
   .tint-purple,
   .tint-blue,
+  .tint-pink,
   .tint-danger {
     background: var(--tint-bg);
     color: var(--tint-fg);
   }
 
-  /* Same fill without the rule — for chips and badges. */
+  /* Same fill without the rule — for chips and badges where a 3px bar would
+     overwhelm the element. */
   .tint-soft {
     background: var(--tint-bg);
     color: var(--tint-fg);
@@ -513,27 +603,74 @@
     color: var(--text-muted);
   }
 
-  /* Small uppercase label above a stat */
-  .eyebrow {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  /* Safe-area helpers for the bottom nav and sheets on notched devices */
+  /* Safe-area helpers for the bottom nav and sheets on notched devices.
+     `--safe-bottom` / `--safe-top` are sampled once by lib/viewport.ts and held;
+     `env()` itself is only the fallback for the first paint, because mobile
+     Safari changes it mid-scroll as the toolbars collapse, which resizes every
+     bar padded with it. That resize, against async-scrolled content, is what
+     the bottom nav's jitter was. */
   .pb-safe {
-    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+    padding-bottom: max(var(--safe-bottom, env(safe-area-inset-bottom, 0px)), 0.5rem);
   }
 
   .pt-safe {
-    padding-top: max(env(safe-area-inset-top), 0.5rem);
+    padding-top: max(var(--safe-top, env(safe-area-inset-top, 0px)), 0.5rem);
   }
 
-  /* Clearance for the floating tab bar */
-  .pb-nav {
-    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+  /* ------------------------------------------------------------------ dock
+     Every bar pinned to the bottom of the screen — the nav, and the "Save" /
+     "Add" action bars on the editor screens.
+
+     `bottom` tracks the keyboard so the bar rides above it instead of being
+     buried behind it, which is what made saving impossible on a phone. The
+     inset is published by lib/viewport.ts and is 0 whenever the keyboard is
+     closed, so this costs nothing the rest of the time.
+
+     The layer hints are the other half of the jitter fix: on iOS the page is
+     scrolled off the main thread, and a fixed bar that is not already on its
+     own compositor layer is re-rastered per frame and lags the content.
+     Deliberately no `contain: paint` — the nav's [+] button overhangs the top
+     edge of its bar, and paint containment would clip it off. */
+  .dock {
+    position: fixed;
+    bottom: var(--kb-inset, 0px);
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
+  /* Sitting on the keyboard, not on the home indicator — the safe-area padding
+     is only wasted height there, and height is what is scarce. */
+  [data-keyboard='open'] .dock.pb-safe {
+    padding-bottom: 0.5rem;
+  }
+
+  /* ---------------------------------------------------------------- chrome
+     Translucent bars. `backdrop-filter` has to resample everything behind it
+     every frame, which on a touch device means it visibly trails the content
+     it is blurring. Pointer devices scroll on the main thread and get the
+     frosted look; touch devices get an opaque bar, which is what native tab
+     bars do anyway. */
+  .chrome-surface {
+    background: var(--surface-card);
+  }
+
+  .chrome-canvas {
+    background: var(--surface-canvas);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .chrome-surface {
+      background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .chrome-canvas {
+      background: color-mix(in srgb, var(--surface-canvas) 92%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
   }
 }
 
@@ -546,24 +683,12 @@
   display: none;
 }
 
-/* ------------------------------------------------------------------ motion
-   One curve family for the whole app: expo-out for things arriving, a gentle
-   overshoot for things being pressed or popped in. Everything animates only
-   transform and opacity so it stays on the compositor at 120 Hz. */
 @keyframes sheet-up {
   from {
     transform: translate3d(0, 100%, 0);
   }
   to {
     transform: translate3d(0, 0, 0);
-  }
-}
-@keyframes sheet-down {
-  from {
-    transform: translate3d(0, var(--drag, 0px), 0);
-  }
-  to {
-    transform: translate3d(0, 100%, 0);
   }
 }
 @keyframes fade-in {
@@ -574,6 +699,29 @@
     opacity: 1;
   }
 }
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.75rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-down {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
+}
 @keyframes fade-out {
   from {
     opacity: 1;
@@ -582,141 +730,84 @@
     opacity: 0;
   }
 }
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 1rem, 0) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
-}
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translate3d(0, 14px, 0) scale(0.985);
+    transform: translate3d(0, 0.5rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.75rem, 0) scale(0.995);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-@keyframes pop-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-/* Route enters. Push slides in from the trailing edge, pop from the leading
-   edge, tab switches cross-fade with a slight lift — the same grammar iOS uses,
-   so depth reads without thinking about it. */
-@keyframes route-push {
+
+/* ------------------------------------------------------- screen transitions
+   Direction follows the bottom-nav tab order: moving right along the bar
+   slides the incoming screen in from the right, moving left from the left.
+   Anything that isn't a tab-to-tab move — a drill-down into a tracker, an
+   editor, a back-out — falls back to `route-in`'s fade-up, which doesn't
+   imply a sideways step the navigation didn't take.
+
+   translate3d rather than translateX: it promotes the element to its own
+   compositor layer, so the whole screen animates off the main thread and the
+   slide holds its frame rate while React is still hydrating a lazy route. */
+@keyframes route-in-right {
   from {
     opacity: 0;
-    transform: translate3d(28px, 0, 0);
+    transform: translate3d(20px, 0, 0);
   }
   to {
     opacity: 1;
-    transform: none;
+    transform: translate3d(0, 0, 0);
   }
 }
-@keyframes route-pop {
+@keyframes route-in-left {
   from {
     opacity: 0;
-    transform: translate3d(-28px, 0, 0);
+    transform: translate3d(-20px, 0, 0);
   }
   to {
     opacity: 1;
-    transform: none;
-  }
-}
-@keyframes route-fade {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 10px, 0) scale(0.992);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes draw-line {
-  from {
-    stroke-dashoffset: var(--len, 1000);
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-@keyframes grow-x {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-@keyframes grow-y {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-@keyframes pulse-soft {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
+    transform: translate3d(0, 0, 0);
   }
 }
 
 .animate-sheet-up {
-  animation: sheet-up 0.5s var(--ease-out-expo);
-}
-.animate-sheet-down {
-  animation: sheet-down 0.26s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: sheet-up var(--dur-sheet) var(--ease-settle);
 }
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out;
-}
-.animate-fade-out {
-  animation: fade-out 0.24s ease-in forwards;
+  animation: fade-in 0.2s var(--ease-standard);
 }
 .animate-toast-in {
-  animation: toast-in 0.5s var(--ease-out-expo);
+  animation: toast-in 0.24s var(--ease-settle);
 }
-.animate-pop-in {
-  animation: pop-in 0.45s var(--ease-spring) both;
+.animate-sheet-down {
+  animation: sheet-down 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.animate-fade-out {
+  animation: fade-out 0.22s var(--ease-standard) forwards;
+}
+.animate-route-in {
+  animation: route-in 0.26s var(--ease-settle);
+}
+.animate-route-right {
+  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+}
+.animate-route-left {
+  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
 }
 .animate-rise-in {
-  animation: rise-in 0.55s var(--ease-out-expo) both;
-}
-.animate-route-in,
-.route-fade {
-  animation: route-fade 0.45s var(--ease-out-expo) both;
-}
-.route-push {
-  animation: route-push 0.45s var(--ease-out-expo) both;
-}
-.route-pop {
-  animation: route-pop 0.45s var(--ease-out-expo) both;
-}
-.animate-pulse-soft {
-  animation: pulse-soft 1.6s ease-in-out infinite;
+  animation: rise-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ---------------------------------------------------------------- stagger
@@ -724,8 +815,8 @@
    property set per item; the cap keeps a 60-row list from taking two seconds
    to finish, since anything past the fold is invisible anyway. */
 .stagger > * {
-  animation: rise-in 0.55s var(--ease-out-expo) both;
-  animation-delay: calc(min(var(--i, 0), 12) * 40ms);
+  animation: rise-in 0.22s var(--ease-settle) both;
+  animation-delay: calc(min(var(--i, 0), 6) * 14ms);
 }
 
 /* Long lists skip layout and paint for off-screen rows, which is what keeps
@@ -733,6 +824,39 @@
 .list-fast > * {
   content-visibility: auto;
   contain-intrinsic-size: auto 56px;
+}
+
+/* ------------------------------------------------------------------ scroll
+   Applied to every panel that scrolls independently of the page — sheet
+   bodies, the coach transcript, the horizontal rails.
+
+   `overscroll-behavior: contain` stops a flick that reaches the end of the
+   panel from chaining into the page behind it, which on iOS is what makes a
+   sheet feel like it slid the page underneath. `touch-action` names the one
+   axis the panel scrolls, so the compositor can start scrolling on the first
+   touchmove instead of waiting to find out whether a listener will cancel
+   it — that wait is most of what reads as a "sticky" first frame. */
+.scroll-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A sheet being dragged by a finger. The transition is cleared so the panel
+   tracks the touch exactly, and the layer is promoted for the duration of
+   the gesture — the class is removed on release, so nothing holds it. */
+.sheet-dragging {
+  transition: none !important;
+  animation: none !important;
+  will-change: transform;
 }
 
 /* Skeleton shimmer for AI calls that take a beat */
@@ -746,9 +870,81 @@
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.35),
+    transparent
+  );
   animation: shimmer 1.4s infinite;
 }
 .dark .skeleton::after {
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.05), transparent);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+}
+
+/* ------------------------------------------------------------- dashboard
+   Pieces used by the Home dashboard. Flat like the rest of the app — no
+   drop shadows, no backdrop blur — so nothing here adds raster cost while
+   the page scrolls. */
+
+/* Deep-green gradient behind the Home energy card and the streak hero. The
+   same in every theme on purpose: white type on it reads at well over 7:1. */
+.hero-gradient {
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgb(52 211 153 / 0.24) 0%, transparent 55%),
+    linear-gradient(150deg, #0b3b2c 0%, #0a5a43 55%, #0f7a58 100%);
+  color: #fff;
+}
+
+/* Small uppercase label above a stat. */
+.eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------- drill transitions
+   Tab-to-tab moves slide by bar order (above). Moves between a screen and
+   one of its drill-downs slide by depth instead: going deeper enters from the
+   trailing edge, going back from the leading edge — the direction the history
+   stack actually moved, so the browser back button and the iOS edge swipe
+   animate the right way round too. Same keyframes as the tab slide. */
+.animate-route-push {
+  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+}
+.animate-route-pop {
+  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
+}
+
+/* ---------------------------------------------------------- micro-charts */
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: var(--len, 1000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.4s var(--ease-spring) both;
 }

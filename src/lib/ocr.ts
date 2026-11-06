@@ -20,21 +20,79 @@ export interface LabelReading {
 
 let workerPromise: Promise<import('tesseract.js').Worker> | null = null;
 
+/**
+ * Where the Tesseract runtime is served from.
+ *
+ * Left to itself, tesseract.js downloads its worker script, its wasm core and
+ * the English model from jsDelivr on first use — three requests to a third
+ * party, at the exact moment this reader is supposed to be proving it needs
+ * nothing but the phone. On a plane, behind a filter, or in an installed PWA
+ * with no connection, it hung and then failed. The files are vendored into
+ * `public/tesseract/` instead; see the README there.
+ *
+ * `BASE_URL` because the app is served from `/` locally and `/<repo>/` on
+ * GitHub Pages, and these are absolute paths, not relative ones.
+ */
+const RUNTIME = `${import.meta.env.BASE_URL}tesseract`;
+
 async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const { createWorker } = await import('tesseract.js');
-      return createWorker('eng');
+      const { createWorker, OEM } = await import('tesseract.js');
+      // `corePath` and `langPath` are directories on purpose: tesseract.js
+      // feature-detects wasm SIMD and appends the core filename itself, and
+      // appends `eng.traineddata.gz` to the language path. Naming one core
+      // explicitly would hand the SIMD decision to us and get it wrong on
+      // some device we cannot test.
+      return createWorker('eng', OEM.LSTM_ONLY, {
+        workerPath: `${RUNTIME}/worker.min.js`,
+        corePath: RUNTIME,
+        langPath: RUNTIME,
+        // The vendored model is the gzipped one, matching what the CDN
+        // default would have served for an LSTM-only worker.
+        gzip: true,
+      });
     })();
   }
   return workerPromise;
 }
 
+/**
+ * Loads the worker, the core and the model without recognising anything.
+ *
+ * ~7 MB has to arrive before the first read can start, and the natural moment
+ * to spend it is while the user is still lining the pack up in the frame
+ * rather than after they press the shutter. It also means an install that has
+ * opened this screen once has the whole runtime in the service worker's cache,
+ * which is what makes the offline reader genuinely work offline instead of
+ * only working on a network.
+ *
+ * Failure is deliberately silent: this is an optimisation, and the read that
+ * follows will surface any real problem itself.
+ */
+export async function warmOCR(): Promise<void> {
+  try {
+    await getWorker();
+  } catch {
+    workerPromise = null;
+  }
+}
+
 export async function terminateOCR(): Promise<void> {
   if (!workerPromise) return;
-  const worker = await workerPromise;
-  await worker.terminate();
+  // Cleared first: this is also how a cancelled read stops an in-flight
+  // recognise, so a caller that immediately starts another must get a fresh
+  // worker rather than await the one being torn down.
+  const pending = workerPromise;
   workerPromise = null;
+  try {
+    const worker = await pending;
+    await worker.terminate();
+  } catch {
+    // A worker that never finished starting has nothing to terminate, and
+    // failing to clean up is not worth surfacing over whatever went wrong
+    // first.
+  }
 }
 
 /**
@@ -86,8 +144,13 @@ export function parseLabelText(text: string): Omit<LabelReading, 'raw'> {
   }
 
   // If the panel is per-serving only, scale to 100 g so the row is comparable.
+  // The gap before the unit tolerates OCR noise (glare and smudges routinely
+  // turn a plain space into a stray symbol) the same way every pattern above
+  // already tolerates noise between a label and its value — this one used to
+  // require the unit letter immediately after the number and silently missed
+  // the serving size on anything but a perfectly clean scan.
   const servings: Serving[] = [];
-  const servingMatch = text.match(/serving\s+size[^\d\n]{0,20}?([\d.,]+)\s*(g|ml)/i);
+  const servingMatch = text.match(/serving\s+size[^\d\n]{0,20}?([\d.,]+)[^\w\n]{0,3}(g|ml)\b/i);
   const servingGrams = servingMatch ? toNumber(servingMatch[1]) : null;
   const per100Declared = /per\s*100\s*(g|ml)/i.test(text);
 
@@ -102,11 +165,24 @@ export function parseLabelText(text: string): Omit<LabelReading, 'raw'> {
 
   // The product name is usually the longest all-caps or title-case line near
   // the top; that heuristic beats taking line 1, which is often a logo artefact.
+  // Boilerplate headings are excluded by name, and *any* digit disqualifies a
+  // line, not just a run of two — `\d{2,}` let "Dietary Fibre 4.5 g" through
+  // because "4.5" never puts two digits next to each other, and a nutrient
+  // value line has always been the wrong thing to name the food after.
+  const BOILERPLATE =
+    /^(nutrition\s*facts?|ingredients?|amount\s*per|per\s*100|serving\s*size|nutrition\s*information)/i;
   const name =
     text
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l.length > 3 && l.length < 40 && /[a-z]/i.test(l) && !/\d{2,}/.test(l))
+      .filter(
+        (l) =>
+          l.length > 3 &&
+          l.length < 40 &&
+          /[a-z]/i.test(l) &&
+          !/\d/.test(l) &&
+          !BOILERPLATE.test(l),
+      )
       .sort((a, b) => b.length - a.length)[0] ?? 'Scanned product';
 
   return { name, per100g, servings, matched: seen.size };

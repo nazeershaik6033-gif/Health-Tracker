@@ -27,6 +27,14 @@ export interface BarcodeResult {
   note?: string;
   /** Product exists but carries no usable nutrition. */
   partial?: boolean;
+  /**
+   * What the product is, when a database knew the name but not the numbers.
+   * A bare barcode is useless to both the user and the AI fallback; a name is
+   * the difference between "not found" and "we know what this is, just not
+   * what's in it".
+   */
+  productName?: string;
+  brand?: string;
   /** A tier that failed while a later one succeeded (or also failed). */
   warning?: string;
 }
@@ -35,6 +43,8 @@ export async function lookupBarcodeTiered(
   settings: Settings,
   barcode: string,
   signal?: AbortSignal,
+  /** Symbology the decoder reported, which disambiguates 8-digit codes. */
+  format?: string,
 ): Promise<BarcodeResult> {
   let warning: string | undefined;
 
@@ -49,7 +59,7 @@ export async function lookupBarcodeTiered(
   }
 
   try {
-    const off = await lookupOFF(barcode, signal);
+    const off = await lookupOFF(barcode, signal, format);
     if (off.found && off.food && !off.partial) {
       return {
         found: true,
@@ -68,6 +78,8 @@ export async function lookupBarcodeTiered(
       found: false,
       warning,
       partial: off.partial,
+      productName: off.found ? off.food?.name : undefined,
+      brand: off.found ? off.food?.brand : undefined,
       note: off.found
         ? `"${off.food?.name ?? 'That product'}" is in Open Food Facts but has no nutrition data.`
         : undefined,

@@ -59,20 +59,27 @@ export const HAPTIC = {
   warn: [30, 60, 30] as number[],
 } as const;
 
+/** Matches `--dur-count` in styles/index.css. */
+export const COUNT_MS = 560;
+
 /**
  * Counts a number up to its new value.
  *
- * Paired with `RingProgress`, whose stroke transition is 500ms — matching that
- * duration is what makes the ring and its readout arrive together instead of
- * the number snapping first.
+ * Eases over 560ms with a cubic ease-out — the same curve and duration the
+ * Premium tracker uses, so a number and the ring beside it agree.
+ *
+ * Re-targeting is the part that matters: `from` is whatever the caller is
+ * currently displaying, not the last settled value, so a second change
+ * arriving mid-flight continues from where the digits actually are instead of
+ * snapping back to the old start.
  */
 export function animateNumber(
   from: number,
   to: number,
   onFrame: (value: number) => void,
-  durationMs = 500,
+  durationMs = COUNT_MS,
 ): () => void {
-  if (from === to || prefersReducedMotion()) {
+  if (from === to || !Number.isFinite(to) || prefersReducedMotion()) {
     onFrame(to);
     return () => {};
   }
@@ -86,8 +93,71 @@ export function animateNumber(
     const t = Math.min(1, (now - start) / durationMs);
     onFrame(from + (to - from) * ease(t));
     if (t < 1) raf = requestAnimationFrame(step);
+    // Land on the exact target rather than the last eased sample, so a
+    // counter always finishes on the real number.
+    else onFrame(to);
   };
 
   raf = requestAnimationFrame(step);
   return () => cancelAnimationFrame(raf);
+}
+
+/**
+ * Which way a screen transition should travel, given where navigation came
+ * from and where it went.
+ *
+ * `order` is the bottom-nav tab order. A move along it is a sideways step and
+ * animates as one; anything else — a drill-down into a tracker, an editor, a
+ * route that isn't a tab at all — returns 'none' and gets the plain fade-up,
+ * because a horizontal slide would imply a step along a bar the user never
+ * touched.
+ */
+export function routeDirection(
+  from: string,
+  to: string,
+  order: readonly string[],
+): 'left' | 'right' | 'none' {
+  if (from === to) return 'none';
+  const a = order.indexOf(from);
+  const b = order.indexOf(to);
+  if (a < 0 || b < 0) return 'none';
+  return b > a ? 'right' : 'left';
+}
+
+/**
+ * Samples the real frame rate by counting animation frames over a window.
+ *
+ * Deliberately not a per-frame delta: an instantaneous 1/dt swings wildly and
+ * reads as noise. Counting whole frames across ~500ms gives a number stable
+ * enough to tell 120 from 60 from a genuine stall, which is the whole point of
+ * having it on screen.
+ *
+ * Returns a stop function. Reports nothing after it is called.
+ */
+export function sampleFrameRate(
+  onSample: (fps: number) => void,
+  windowMs = 500,
+): () => void {
+  let raf = 0;
+  let frames = 0;
+  let windowStart = performance.now();
+  let stopped = false;
+
+  const tick = (now: number) => {
+    if (stopped) return;
+    frames += 1;
+    const elapsed = now - windowStart;
+    if (elapsed >= windowMs) {
+      onSample(Math.round((frames * 1000) / elapsed));
+      frames = 0;
+      windowStart = now;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+
+  raf = requestAnimationFrame(tick);
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(raf);
+  };
 }

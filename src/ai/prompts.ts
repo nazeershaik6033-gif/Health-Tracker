@@ -1,6 +1,7 @@
 import type { Profile } from '@/types';
 import { formatDuration } from '@/lib/date';
 import { GOAL_LABEL } from '@/lib/nutrition';
+import { MICROS, targetsForProfile } from '@/lib/micros';
 
 /**
  * Ria's persona. Written to sit between "clinical" and "cheerleader": the
@@ -17,6 +18,7 @@ How you answer:
 - Give at most two actions, and make them specific enough to do today: a food, a portion, a time.
 - Keep it to a short paragraph or a few bullets unless asked for depth.
 - Indian portions in Indian units. A katori, a roti, a glass — not "1 cup (150 g)".
+- Micronutrient figures in the day's data are computed only from foods with published values, and the context says what share of the day that covered. Treat them as floors: name a gap when the coverage supports it, and say the data is thin rather than declaring a deficiency when it does not.
 
 Boundaries:
 - You are not a doctor. If someone describes a medical condition, a medication interaction, disordered eating, or a symptom that needs care, say plainly that this needs a professional and stop giving diet advice on it.
@@ -41,7 +43,9 @@ Read the panel and return the values per 100 g. If the label only gives per-serv
 
 Also read the product name and brand from the packaging if they are visible, and give realistic serving options — include the manufacturer's stated serving size as the first one.
 
-If a value genuinely is not on the label, estimate it from the food type rather than returning zero — except for fibre, where 0 is often correct.`;
+If a value genuinely is not on the label, estimate it from the food type rather than returning zero — except for fibre, where 0 is often correct.
+
+For the micronutrients: read any the label declares, and estimate the rest from what the food is. Sodium is usually printed even when nothing else is — take it from the panel rather than guessing. Return 0 only where the food really contains none, as an oil contains no calcium.`;
 
 export const VOICE_PROMPT = `The user described what they ate out loud. Turn it into structured food entries.
 
@@ -58,21 +62,50 @@ export function foodGenerationPrompt(query: string): string {
 
 Return values per 100 g plus realistic serving options. If this is a branded or regional product you recognise, use its actual values. If it is a home-cooked dish, use a typical home recipe including the cooking oil.
 
-Put the most natural everyday portion first in the servings list — for an Indian dish that usually means a katori, a piece or a plate, not "100 g".`;
+Put the most natural everyday portion first in the servings list — for an Indian dish that usually means a katori, a piece or a plate, not "100 g".
+
+Give the micronutrients per 100 g as well, in the units the schema names. Use composition-table values for the food as eaten — cooked figures for a cooked dish, since boiling costs a good share of the vitamin C and folate. Return 0 only where the food genuinely contains none of that nutrient.`;
 }
 
 /** Compact, token-cheap snapshot of the user for every AI call. */
 export function profileContext(profile: Profile | undefined): string {
   if (!profile) return 'No profile set yet.';
   const age = new Date().getFullYear() - profile.birthYear;
+  const micros = targetsForProfile(profile);
   return [
     `Name: ${profile.name || 'unset'}`,
     `Age ${age}, ${profile.sex}`,
     `Height ${Math.round(profile.heightCm)} cm`,
     `Goal: ${GOAL_LABEL[profile.goal]}`,
     `Daily targets: ${profile.targets.kcal} kcal, ${profile.targets.protein} g protein, ${profile.targets.fat} g fat, ${profile.targets.carbs} g carbs, ${profile.targets.fibre} g fibre`,
+    `Micronutrient targets (ICMR-NIN 2020): ${MICROS.map((m) => `${m.label} ${micros[m.id]} ${m.unit}${m.limit ? ' max' : ''}`).join(', ')}`,
     `Water goal: ${profile.waterGoalGlasses} glasses; sleep goal: ${formatDuration(profile.sleepGoalMin)}; step goal: ${profile.stepGoal}`,
   ].join('\n');
+}
+
+/**
+ * "What should I have for lunch?" — answered from what has already been logged.
+ *
+ * The remaining budget is computed locally and passed in rather than left for
+ * the model to derive, because a suggestion that quietly busts the calorie
+ * target is worse than no suggestion at all.
+ */
+export function nextMealPrompt(
+  slotLabel: string,
+  remaining: { kcal: number; protein: number; fibre: number },
+): string {
+  return `Suggest what this user should eat for ${slotLabel} today.
+
+They have ${Math.round(remaining.kcal)} kcal, ${Math.round(remaining.protein)} g of protein and ${Math.round(remaining.fibre)} g of fibre left against today's targets. Numbers can be negative — if they are already over, say so and suggest something light rather than pretending there is room.
+
+Rules:
+- Give two or three options, each a real dish with a real portion, that together with what they have already eaten lands the day close to target.
+- Keep every option within the calories left. If almost nothing is left, suggest the smallest sensible thing, not a full meal.
+- Read their log below: suggest foods in the same cuisine and style they actually eat. Reuse dishes already in their history where they fit.
+- Lead the headline with the gap that matters most today, quoting the number.
+- The tip is one sentence about the rest of the day.
+
+--- Their day so far ---`;
 }
 
 export const INSIGHT_PROMPT = `Write one short insight card for the user's day, in the style of a coach glancing at their log.

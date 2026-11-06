@@ -99,7 +99,7 @@ export function InsightCard({ date }: { date: string }) {
           onClick={generate}
           disabled={busy || !keyed}
           aria-label="Regenerate insight"
-          className="accent-rule-fg shrink-0 rounded-lg p-1 pressable disabled:opacity-40"
+          className="accent-rule-fg shrink-0 rounded-lg p-1 transition-transform active:scale-90 disabled:opacity-40"
         >
           <IconRefresh width={15} height={15} className={busy ? 'animate-spin' : ''} />
         </button>
@@ -111,7 +111,7 @@ export function InsightCard({ date }: { date: string }) {
             <Link
               key={chip}
               to={`/coach?q=${encodeURIComponent(chip)}`}
-              className="accent-pill inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold pressable"
+              className="accent-pill inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-transform active:scale-95"
             >
               <IconSparkle width={12} height={12} />
               {chip}
@@ -160,7 +160,7 @@ function LocalSummary({
         <button
           type="button"
           onClick={onGenerate}
-          className="accent-pill mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold pressable"
+          className="accent-pill mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-transform active:scale-95"
         >
           <IconSparkle width={12} height={12} />
           Ask Ria for a read on today
@@ -168,7 +168,7 @@ function LocalSummary({
       ) : (
         <Link
           to="/settings"
-          className="accent-pill mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold pressable"
+          className="accent-pill mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-transform active:scale-95"
         >
           <IconSparkle width={12} height={12} />
           Add an AI key for daily insights
