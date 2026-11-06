@@ -125,7 +125,7 @@ export default function MacroBreakdown() {
       <PageHeader
         title={meta.label}
         subtitle={relativeDayLabel(date)}
-        back={() => navigate(-1)}
+        back={-1}
       />
 
       <div className="space-y-3 px-4 pt-3">

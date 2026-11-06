@@ -182,7 +182,7 @@ export default function RecipeBuilder() {
 
   return (
     <div className="pb-32">
-      <PageHeader title="Build a food" back={() => navigate(-1)} />
+      <PageHeader title="Build a food" back={-1} />
 
       <div className="space-y-3 px-4 pt-3">
         <Card className="space-y-3">

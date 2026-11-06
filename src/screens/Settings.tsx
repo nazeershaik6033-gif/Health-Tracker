@@ -237,7 +237,7 @@ export default function Settings() {
     if (!profile) return;
     const kcal = Number(targetDraft.kcal) || 0;
     if (kcal < 800) {
-      showToast({ message: 'Set at least 800 calories first' });
+      showToast({ message: 'Set at least 800 calories first', tone: 'warn' });
       return;
     }
     const m = macroTargets(kcal, profile.startWeightKg, profile.goal);
@@ -254,7 +254,7 @@ export default function Settings() {
   async function saveTargets() {
     const kcal = Number(targetDraft.kcal);
     if (!profile || !kcal || kcal < 800) {
-      showToast({ message: 'Calories must be at least 800' });
+      showToast({ message: 'Calories must be at least 800', tone: 'warn' });
       return;
     }
     await saveProfile({
@@ -456,19 +456,22 @@ export default function Settings() {
                 </button>
               ))}
             </div>
-            <div className="flex items-end gap-2">
-              <Field
-                value={modelDraft}
-                onChange={(e) => setModelDraft(e.target.value)}
-                placeholder={modelFor(settings)}
-                className="flex-1"
-                hint="Any model ID this provider accepts — newer models work without an app update."
-              />
+            {/* Top-aligned with the input itself; the hint wraps underneath
+                at full width instead of the button guessing its height. */}
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <Field
+                  value={modelDraft}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                  placeholder={modelFor(settings)}
+                  hint="Any model ID this provider accepts — newer models work without an app update."
+                />
+              </div>
               <Button
                 variant="secondary"
                 onClick={() => saveModel(modelDraft.trim())}
                 disabled={!modelDraft.trim()}
-                className="mb-5"
+                className="shrink-0"
               >
                 Set
               </Button>

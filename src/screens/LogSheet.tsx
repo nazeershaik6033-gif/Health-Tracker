@@ -90,7 +90,7 @@ export default function LogSheet() {
 
   return (
     <div className="min-h-dvh">
-      <PageHeader title="Log something" back={() => navigate(-1)} />
+      <PageHeader title="Log something" back={-1} />
 
       <div className="space-y-2.5 px-4 pt-4">
         {options.map((opt) => {

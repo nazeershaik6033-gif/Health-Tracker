@@ -881,3 +881,70 @@
 .dark .skeleton::after {
   background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
 }
+
+/* ------------------------------------------------------------- dashboard
+   Pieces used by the Home dashboard. Flat like the rest of the app — no
+   drop shadows, no backdrop blur — so nothing here adds raster cost while
+   the page scrolls. */
+
+/* Deep-green gradient behind the Home energy card and the streak hero. The
+   same in every theme on purpose: white type on it reads at well over 7:1. */
+.hero-gradient {
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgb(52 211 153 / 0.24) 0%, transparent 55%),
+    linear-gradient(150deg, #0b3b2c 0%, #0a5a43 55%, #0f7a58 100%);
+  color: #fff;
+}
+
+/* Small uppercase label above a stat. */
+.eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------- drill transitions
+   Tab-to-tab moves slide by bar order (above). Moves between a screen and
+   one of its drill-downs slide by depth instead: going deeper enters from the
+   trailing edge, going back from the leading edge — the direction the history
+   stack actually moved, so the browser back button and the iOS edge swipe
+   animate the right way round too. Same keyframes as the tab slide. */
+.animate-route-push {
+  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+}
+.animate-route-pop {
+  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
+}
+
+/* ---------------------------------------------------------- micro-charts */
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: var(--len, 1000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.4s var(--ease-spring) both;
+}

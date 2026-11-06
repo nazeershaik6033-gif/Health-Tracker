@@ -172,30 +172,37 @@ export function useStreak() {
   }, [from]);
 }
 
-/** Rolling calorie/step/water history for charts and AI context. */
-export function useHistory(days = 14) {
-  const from = addDays(today(), -(days - 1));
+/**
+ * Rolling per-day history for charts and AI context, ending on `end`
+ * (today by default) so a past day on Home shows the week leading up to it.
+ */
+export function useHistory(days = 14, end?: string) {
+  const to = end ?? today();
+  const from = addDays(to, -(days - 1));
   return useLiveQuery(async () => {
     const [meals, workouts, water, steps, sleep] = await Promise.all([
-      db.meals.where('date').between(from, today(), true, true).toArray(),
-      db.workouts.where('date').between(from, today(), true, true).toArray(),
-      db.water.where('date').between(from, today(), true, true).toArray(),
-      db.steps.where('date').between(from, today(), true, true).toArray(),
-      db.sleep.where('date').between(from, today(), true, true).toArray(),
+      db.meals.where('date').between(from, to, true, true).toArray(),
+      db.workouts.where('date').between(from, to, true, true).toArray(),
+      db.water.where('date').between(from, to, true, true).toArray(),
+      db.steps.where('date').between(from, to, true, true).toArray(),
+      db.sleep.where('date').between(from, to, true, true).toArray(),
     ]);
 
-    return rangeDays(today(), days).map((date) => {
+    return rangeDays(to, days).map((date) => {
       const dayMeals = meals.filter((m) => m.date === date);
+      const totals = dayMeals.length ? totalNutrients(dayMeals) : undefined;
       return {
         date,
-        kcal: dayMeals.length ? totalNutrients(dayMeals).kcal : 0,
+        kcal: totals?.kcal ?? 0,
+        protein: totals?.protein ?? 0,
+        logged: dayMeals.some((m) => m.items.length > 0),
         burned: workouts.filter((w) => w.date === date).reduce((s, w) => s + w.kcal, 0),
         glasses: water.find((w) => w.date === date)?.glasses ?? 0,
         steps: steps.find((s) => s.date === date)?.count ?? 0,
         sleepMin: sleep.find((s) => s.date === date)?.durationMin ?? 0,
       };
     });
-  }, [from, days]);
+  }, [from, to, days]);
 }
 
 export { estimateWorkoutKcal };

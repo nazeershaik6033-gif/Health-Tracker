@@ -28,7 +28,7 @@ import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { DayTotals } from '@/components/DayTotals';
 import { PeriodMacros } from '@/components/PeriodMacros';
 import { MICRO_IDS, microRows } from '@/lib/micros';
-import { Card, EmptyState, ScoreCircle } from '@/components/ui';
+import { Card, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
 import { MacroStrip } from '@/components/MacroStrip';
@@ -39,7 +39,6 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconChevronUp,
-  IconDiet,
   IconMove,
   IconPlus,
   IconSparkle,
@@ -395,14 +394,6 @@ export default function Diet() {
         })}
       </div>
 
-      {day.meals.length === 0 && (
-        <EmptyState
-          icon={<IconDiet width={22} height={22} />}
-          title="No food logged for this day"
-          body="Snap a photo, scan a barcode, or search the database to get started."
-        />
-      )}
-
       <div className="h-4" />
 
       {editing && (
@@ -543,7 +534,13 @@ const SlotCard = memo(function SlotCard({
             )}
           </button>
         )}
-        <span className="tabular shrink-0 text-[12.5px] text-secondary">
+        {/* Slot targets are a guide, so only a clear overshoot (25%+) is
+            flagged — a few calories over isn't news. */}
+        <span
+          className={`tabular shrink-0 text-[12.5px] ${
+            target > 0 && eaten > target * 1.25 ? 'font-semibold text-red-500' : 'text-secondary'
+          }`}
+        >
           {eaten}/{target}
         </span>
         {/* Moves the whole slot at once — a meal logged under the wrong heading

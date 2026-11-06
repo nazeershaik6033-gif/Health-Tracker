@@ -250,7 +250,7 @@ export default function Coach() {
       <PageHeader
         title="Ria"
         subtitle="Your nutrition & fitness coach"
-        back={() => navigate(-1)}
+        back={-1}
         action={
           messages.length > 0 ? (
             <button

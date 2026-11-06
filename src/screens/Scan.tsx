@@ -335,7 +335,7 @@ export default function Scan() {
     <div className="flex h-svh flex-col overflow-hidden bg-black">
       <PageHeader
         title="Scan a code"
-        back={() => navigate(-1)}
+        back={-1}
         action={
           phase === 'scanning' && camera.torchAvailable ? (
             <button

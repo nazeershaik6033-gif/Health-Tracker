@@ -52,7 +52,7 @@ export default function MealScore() {
   if (meal === undefined) {
     return (
       <div className="min-h-dvh">
-        <PageHeader title="Your Meal Score" back={() => navigate(-1)} />
+        <PageHeader title="Your Meal Score" back={-1} />
       </div>
     );
   }
@@ -79,7 +79,7 @@ export default function MealScore() {
       <PageHeader
         title="Your Meal Score"
         subtitle={MEAL_SLOT_LABEL[meal.slot]}
-        back={() => navigate(-1)}
+        back={-1}
       />
 
       <div className="space-y-3 px-4 pt-3">

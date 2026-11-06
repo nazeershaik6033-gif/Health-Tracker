@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react';
-import { Link } from 'react-router-dom';
 import { IconSparkle, IconChevronLeft } from './icons';
+import { useGoBack } from '@/lib/nav';
 
 /* --------------------------------- Button -------------------------------- */
 
@@ -214,32 +214,57 @@ export function PageHeader({
   subtitle,
 }: {
   title: string;
-  back?: string | (() => void);
+  /** A path, -1 for "where the user came from" (falls back to Home), or a handler. */
+  back?: string | -1 | (() => void);
   action?: ReactNode;
   subtitle?: string;
 }) {
+  // Back pops history when the screen behind is where back leads, rather than
+  // pushing a fresh copy of it — so the stack doesn't grow, the system back
+  // gesture stays truthful, and the transition slides the right way.
+  const goBack = useGoBack();
   return (
     <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--surface-border)] chrome-canvas px-3 pt-safe pb-2">
-      {typeof back === 'string' ? (
-        <Link to={back} aria-label="Back" className="rounded-full p-2 hover:surface-sunken">
-          <IconChevronLeft width={22} height={22} />
-        </Link>
-      ) : (
-        <button
-          type="button"
-          onClick={back}
-          aria-label="Back"
-          className="rounded-full p-2 hover:surface-sunken"
-        >
-          <IconChevronLeft width={22} height={22} />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => (typeof back === 'function' ? back() : goBack(back))}
+        aria-label="Back"
+        className="rounded-full p-2 hover:surface-sunken"
+      >
+        <IconChevronLeft width={22} height={22} />
+      </button>
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-[17px] font-bold tracking-tight">{title}</h1>
         {subtitle && <p className="truncate text-[12px] text-secondary">{subtitle}</p>}
       </div>
       {action}
     </header>
+  );
+}
+
+/* ------------------------------ Progress bar ----------------------------- */
+
+export function ProgressBar({
+  value,
+  color,
+  height = 6,
+  className = '',
+}: {
+  /** 0–1; anything over 1 draws full, in red. */
+  value: number;
+  color: string;
+  height?: number;
+  className?: string;
+}) {
+  const over = value > 1.0001;
+  const pct = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100;
+  return (
+    <div className={`surface-sunken w-full overflow-hidden rounded-full ${className}`} style={{ height }}>
+      <div
+        className="h-full rounded-full transition-[width] duration-500 ease-[var(--ease-settle)]"
+        style={{ width: `${pct}%`, background: over ? '#dc2626' : color }}
+      />
+    </div>
   );
 }
 

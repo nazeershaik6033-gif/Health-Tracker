@@ -156,7 +156,7 @@ export default function MicroBreakdown() {
 
   return (
     <div className="pb-28">
-      <PageHeader title={def.label} subtitle={relativeDayLabel(date)} back={() => navigate(-1)} />
+      <PageHeader title={def.label} subtitle={relativeDayLabel(date)} back={-1} />
 
       <div className="space-y-3 px-4 pt-3">
         <Card className="space-y-3">

@@ -1,4 +1,5 @@
 import { useApp } from '@/stores/useApp';
+import { IconWarning } from './icons';
 
 /**
  * Single global toast, pinned above the bottom nav. Mirrors the reference
@@ -18,7 +19,13 @@ export function Toast() {
         aria-live="polite"
         className="animate-toast-in pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-2xl bg-brand-700 px-4 py-3 text-white shadow-lg"
       >
-        <span className="text-sm font-medium">{toast.message}</span>
+        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          {/* A refusal ("Calories must be at least 800") shouldn't read like a confirmation. */}
+          {toast.tone === 'warn' && (
+            <IconWarning width={16} height={16} className="shrink-0 text-amber-300" />
+          )}
+          {toast.message}
+        </span>
         {toast.actionLabel && (
           <button
             type="button"

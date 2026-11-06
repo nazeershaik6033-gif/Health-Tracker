@@ -6,6 +6,8 @@ import { today } from '@/lib/date';
 interface ToastState {
   id: number;
   message: string;
+  /** 'warn' marks a refusal, so it doesn't read like a confirmation. */
+  tone?: 'success' | 'warn';
   actionLabel?: string;
   onAction?: () => void | Promise<void>;
 }

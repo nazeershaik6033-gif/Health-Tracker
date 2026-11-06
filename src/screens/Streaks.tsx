@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { useHistory, useStreak } from '@/stores/useDay';
 import { useApp } from '@/stores/useApp';
-import { addDays, fromISODate, rangeDays, today, weekdayShort } from '@/lib/date';
+import { addDays, fromISODate, rangeDays, today } from '@/lib/date';
 import { TrendChart } from '@/components/TrendChart';
 import { Card, EmptyState, SectionTitle } from '@/components/ui';
+import { CountUp } from '@/components/CountUp';
 import { IconFlame, IconStreak } from '@/components/icons';
 
 const BADGES: { days: number; label: string; note: string }[] = [
@@ -27,12 +28,18 @@ export default function Streaks() {
   );
   const current = streak?.streak ?? 0;
 
-  // Twelve weeks of squares, oldest week first, Monday at the top.
+  // Twelve weeks of squares, oldest week first, Monday at the top. Columns
+  // are whole calendar weeks — this one included, its future days dimmed — so
+  // each row really is one weekday. (Slicing the last 84 days into sevens, as
+  // before, put today on the bottom row whatever day it was, and every row
+  // label was wrong.)
   const weeks = useMemo(() => {
-    const days = rangeDays(today(), 84);
-    const out: string[][] = [];
-    for (let i = 0; i < days.length; i += 7) out.push(days.slice(i, i + 7));
-    return out;
+    const now = today();
+    const monday = addDays(now, -((fromISODate(now).getDay() + 6) % 7));
+    const first = addDays(monday, -7 * 11);
+    return Array.from({ length: 12 }, (_, w) =>
+      Array.from({ length: 7 }, (_, d) => addDays(first, w * 7 + d)),
+    );
   }, []);
 
   const loggedInWindow = rangeDays(today(), 30).filter((d) => activeDays.has(d)).length;
@@ -58,57 +65,57 @@ export default function Streaks() {
     <div className="px-4 pt-safe pb-6">
       <h1 className="py-3 text-[22px] font-extrabold tracking-tight">Streaks</h1>
 
-      <Card className="flex flex-col items-center gap-1 py-7">
-        <IconStreak
-          width={38}
-          height={38}
-          className={current > 0 ? 'text-accent-500' : 'text-[var(--text-muted)]'}
+      <div className="hero-gradient relative flex flex-col items-center gap-1 overflow-hidden rounded-[1.75rem] py-8">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-10 h-40 w-40 rounded-full bg-orange-400/25 blur-3xl"
         />
-        <p className="tabular mt-1 text-4xl font-extrabold">{current}</p>
-        <p className="text-[13px] font-semibold text-secondary">
+        <IconStreak
+          width={40}
+          height={40}
+          className={`relative ${current > 0 ? 'text-orange-300' : 'text-white/40'}`}
+        />
+        <CountUp value={current} format={(n) => String(Math.round(n))} className="relative mt-1 text-[52px] leading-none font-bold tracking-tight" />
+        <p className="relative text-[13px] font-semibold text-white/75">
           day{current === 1 ? '' : 's'} in a row
         </p>
-        <p className="mt-1 max-w-xs text-center text-[12px] text-muted">
+        <p className="relative mt-1 max-w-xs px-6 text-center text-[12px] text-white/60">
           {current === 0
             ? 'Log anything today — a meal, a glass of water, a weigh-in — to start a streak.'
             : `Best run: ${best} day${best === 1 ? '' : 's'}. Logging anything at all keeps it alive.`}
         </p>
-      </Card>
+      </div>
 
       {/* Activity grid */}
       <Card className="mt-3">
         <SectionTitle>Last 12 weeks</SectionTitle>
-        <div className="scroll-x flex gap-1 pb-1">
-          <div className="flex flex-col justify-around pr-1 text-[9px] text-muted">
-            {['M', 'W', 'F'].map((d) => (
-              <span key={d} className="h-3">
-                {d}
-              </span>
-            ))}
-          </div>
-          {weeks.map((week, wi) => (
-            <div key={wi} className="flex flex-col gap-1">
-              {week.map((day) => {
-                const active = activeDays.has(day);
-                const future = day > today();
-                return (
-                  <div
-                    key={day}
-                    title={`${fromISODate(day).toLocaleDateString()} — ${
-                      future ? 'upcoming' : active ? 'logged' : 'nothing logged'
-                    }`}
-                    className={`h-3 w-3 rounded-[3px] ${
-                      future
-                        ? 'opacity-25 surface-sunken'
-                        : active
-                          ? 'bg-brand-500'
-                          : 'surface-sunken'
-                    }`}
-                  />
-                );
-              })}
-            </div>
-          ))}
+        {/* One grid, filled row by row, so the weekday labels share the
+            cells' row heights instead of approximating them. */}
+        <div className="grid grid-cols-[14px_repeat(12,minmax(0,1fr))] gap-[5px] pb-1">
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, d) => [
+            <span
+              key={`l${d}`}
+              className="flex items-center text-[9.5px] font-semibold text-muted"
+            >
+              {d % 2 === 0 ? label : ''}
+            </span>,
+            ...weeks.map((week) => {
+              const day = week[d];
+              const active = activeDays.has(day);
+              const future = day > today();
+              return (
+                <div
+                  key={day}
+                  title={`${fromISODate(day).toLocaleDateString()} — ${
+                    future ? 'upcoming' : active ? 'logged' : 'nothing logged'
+                  }`}
+                  className={`aspect-square w-full rounded-[5px] ${
+                    future ? 'surface-sunken opacity-30' : active ? 'bg-brand-500' : 'surface-sunken'
+                  } ${day === today() ? 'ring-2 ring-brand-500/40 ring-offset-1 ring-offset-[var(--surface-card)]' : ''}`}
+                />
+              );
+            }),
+          ])}
         </div>
         <p className="mt-2 text-[11.5px] text-muted">
           {loggedInWindow} of the last 30 days logged.
@@ -164,10 +171,6 @@ export default function Streaks() {
       <p className="mt-4 px-1 text-center text-[11px] text-muted">
         Yesterday counts up until midnight — a missed day only breaks the streak once it&apos;s
         properly past.
-      </p>
-      <div className="h-2" />
-      <p className="text-center text-[11px] text-muted">
-        Week starts {weekdayShort(addDays(today(), -6))}.
       </p>
     </div>
   );
