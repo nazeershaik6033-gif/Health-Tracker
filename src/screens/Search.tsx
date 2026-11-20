@@ -28,6 +28,7 @@ import {
 } from '@/lib/nutrition';
 import { draftToFood, generateFood } from '@/ai/service';
 import { hasKey } from '@/ai/registry';
+import { HAPTIC, haptic } from '@/lib/motion';
 import { describeError } from '@/ai/types';
 import { FoodRow } from '@/components/FoodRow';
 import { FavouritesSection } from '@/components/FavouritesSection';
@@ -156,16 +157,40 @@ export default function Search() {
     return createFood(draft);
   }
 
+  /**
+   * Puts the keyboard away. Nothing on this screen below the search box can be
+   * reached while it is up — on a phone it covers everything past the second
+   * row, and the + buttons sit right under its toolbar — so the first touch
+   * on the list closes it, the way native lists dismiss on drag.
+   */
+  function dismissKeyboard() {
+    const input = inputRef.current;
+    if (input && document.activeElement === input) input.blur();
+  }
+
   async function add(food: Food, qty = 1, servingLabel?: string, grams?: number) {
-    // A FatSecret row only becomes a real local food once it is actually used.
-    const real = await materialise(food);
-    const item =
-      grams !== undefined
-        ? buildMealItemFromGrams(real, grams)
-        : buildMealItem(real, servingLabel ?? real.servings[0]?.label ?? '100 g', qty);
-    const meal = await addMealItems(selectedDate, slot, [item]);
+    // Optimistic: the tick, the haptic and the sheet closing all happen on
+    // the tap. They used to wait for two IndexedDB transactions (the meal,
+    // then the food's use count), which is a visible beat on a phone.
+    dismissKeyboard();
+    haptic(HAPTIC.tap);
     setAddedIds((prev) => [...prev, food.id]);
     setDetail(null);
+
+    let meal;
+    try {
+      // A FatSecret row only becomes a real local food once it is actually used.
+      const real = await materialise(food);
+      const item =
+        grams !== undefined
+          ? buildMealItemFromGrams(real, grams)
+          : buildMealItem(real, servingLabel ?? real.servings[0]?.label ?? '100 g', qty);
+      meal = await addMealItems(selectedDate, slot, [item]);
+    } catch (err) {
+      setAddedIds((prev) => dropOne(prev, food.id));
+      showToast({ message: `Couldn't add ${food.name}: ${describeError(err)}`, tone: 'warn' });
+      return;
+    }
 
     showToast({
       message: `${food.name} added`,
@@ -174,7 +199,7 @@ export default function Search() {
         // The item we just appended is always the last one in the slot.
         const fresh = await db.meals.get(meal.id);
         if (fresh) await removeMealItem(meal.id, fresh.items.length - 1);
-        setAddedIds((prev) => prev.filter((id) => id !== food.id));
+        setAddedIds((prev) => dropOne(prev, food.id));
       },
     });
   }
@@ -274,6 +299,11 @@ export default function Search() {
             className="w-full bg-transparent text-[15px] outline-none placeholder:text-[var(--text-muted)]"
             autoComplete="off"
             enterKeyHint="search"
+            // The keyboard's Search key: results are already live, so all it
+            // should do is get out of the way of them.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
           />
           {query && (
             <button type="button" onClick={() => setQuery('')} className="text-[13px] text-muted">
@@ -297,7 +327,7 @@ export default function Search() {
         </button>
       </div>
 
-      <div className="flex-1 px-4 pb-28">
+      <div className="flex-1 px-4 pb-28" onPointerDown={dismissKeyboard}>
         {/* Pinned first, and only when browsing: while searching, the thing
             being searched for is what should be at the top of the screen. */}
         {!query.trim() && (
@@ -502,6 +532,12 @@ export default function Search() {
       )}
     </div>
   );
+}
+
+/** Removes one occurrence, so undoing a second add of a food keeps the first tick. */
+function dropOne(ids: string[], id: string): string[] {
+  const i = ids.lastIndexOf(id);
+  return i === -1 ? ids : [...ids.slice(0, i), ...ids.slice(i + 1)];
 }
 
 /** Sensible default slot based on the time of day. */

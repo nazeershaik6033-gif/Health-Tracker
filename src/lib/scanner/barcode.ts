@@ -12,6 +12,7 @@
  * blur.
  */
 import zxingWasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url';
+import type { DecodeRequest, DecodeResponse } from './decode.worker';
 
 export type BarcodeFormat =
   | 'ean_13'
@@ -64,9 +65,22 @@ declare global {
 
 export type DecoderKind = 'native' | 'wasm' | 'none';
 
+export interface DecodeOptions {
+  /**
+   * Spend more time per frame looking for a symbol. Worth it on the cropped
+   * guide-box pass, where the barcode almost certainly is; the occasional
+   * full-frame sweep runs without it to stay cheap.
+   */
+  thorough?: boolean;
+}
+
 export interface Decoder {
   kind: DecoderKind;
-  decode(canvas: HTMLCanvasElement): Promise<DecodeResult | null>;
+  /** True when decoding happens off the main thread. */
+  offThread?: boolean;
+  decode(canvas: HTMLCanvasElement, opts?: DecodeOptions): Promise<DecodeResult | null>;
+  /** Releases a worker, if there is one. */
+  dispose?(): void;
 }
 
 async function createNative(): Promise<Decoder | null> {
@@ -115,12 +129,12 @@ async function createWasm(): Promise<Decoder | null> {
 
     return {
       kind: 'wasm',
-      async decode(canvas) {
+      async decode(canvas, opts) {
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return null;
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const results = await zxing.readBarcodes(data, {
-          tryHarder: true,
+          tryHarder: opts?.thorough ?? true,
           formats: [
             'EAN-13',
             'EAN-8',
@@ -143,9 +157,90 @@ async function createWasm(): Promise<Decoder | null> {
   }
 }
 
+/**
+ * The same wasm decoder, in a dedicated worker.
+ *
+ * On iOS this is the path every scan takes, and the reason it exists: a
+ * main-thread decode blocks the viewfinder and every button for as long as it
+ * runs. The worker is warmed with a 1x1 frame before it is handed out, so a
+ * worker that cannot load its wasm (old WebKit, a blocked fetch) is caught
+ * here and the main-thread decoder is used instead, rather than the scanner
+ * silently reading nothing.
+ */
+async function createWorkerDecoder(): Promise<Decoder | null> {
+  if (typeof Worker === 'undefined' || typeof ImageData === 'undefined') return null;
+
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL('./decode.worker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    return null;
+  }
+
+  type Pending = { resolve: (r: DecodeResponse) => void; reject: (e: unknown) => void };
+  const pending = new Map<number, Pending>();
+  let seq = 0;
+  let dead = false;
+
+  worker.onmessage = (e: MessageEvent<DecodeResponse>) => {
+    const p = pending.get(e.data.id);
+    if (!p) return;
+    pending.delete(e.data.id);
+    p.resolve(e.data);
+  };
+  worker.onerror = (e) => {
+    dead = true;
+    for (const p of pending.values()) p.reject(e);
+    pending.clear();
+  };
+
+  function send(image: ImageData, tryHarder: boolean): Promise<DecodeResponse> {
+    if (dead) return Promise.reject(new Error('Decoder worker stopped'));
+    const id = ++seq;
+    return new Promise<DecodeResponse>((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      // Transferred, not copied: a 1280px frame is several MB of pixels.
+      worker.postMessage({ id, image, tryHarder } satisfies DecodeRequest, [image.data.buffer]);
+    });
+  }
+
+  try {
+    // Loading the ~640 KB wasm happens on this first message.
+    const warm = await Promise.race([
+      send(new ImageData(1, 1), false),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Decoder worker timed out')), 15000),
+      ),
+    ]);
+    if (warm.error) throw new Error(warm.error);
+  } catch {
+    worker.terminate();
+    return null;
+  }
+
+  return {
+    kind: 'wasm',
+    offThread: true,
+    async decode(canvas, opts) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const res = await send(image, opts?.thorough ?? true);
+      return res.hit;
+    },
+    dispose() {
+      dead = true;
+      worker.terminate();
+      pending.clear();
+    },
+  };
+}
+
 export async function createDecoder(): Promise<Decoder> {
   const native = await createNative();
   if (native) return native;
+  const offThread = await createWorkerDecoder();
+  if (offThread) return offThread;
   const wasm = await createWasm();
   if (wasm) return wasm;
   return {
