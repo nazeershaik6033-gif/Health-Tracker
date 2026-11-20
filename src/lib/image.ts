@@ -155,18 +155,72 @@ export function displayRectToFrame(video: HTMLVideoElement, roi: Rect): Rect {
  * `roi` is given in fractions of the **displayed** element, the same numbers
  * that position the guide box, so what gets decoded is what the user framed.
  */
-export function captureFrame(video: HTMLVideoElement, roi?: Rect): HTMLCanvasElement {
+export interface CaptureOptions {
+  /**
+   * Downscale so the longer edge is at most this many pixels. Drawing straight
+   * to the target size is one GPU blit; capturing at full sensor resolution and
+   * shrinking later costs a JPEG encode and decode round trip on top.
+   */
+  maxEdge?: number;
+  /**
+   * Draw into this canvas instead of allocating a new one. The scanner grabs a
+   * frame many times a second, and a fresh multi-megabyte canvas per grab is
+   * garbage the phone then has to collect mid-scan.
+   */
+  canvas?: HTMLCanvasElement;
+  /** Set when the pixels will be read back (barcode decoding). */
+  readback?: boolean;
+}
+
+export function captureFrame(
+  video: HTMLVideoElement,
+  roi?: Rect,
+  opts: CaptureOptions = {},
+): HTMLCanvasElement {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   const region = roi ? displayRectToFrame(video, roi) : { x: 0, y: 0, w: vw, h: vh };
+  const out = opts.maxEdge
+    ? fit(region.w, region.h, opts.maxEdge)
+    : { w: region.w, h: region.h };
 
-  const canvas = document.createElement('canvas');
-  canvas.width = region.w;
-  canvas.height = region.h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const canvas = opts.canvas ?? document.createElement('canvas');
+  // Assigning width/height clears and reallocates even when unchanged, so
+  // only touch them when the size actually moved.
+  if (canvas.width !== out.w) canvas.width = out.w;
+  if (canvas.height !== out.h) canvas.height = out.h;
+  const ctx = canvas.getContext('2d', opts.readback ? { willReadFrequently: true } : undefined);
   if (!ctx) throw new Error('Canvas is unavailable in this browser');
-  ctx.drawImage(video, region.x, region.y, region.w, region.h, 0, 0, region.w, region.h);
+  if (out.w !== region.w) ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(video, region.x, region.y, region.w, region.h, 0, 0, out.w, out.h);
   return canvas;
+}
+
+/**
+ * `prepareImage` for a frame already on a canvas, at or below `MAX_EDGE`.
+ * Skips the decode step entirely — the camera shutter path used to encode a
+ * full-resolution JPEG only to decode it again a moment later.
+ */
+export async function prepareCanvas(canvas: HTMLCanvasElement): Promise<PreparedImage> {
+  const main = fit(canvas.width, canvas.height, MAX_EDGE);
+  const small = fit(canvas.width, canvas.height, THUMB_EDGE);
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = small.w;
+  thumbCanvas.height = small.h;
+  const tctx = thumbCanvas.getContext('2d');
+  if (!tctx) throw new Error('Canvas is unavailable in this browser');
+  tctx.imageSmoothingQuality = 'high';
+  tctx.drawImage(canvas, 0, 0, small.w, small.h);
+
+  let source = canvas;
+  if (main.w !== canvas.width) {
+    source = document.createElement('canvas');
+    source.width = main.w;
+    source.height = main.h;
+    source.getContext('2d')?.drawImage(canvas, 0, 0, main.w, main.h);
+  }
+  const [full, thumb] = await Promise.all([toBlob(source, 0.82), toBlob(thumbCanvas, 0.7)]);
+  return { full, thumb, width: main.w, height: main.h };
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement, quality = 0.85): Promise<Blob> {

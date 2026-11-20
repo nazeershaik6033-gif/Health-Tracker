@@ -44,6 +44,17 @@ const FULL_FRAME = { x: 0, y: 0, w: 1, h: 1 };
 /** Full-frame sweeps per cropped passes. Kept low; the sweep costs more. */
 const SWEEP_EVERY = 4;
 
+/**
+ * Longest edge, in pixels, of the frame handed to the decoder. A barcode that
+ * fills the guide box is still hundreds of pixels wide at this size, and a
+ * full 1080x1920 sensor frame costs the decoder roughly twice as long for no
+ * extra reads.
+ */
+const DECODE_EDGE = 1280;
+
+/** See `zoom` in useCamera: fills the box from outside the close-focus limit. */
+const SCAN_ZOOM = 2;
+
 /** How long to scan before offering the manual fallback unprompted. */
 const STRUGGLE_AFTER_MS = 9000;
 
@@ -52,11 +63,12 @@ type Phase = 'scanning' | 'looking-up' | 'found' | 'not-found';
 export default function Scan() {
   const navigate = useNavigate();
   const { settings, selectedDate, showToast } = useApp();
-  const camera = useCamera({ ideal: { width: 1920, height: 1080 } });
+  const camera = useCamera({ ideal: { width: 1920, height: 1080 }, zoom: SCAN_ZOOM });
 
   const decoderRef = useRef<Decoder | null>(null);
   const bufferRef = useRef(new ConsensusBuffer(2, 2500));
-  const rafRef = useRef<number>(0);
+  // One canvas for every grab, rather than a new multi-MB one per frame.
+  const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const busyRef = useRef(false);
   // The symbology behind the accepted value. Eight digits are ambiguous
   // between EAN-8 and UPC-E, and the two expand to entirely different
@@ -201,7 +213,10 @@ export default function Scan() {
 
     void (async () => {
       const decoder = await createDecoder();
-      if (cancelled) return;
+      if (cancelled) {
+        decoder.dispose?.();
+        return;
+      }
       decoderRef.current = decoder;
       setDecoderKind(decoder.kind);
       if (decoder.kind === 'none') {
@@ -211,6 +226,8 @@ export default function Scan() {
 
     return () => {
       cancelled = true;
+      decoderRef.current?.dispose?.();
+      decoderRef.current = null;
     };
   }, []);
 
@@ -218,45 +235,59 @@ export default function Scan() {
     if (phase !== 'scanning' || camera.status !== 'live') return;
 
     let stopped = false;
-    let last = 0;
     let pass = 0;
+    const canvas = (frameCanvasRef.current ??= document.createElement('canvas'));
 
-    const tick = async (now: number) => {
-      if (stopped) return;
-      rafRef.current = requestAnimationFrame(tick);
+    // Back-to-back rather than on a fixed timer: as soon as one decode returns
+    // the next frame is grabbed. It used to be capped at 8 a second with every
+    // decode blocking the main thread; off-thread (the iPhone path) and native
+    // decoders now run as fast as they can return, which is what makes a read
+    // land within a fraction of a second of the pack being lined up. Only the
+    // main-thread fallback keeps a gap, so the UI still gets frames.
+    const run = async () => {
+      let last = 0;
+      while (!stopped) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (stopped) return;
 
-      // ~8 decodes/sec is plenty and leaves the main thread responsive.
-      if (now - last < 125) return;
-      last = now;
+        const video = camera.videoRef.current;
+        const decoder = decoderRef.current;
+        if (!video || !decoder || decoder.kind === 'none' || busyRef.current) continue;
+        if (!video.videoWidth || document.hidden) continue;
 
-      const video = camera.videoRef.current;
-      const decoder = decoderRef.current;
-      if (!video || !decoder || decoder.kind === 'none' || busyRef.current) return;
-      if (!video.videoWidth) return;
+        const now = performance.now();
+        const gap = decoder.offThread || decoder.kind === 'native' ? 30 : 150;
+        if (now - last < gap) continue;
+        last = now;
 
-      try {
-        // Every fourth pass looks at the whole frame instead, so a barcode the
-        // user has framed slightly off still gets read.
-        const sweep = pass % SWEEP_EVERY === SWEEP_EVERY - 1;
-        pass += 1;
+        try {
+          // Every fourth pass looks at the whole frame instead, so a barcode
+          // the user has framed slightly off still gets read.
+          const sweep = pass % SWEEP_EVERY === SWEEP_EVERY - 1;
+          pass += 1;
 
-        const canvas = captureFrame(video, sweep ? FULL_FRAME : ROI);
-        const hit = await decoder.decode(canvas);
-        if (!hit || stopped) return;
-        if (!isValidEAN(hit.value)) return; // failed check digit: a misread
+          captureFrame(video, sweep ? FULL_FRAME : ROI, {
+            canvas,
+            maxEdge: DECODE_EDGE,
+            readback: true,
+          });
+          const hit = await decoder.decode(canvas, { thorough: !sweep });
+          if (!hit || stopped) continue;
+          if (!isValidEAN(hit.value)) continue; // failed check digit: a misread
 
-        const confirmed = bufferRef.current.push(hit.value);
-        if (confirmed) {
-          formatRef.current = hit.format;
-          haptic(HAPTIC.success);
-          await handleScan(confirmed);
+          const confirmed = bufferRef.current.push(hit.value);
+          if (confirmed) {
+            formatRef.current = hit.format;
+            haptic(HAPTIC.success);
+            await handleScan(confirmed);
+          }
+        } catch {
+          /* a dropped frame is not worth surfacing */
         }
-      } catch {
-        /* a dropped frame is not worth surfacing */
       }
     };
+    void run();
 
-    rafRef.current = requestAnimationFrame(tick);
     // Nine seconds of pointing a camera at a pack with nothing happening is
     // long enough. Rather than leave the user guessing whether it is still
     // trying, say what usually helps and put the manual entry in reach.
@@ -265,7 +296,6 @@ export default function Scan() {
     return () => {
       stopped = true;
       clearTimeout(nudge);
-      cancelAnimationFrame(rafRef.current);
     };
   }, [phase, camera.status, camera.videoRef, handleScan]);
 
@@ -377,6 +407,20 @@ export default function Scan() {
               />
             </div>
 
+            {/* Only when the camera can actually zoom. 2x is the default because
+                it keeps the pack outside the close-focus limit; 1x is there for
+                a large or very close code that no longer fits the box. */}
+            {camera.status === 'live' && camera.zoomRange && camera.zoomRange.max >= 1.5 && (
+              <button
+                type="button"
+                onClick={() => void camera.setZoom(camera.zoom > 1.2 ? 1 : SCAN_ZOOM)}
+                aria-label={camera.zoom > 1.2 ? 'Zoom out to 1x' : `Zoom in to ${SCAN_ZOOM}x`}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3.5 py-1.5 text-[13px] font-bold text-white tabular"
+              >
+                {camera.zoom > 1.2 ? `${Math.round(camera.zoom * 10) / 10}×` : '1×'}
+              </button>
+            )}
+
             {camera.status !== 'live' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center text-white/80">
                 <IconBarcode width={34} height={34} />
@@ -397,8 +441,8 @@ export default function Scan() {
                 when it is wanted rather than noise on every scan. */}
             {struggling && (
               <p className="mt-2 text-center text-[12px] leading-relaxed text-white/75">
-                Still not reading? Move about 15 cm back so the whole barcode fits inside the
-                box, wipe the lens, and
+                Still not reading? Hold the pack about 20 cm away — closer than that most phone
+                cameras cannot focus — wipe the lens, and
                 {camera.torchAvailable ? ' turn the torch on for glossy or dark packaging.' : ' try more even lighting — glare on the plastic is usually the culprit.'}
               </p>
             )}

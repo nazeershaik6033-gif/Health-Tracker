@@ -6,7 +6,15 @@ import { analyseMealPhoto } from '@/ai/service';
 import { hasKey, modelFor } from '@/ai/registry';
 import { describeError, errorDetail } from '@/ai/types';
 import { useCamera } from '@/lib/camera';
-import { blobToImagePart, canvasToBlob, captureFrame, prepareImage } from '@/lib/image';
+import {
+  MAX_EDGE,
+  blobToImagePart,
+  captureFrame,
+  prepareCanvas,
+  prepareImage,
+  type PreparedImage,
+} from '@/lib/image';
+import { HAPTIC, haptic } from '@/lib/motion';
 import {
   formatPortion,
   per100gFromItem,
@@ -42,6 +50,10 @@ export default function Snap() {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraFileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Bumped by reset(): an ingest still writing its photo when the user backs
+  // out must not then drag the screen into "Reading your plate…".
+  const genRef = useRef(0);
+  const [capturing, setCapturing] = useState(false);
 
   const [phase, setPhase] = useState<Phase>('capture');
   const [snap, setSnap] = useState<SnapRow | null>(null);
@@ -92,10 +104,21 @@ export default function Snap() {
     [settings],
   );
 
-  /** Shared entry point for camera capture, file picking and share-target. */
-  const ingest = useCallback(
-    async (blob: Blob, autoTracked = false) => {
-      const prepared = await prepareImage(blob);
+  /**
+   * Shared entry point for camera capture, file picking and share-target.
+   *
+   * The screen moves to "Reading your plate…", with the photo, *before* the
+   * IndexedDB write rather than after it. Previously nothing visible happened
+   * between the tap and that write finishing, which on a phone read as the
+   * shutter not having worked.
+   */
+  const ingestPrepared = useCallback(
+    async (prepared: PreparedImage, autoTracked = false) => {
+      const gen = genRef.current;
+      camera.stop();
+      setPreview(URL.createObjectURL(prepared.full));
+      if (keyed) setPhase('analysing');
+
       const row = await addSnap(
         {
           date: selectedDate,
@@ -107,9 +130,8 @@ export default function Snap() {
         },
         prepared.full,
       );
+      if (gen !== genRef.current) return;
       setSnap(row);
-      setPreview(URL.createObjectURL(prepared.full));
-      camera.stop();
       if (keyed) await analyse(row, prepared.full);
       else {
         setError('Add an AI key in Settings to read this photo.');
@@ -117,6 +139,13 @@ export default function Snap() {
       }
     },
     [selectedDate, keyed, analyse, camera],
+  );
+
+  const ingest = useCallback(
+    async (blob: Blob, autoTracked = false) => {
+      await ingestPrepared(await prepareImage(blob), autoTracked);
+    },
+    [ingestPrepared],
   );
 
   /* --------------------------- share target ---------------------------- */
@@ -205,11 +234,27 @@ export default function Snap() {
 
   /* ------------------------------ actions ------------------------------ */
 
+  /**
+   * The shutter. Freezes the preview and flashes on the tap itself, then
+   * grabs the frame straight at upload size: it used to encode a
+   * full-resolution JPEG, decode it again, and re-encode it twice more before
+   * anything on screen changed.
+   */
   async function shoot() {
     const video = camera.videoRef.current;
-    if (!video || camera.status !== 'live') return;
-    const blob = await canvasToBlob(captureFrame(video), 0.9);
-    await ingest(blob);
+    if (!video || camera.status !== 'live' || capturing) return;
+    setCapturing(true);
+    haptic(HAPTIC.tap);
+    try {
+      const canvas = captureFrame(video, undefined, { maxEdge: MAX_EDGE });
+      video.pause();
+      await ingestPrepared(await prepareCanvas(canvas));
+    } catch (err) {
+      setError(describeError(err));
+      setPhase('error');
+    } finally {
+      setCapturing(false);
+    }
   }
 
   /**
@@ -245,6 +290,7 @@ export default function Snap() {
   }
 
   function reset() {
+    genRef.current += 1;
     abortRef.current?.abort();
     if (preview) URL.revokeObjectURL(preview);
     setPreview('');
@@ -386,6 +432,9 @@ export default function Snap() {
                 )}
               </div>
             )}
+            {capturing && (
+              <div className="animate-fade-out pointer-events-none absolute inset-0 bg-white/70" />
+            )}
             {camera.status === 'live' && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div className="h-[68%] w-[86%] rounded-3xl border-2 border-white/35" />
@@ -415,7 +464,7 @@ export default function Snap() {
               <button
                 type="button"
                 onClick={shoot}
-                disabled={camera.status !== 'live'}
+                disabled={camera.status !== 'live' || capturing}
                 aria-label="Take photo"
                 className="flex h-18 w-18 items-center justify-center rounded-full border-4 border-white/40 disabled:opacity-40"
                 style={{ height: '4.5rem', width: '4.5rem' }}
