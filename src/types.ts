@@ -430,9 +430,64 @@ export interface Insight {
   createdAt: number;
 }
 
+/** What a diet plan may contain. Ordered from most to least restrictive. */
+export type DietType = 'vegan' | 'veg' | 'egg' | 'nonveg';
+
+export const DIET_TYPE_LABEL: Record<DietType, string> = {
+  vegan: 'Vegan',
+  veg: 'Vegetarian',
+  egg: 'Eggetarian',
+  nonveg: 'Non-veg',
+};
+
+/** What a diet plan leans towards, on top of hitting the calorie target. */
+export type DietFocus = 'balanced' | 'high_protein' | 'low_carb';
+
+export const DIET_FOCUS_LABEL: Record<DietFocus, string> = {
+  balanced: 'Balanced',
+  high_protein: 'High protein',
+  low_carb: 'Low carb',
+};
+
+export interface DietPrefs {
+  diet: DietType;
+  focus: DietFocus;
+  /** 3 or 7 — a weekend-sized plan or a full week. */
+  days: number;
+  /** Lower-cased words; a meal containing any of them is never planned. */
+  avoid: string[];
+}
+
+export const DEFAULT_DIET_PREFS: DietPrefs = {
+  diet: 'veg',
+  focus: 'balanced',
+  days: 3,
+  avoid: [],
+};
+
+/**
+ * One planned meal.
+ *
+ * `items` is what makes a plan loggable: the same `MealItem` snapshot a diary
+ * meal stores, so logging a planned meal is a copy rather than a guess. Plans
+ * saved before itemised plans existed carry only `suggestion` and `kcal`, and
+ * still render.
+ */
+export interface PlanMeal {
+  slot: MealSlot;
+  suggestion: string;
+  kcal: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  items?: MealItem[];
+  /** Which bundled template produced it, so a swap can skip it. Local plans only. */
+  templateId?: string;
+}
+
 export interface PlanDay {
   label: string;
-  meals: { slot: MealSlot; suggestion: string; kcal: number }[];
+  meals: PlanMeal[];
 }
 
 export interface Plan {
@@ -442,7 +497,43 @@ export interface Plan {
   summary: string;
   days: PlanDay[];
   workouts?: { day: string; focus: string; detail: string; minutes: number }[];
+  /** Absent on plans from before the offline planner, all of which were AI. */
+  source?: 'ai' | 'local';
+  prefs?: DietPrefs;
   createdAt: number;
+}
+
+/**
+ * One fasting window. Open while `endAt` is unset; at most one is open at a
+ * time, which `startFast` enforces.
+ */
+export interface FastEntry {
+  id: string;
+  startAt: number;
+  endAt?: number;
+  /** The goal the fast was started with, so changing the default later doesn't rewrite history. */
+  targetHours: number;
+  note?: string;
+}
+
+export type GlucoseContext = 'fasting' | 'before_meal' | 'after_meal' | 'bedtime' | 'random';
+
+export const GLUCOSE_CONTEXT_LABEL: Record<GlucoseContext, string> = {
+  fasting: 'Fasting',
+  before_meal: 'Before a meal',
+  after_meal: '2 h after a meal',
+  bedtime: 'Bedtime',
+  random: 'Random',
+};
+
+/** A blood-glucose reading, always stored in mg/dL whatever the display unit. */
+export interface GlucoseEntry {
+  id: string;
+  date: string;
+  at: number;
+  mgdl: number;
+  context: GlucoseContext;
+  note?: string;
 }
 
 export type Goal = 'lose' | 'maintain' | 'gain';
@@ -586,4 +677,9 @@ export interface Settings {
   countStepKcal?: boolean;
   /** Shows the frame-rate readout. Off by default; a diagnostic, not a feature. */
   showFps?: boolean;
+  /** Last diet-plan preferences, so the Plans screen opens where it was left. */
+  dietPrefs?: DietPrefs;
+  /** Default fasting window in hours (16 for 16:8). */
+  fastTargetHours?: number;
+  glucoseUnit?: 'mgdl' | 'mmol';
 }

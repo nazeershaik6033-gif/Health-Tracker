@@ -2,15 +2,18 @@ import Dexie, { type Table } from 'dexie';
 import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
 import { seedExercises } from '@/data/exercises.seed';
-import { today } from '@/lib/date';
+import { today, toISODate } from '@/lib/date';
 import { computeTargets, portionMicros } from '@/lib/nutrition';
 import { hasMicros } from '@/lib/micros';
 import { DEFAULT_FATSECRET } from '@/types';
 import type {
   ChatMessage,
   Exercise,
+  FastEntry,
   Favourite,
   Food,
+  GlucoseEntry,
+  GlucoseContext,
   Insight,
   Meal,
   MealItem,
@@ -948,19 +951,92 @@ export async function savePlan(plan: Omit<Plan, 'id' | 'createdAt'>): Promise<Pl
   return next;
 }
 
+/* -------------------------------- fasting -------------------------------- */
+
+/**
+ * The fast in progress, if any. Only the newest fast can be open — `startFast`
+ * closes anything left running — so reading the latest row is enough.
+ */
+export async function activeFast(): Promise<FastEntry | undefined> {
+  const latest = await db.fasts.orderBy('startAt').last();
+  return latest && latest.endAt === undefined ? latest : undefined;
+}
+
+export async function recentFasts(limit = 30): Promise<FastEntry[]> {
+  return db.fasts.orderBy('startAt').reverse().limit(limit).toArray();
+}
+
+/**
+ * Starts a fast. A fast already running is ended at the new start rather than
+ * left open, so there is never more than one clock ticking.
+ */
+export async function startFast(targetHours: number, startAt = Date.now()): Promise<FastEntry> {
+  const open = await activeFast();
+  if (open) await db.fasts.update(open.id, { endAt: Math.max(open.startAt, startAt) });
+  const entry: FastEntry = { id: uid('fast_'), startAt, targetHours };
+  await db.fasts.add(entry);
+  return entry;
+}
+
+export async function endFast(id: string, endAt = Date.now()): Promise<void> {
+  const fast = await db.fasts.get(id);
+  if (!fast) return;
+  await db.fasts.update(id, { endAt: Math.max(fast.startAt, endAt) });
+}
+
+export async function updateFast(id: string, patch: Partial<Omit<FastEntry, 'id'>>): Promise<void> {
+  await db.fasts.update(id, patch);
+}
+
+export async function deleteFast(id: string): Promise<void> {
+  await db.fasts.delete(id);
+}
+
+export async function restoreFast(entry: FastEntry): Promise<void> {
+  await db.fasts.put(entry);
+}
+
+/* -------------------------------- glucose -------------------------------- */
+
+export async function addGlucose(input: {
+  at: number;
+  mgdl: number;
+  context: GlucoseContext;
+  note?: string;
+}): Promise<GlucoseEntry> {
+  const entry: GlucoseEntry = { id: uid('glu_'), date: toISODate(new Date(input.at)), ...input };
+  await db.glucose.add(entry);
+  return entry;
+}
+
+export async function glucoseForRange(from: string, to: string): Promise<GlucoseEntry[]> {
+  const rows = await db.glucose.where('date').between(from, to, true, true).toArray();
+  return rows.sort((a, b) => a.at - b.at);
+}
+
+export async function deleteGlucose(id: string): Promise<void> {
+  await db.glucose.delete(id);
+}
+
+export async function restoreGlucose(entry: GlucoseEntry): Promise<void> {
+  await db.glucose.put(entry);
+}
+
 /* ------------------------------- aggregate ------------------------------- */
 
 /** Everything the Home screen and the AI context builder need for one day. */
 export async function dayBundle(date: string, profile: Profile | undefined) {
-  const [meals, water, sleep, weight, steps, workouts] = await Promise.all([
+  const [meals, water, sleep, weight, steps, workouts, fast, glucose] = await Promise.all([
     mealsForDate(date),
     getWater(date, profile?.waterGoalGlasses ?? 9),
     getSleep(date),
     getWeight(date),
     getSteps(date, profile?.stepGoal ?? 8000),
     workoutsForDate(date),
+    activeFast(),
+    glucoseForRange(date, date),
   ]);
-  return { date, meals, water, sleep, weight, steps, workouts };
+  return { date, meals, water, sleep, weight, steps, workouts, fast, glucose };
 }
 
 export type DayBundle = Awaited<ReturnType<typeof dayBundle>>;
@@ -969,7 +1045,7 @@ export type DayBundle = Awaited<ReturnType<typeof dayBundle>>;
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.profile, db.meals, db.snaps, db.snapImages, db.favourites, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises],
+    [db.profile, db.meals, db.snaps, db.snapImages, db.favourites, db.water, db.sleep, db.weight, db.steps, db.workouts, db.chats, db.insights, db.plans, db.foods, db.exercises, db.fasts, db.glucose],
     async () => {
       await Promise.all([
         db.profile.clear(),
@@ -985,6 +1061,8 @@ export async function clearAllData(): Promise<void> {
         db.chats.clear(),
         db.insights.clear(),
         db.plans.clear(),
+        db.fasts.clear(),
+        db.glucose.clear(),
         // Only user-created foods go; the seed list is re-added below.
         db.foods.where('source').notEqual('seed').delete(),
         // Same for exercises: custom ones are the user's, the shipped catalog

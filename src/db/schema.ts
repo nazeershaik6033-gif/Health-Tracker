@@ -2,8 +2,10 @@ import Dexie, { type Table } from 'dexie';
 import type {
   ChatMessage,
   Exercise,
+  FastEntry,
   Favourite,
   Food,
+  GlucoseEntry,
   Insight,
   Meal,
   Plan,
@@ -35,6 +37,8 @@ export class HealthifyDB extends Dexie {
   insights!: Table<Insight, string>;
   plans!: Table<Plan, string>;
   exercises!: Table<Exercise, string>;
+  fasts!: Table<FastEntry, string>;
+  glucose!: Table<GlucoseEntry, string>;
 
   constructor() {
     super('healthify');
@@ -95,6 +99,16 @@ export class HealthifyDB extends Dexie {
           delete (row as { blob?: Blob }).blob;
         });
       });
+
+    // v4 adds the fasting log and blood-glucose readings. Both are new stores,
+    // so as with v2 nothing existing is touched and no upgrade is needed.
+    // `endAt` is deliberately not indexed: the open fast is the one with no
+    // `endAt`, and IndexedDB leaves undefined keys out of an index entirely, so
+    // the index could never find it. The newest-by-`startAt` row is read instead.
+    this.version(4).stores({
+      fasts: 'id, startAt',
+      glucose: 'id, date, at',
+    });
   }
 }
 

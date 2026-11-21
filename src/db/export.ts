@@ -60,6 +60,8 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     plans,
     exercises,
     favourites,
+    fasts,
+    glucose,
   ] = await Promise.all([
     db.profile.toArray(),
     db.settings.toArray(),
@@ -79,6 +81,8 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
     // custom entries and ones actually used are worth carrying.
     db.exercises.filter((e) => e.source !== 'seed' || e.useCount > 0).toArray(),
     db.favourites.toArray(),
+    db.fasts.toArray(),
+    db.glucose.toArray(),
   ]);
 
   // Full images are fetched per snap rather than read as one table: with photos
@@ -128,6 +132,8 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
       plans,
       exercises,
       favourites,
+      fasts,
+      glucose,
     },
   };
 }
@@ -165,6 +171,8 @@ export async function importData(bundle: unknown): Promise<ImportSummary> {
     plans: db.plans,
     exercises: db.exercises,
     favourites: db.favourites,
+    fasts: db.fasts,
+    glucose: db.glucose,
   } as never;
 
   for (const [name, table] of Object.entries(tables)) {
