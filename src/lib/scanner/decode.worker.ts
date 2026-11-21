@@ -12,11 +12,14 @@
  */
 import { prepareZXingModule, readBarcodes, type ReaderOptions } from 'zxing-wasm/reader';
 import wasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url';
+import { SHARPEN_PASSES, sharpenLuma } from './sharpen';
 
 export interface DecodeRequest {
   id: number;
   image: ImageData;
   tryHarder: boolean;
+  /** On a miss, sharpen the frame and try once more. See ./sharpen. */
+  sharpen?: boolean;
 }
 
 export interface DecodeResponse {
@@ -50,15 +53,19 @@ const scope = self as unknown as {
 };
 
 scope.onmessage = async (e) => {
-  const { id, image, tryHarder } = e.data;
+  const { id, image, tryHarder, sharpen } = e.data;
   try {
     await ready;
-    const results = await readBarcodes(image, {
-      tryHarder,
-      formats: FORMATS,
-      maxNumberOfSymbols: 1,
-    });
-    const hit = results.find((r) => r.isValid && r.text.trim());
+    const opts = { tryHarder, formats: FORMATS, maxNumberOfSymbols: 1 };
+    let hit = (await readBarcodes(image, opts)).find((r) => r.isValid && r.text.trim());
+    if (sharpen) {
+      for (const [radius, amount] of SHARPEN_PASSES) {
+        if (hit) break;
+        hit = (await readBarcodes(sharpenLuma(image, radius, amount), opts)).find(
+          (r) => r.isValid && r.text.trim(),
+        );
+      }
+    }
     scope.postMessage({
       id,
       hit: hit ? { value: hit.text.trim(), format: hit.format } : null,

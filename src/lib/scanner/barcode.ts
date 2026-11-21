@@ -13,6 +13,7 @@
  */
 import zxingWasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url';
 import type { DecodeRequest, DecodeResponse } from './decode.worker';
+import { SHARPEN_PASSES, sharpenLuma } from './sharpen';
 
 export type BarcodeFormat =
   | 'ean_13'
@@ -72,6 +73,12 @@ export interface DecodeOptions {
    * full-frame sweep runs without it to stay cheap.
    */
   thorough?: boolean;
+  /**
+   * On a miss, sharpen the frame and decode once more. Rescues frames that
+   * are slightly out of focus; costs a second pass, so the live loop asks for
+   * it on alternate frames and a still photo always does.
+   */
+  sharpen?: boolean;
 }
 
 export interface Decoder {
@@ -96,8 +103,17 @@ async function createNative(): Promise<Decoder | null> {
     const detector = new Ctor({ formats });
     return {
       kind: 'native',
-      async decode(canvas) {
-        const hits = await detector.detect(canvas);
+      async decode(canvas, opts) {
+        let hits = await detector.detect(canvas);
+        const ctx = opts?.sharpen ? canvas.getContext('2d', { willReadFrequently: true }) : null;
+        if (ctx && !hits.some((h) => h.rawValue?.trim())) {
+          const original = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          for (const [radius, amount] of SHARPEN_PASSES) {
+            ctx.putImageData(sharpenLuma(original, radius, amount), 0, 0);
+            hits = await detector.detect(canvas);
+            if (hits.some((h) => h.rawValue?.trim())) break;
+          }
+        }
         const hit = hits.find((h) => h.rawValue?.trim());
         return hit ? { value: hit.rawValue.trim(), format: hit.format } : null;
       },
@@ -133,7 +149,7 @@ async function createWasm(): Promise<Decoder | null> {
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return null;
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const results = await zxing.readBarcodes(data, {
+        const read = (image: ImageData) => zxing.readBarcodes(image, {
           tryHarder: opts?.thorough ?? true,
           formats: [
             'EAN-13',
@@ -148,7 +164,13 @@ async function createWasm(): Promise<Decoder | null> {
           ],
           maxNumberOfSymbols: 1,
         });
-        const hit = results.find((r) => r.isValid && r.text.trim());
+        let hit = (await read(data)).find((r) => r.isValid && r.text.trim());
+        if (opts?.sharpen) {
+          for (const [radius, amount] of SHARPEN_PASSES) {
+            if (hit) break;
+            hit = (await read(sharpenLuma(data, radius, amount))).find((r) => r.isValid && r.text.trim());
+          }
+        }
         return hit ? { value: hit.text.trim(), format: hit.format } : null;
       },
     };
@@ -194,13 +216,13 @@ async function createWorkerDecoder(): Promise<Decoder | null> {
     pending.clear();
   };
 
-  function send(image: ImageData, tryHarder: boolean): Promise<DecodeResponse> {
+  function send(image: ImageData, tryHarder: boolean, sharpen = false): Promise<DecodeResponse> {
     if (dead) return Promise.reject(new Error('Decoder worker stopped'));
     const id = ++seq;
     return new Promise<DecodeResponse>((resolve, reject) => {
       pending.set(id, { resolve, reject });
       // Transferred, not copied: a 1280px frame is several MB of pixels.
-      worker.postMessage({ id, image, tryHarder } satisfies DecodeRequest, [image.data.buffer]);
+      worker.postMessage({ id, image, tryHarder, sharpen } satisfies DecodeRequest, [image.data.buffer]);
     });
   }
 
@@ -225,7 +247,7 @@ async function createWorkerDecoder(): Promise<Decoder | null> {
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return null;
       const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const res = await send(image, opts?.thorough ?? true);
+      const res = await send(image, opts?.thorough ?? true, opts?.sharpen ?? false);
       return res.hit;
     },
     dispose() {

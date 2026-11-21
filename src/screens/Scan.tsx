@@ -30,6 +30,30 @@ import { MEAL_SLOT_LABEL, type Food, type MealSlot } from '@/types';
 const ROI = { x: 0.12, y: 0.24, w: 0.76, h: 0.44 };
 
 /**
+ * What the decoder actually reads: the guide box plus a margin on every side.
+ *
+ * An EAN or UPC needs blank space either side of its bars (the quiet zone,
+ * about eleven bar-widths) to be found at all. Cropping exactly to the box
+ * means a barcode lined up the way the screen asks — filling the box — can
+ * have that margin cut off by the crop. Reading a little past the edges keeps
+ * it, while still throwing away most of the clutter the crop exists to
+ * remove. The box on screen stays the same size, so the instruction doesn't
+ * change.
+ */
+const DECODE_ROI = (() => {
+  const mx = 0.1;
+  const my = 0.06;
+  const x = Math.max(0, ROI.x - mx);
+  const y = Math.max(0, ROI.y - my);
+  return {
+    x,
+    y,
+    w: Math.min(1, ROI.x + ROI.w + mx) - x,
+    h: Math.min(1, ROI.y + ROI.h + my) - y,
+  };
+})();
+
+/**
  * The whole visible frame, tried occasionally alongside the guide box.
  *
  * Cropping to the box is what makes a read reliable — it throws away the
@@ -64,6 +88,10 @@ export default function Scan() {
   const navigate = useNavigate();
   const { settings, selectedDate, showToast } = useApp();
   const camera = useCamera({ ideal: { width: 1920, height: 1080 }, zoom: SCAN_ZOOM });
+  // The stable function, not the hook's return object: that object is new on
+  // every render, so depending on it restarted the scan loop each time —
+  // resetting the full-frame sweep's pass counter and the struggle timer.
+  const stopCamera = camera.stop;
 
   const decoderRef = useRef<Decoder | null>(null);
   const bufferRef = useRef(new ConsensusBuffer(2, 2500));
@@ -115,7 +143,7 @@ export default function Scan() {
       setPhase('looking-up');
       setError('');
       setNote('');
-      camera.stop();
+      stopCamera();
 
       try {
         // A barcode we've already resolved is instant and works offline.
@@ -157,7 +185,7 @@ export default function Scan() {
         busyRef.current = false;
       }
     },
-    [camera, settings],
+    [stopCamera, settings],
   );
 
   /**
@@ -179,7 +207,7 @@ export default function Scan() {
       }
 
       busyRef.current = true;
-      camera.stop();
+      stopCamera();
       setCode(raw);
 
       if (payload.kind === 'nutrition') {
@@ -203,7 +231,7 @@ export default function Scan() {
       }
       busyRef.current = false;
     },
-    [camera, handleCode],
+    [stopCamera, handleCode],
   );
 
   /* ------------------------------ scan loop ---------------------------- */
@@ -266,12 +294,16 @@ export default function Scan() {
           const sweep = pass % SWEEP_EVERY === SWEEP_EVERY - 1;
           pass += 1;
 
-          captureFrame(video, sweep ? FULL_FRAME : ROI, {
+          captureFrame(video, sweep ? FULL_FRAME : DECODE_ROI, {
             canvas,
             maxEdge: DECODE_EDGE,
             readback: true,
           });
-          const hit = await decoder.decode(canvas, { thorough: !sweep });
+          // A cropped pass that misses retries sharpened, which reads frames
+          // a little out of focus — the usual state of a pack held close. It
+          // only costs anything on a miss: a sharp frame reads on the plain
+          // pass and returns before the sharpen ever runs.
+          const hit = await decoder.decode(canvas, { thorough: !sweep, sharpen: !sweep });
           if (!hit || stopped) continue;
           if (!isValidEAN(hit.value)) continue; // failed check digit: a misread
 
@@ -298,6 +330,72 @@ export default function Scan() {
       clearTimeout(nudge);
     };
   }, [phase, camera.status, camera.videoRef, handleScan]);
+
+  /* ----------------------------- photo fallback ------------------------ */
+
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const [readingPhoto, setReadingPhoto] = useState(false);
+
+  /**
+   * Reads a barcode from a still photo.
+   *
+   * The live viewfinder decodes video frames, and video is where close-up
+   * focus fails: recent iPhone Pro main cameras cannot focus nearer than about
+   * 20 cm, and the browser's stream never switches to the macro lens. A photo
+   * taken through the system camera does — it focuses properly, switches lens
+   * when it needs to, and comes back at full sensor resolution. It also needs
+   * no camera permission, so it works where the live scanner cannot start.
+   *
+   * Tried at a few sizes: a large frame keeps thin bars, and a smaller one
+   * shrinks whatever blur there is relative to the bars.
+   */
+  async function readPhoto(file: File | undefined) {
+    if (!file || readingPhoto) return;
+    const decoder = decoderRef.current;
+    if (!decoder || decoder.kind === 'none') {
+      setError('No code decoder is available in this browser. Enter the number by hand.');
+      return;
+    }
+    setReadingPhoto(true);
+    setError('');
+    busyRef.current = true; // pause the live loop while the photo is read
+    let bitmap: ImageBitmap | undefined;
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() =>
+        createImageBitmap(file),
+      );
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('Canvas is unavailable in this browser');
+      for (const edge of [2000, 1200, 800]) {
+        const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        const hit = await decoder.decode(canvas, { thorough: true, sharpen: true });
+        if (hit && isValidEAN(hit.value)) {
+          formatRef.current = hit.format;
+          haptic(HAPTIC.success);
+          busyRef.current = false;
+          await handleScan(hit.value);
+          return;
+        }
+      }
+      setError(
+        "Couldn't find a barcode in that photo. Get close enough that the barcode fills most of the picture, keep it sharp, or type the number.",
+      );
+    } catch {
+      setError("That photo couldn't be opened. Try taking it again.");
+    } finally {
+      bitmap?.close();
+      busyRef.current = false;
+      setReadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+      if (libraryInputRef.current) libraryInputRef.current.value = '';
+    }
+  }
 
   /* ------------------------------- actions ----------------------------- */
 
@@ -394,7 +492,7 @@ export default function Scan() {
               className="h-full w-full object-cover"
             />
 
-            {/* Guide box matching the decode ROI exactly */}
+            {/* Guide box. The decoder reads DECODE_ROI, slightly larger. */}
             <div className="pointer-events-none absolute inset-0">
               <div
                 className="absolute rounded-xl border-2 border-white shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]"
@@ -441,8 +539,8 @@ export default function Scan() {
                 when it is wanted rather than noise on every scan. */}
             {struggling && (
               <p className="mt-2 text-center text-[12px] leading-relaxed text-white/75">
-                Still not reading? Hold the pack about 20 cm away — closer than that most phone
-                cameras cannot focus — wipe the lens, and
+                Still not reading? Tap Take a photo — your camera app focuses up close where the
+                live view can't. Or hold the pack about 20 cm away, wipe the lens, and
                 {camera.torchAvailable ? ' turn the torch on for glossy or dark packaging.' : ' try more even lighting — glare on the plastic is usually the culprit.'}
               </p>
             )}
@@ -454,11 +552,44 @@ export default function Scan() {
             {error && (
               <p className="mt-2 text-center text-[12px] text-amber-400">{error}</p>
             )}
-            <div className="flex justify-center py-4">
+            <div className="flex justify-center gap-2 pt-4">
+              <Button
+                variant={struggling || camera.status !== 'live' ? 'primary' : 'secondary'}
+                onClick={() => photoInputRef.current?.click()}
+                disabled={readingPhoto || decoderKind === 'none'}
+              >
+                <IconCamera width={16} height={16} />
+                {readingPhoto ? 'Reading photo…' : 'Take a photo'}
+              </Button>
               <Button variant="secondary" onClick={() => setManualOpen(true)}>
-                Enter number manually
+                Type number
               </Button>
             </div>
+            <div className="flex justify-center pt-2 pb-2">
+              <button
+                type="button"
+                onClick={() => libraryInputRef.current?.click()}
+                disabled={readingPhoto || decoderKind === 'none'}
+                className="text-[12px] font-semibold text-white/60 underline-offset-2 hover:underline disabled:opacity-40"
+              >
+                Choose a photo or screenshot
+              </button>
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => void readPhoto(e.target.files?.[0])}
+            />
+            <input
+              ref={libraryInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => void readPhoto(e.target.files?.[0])}
+            />
           </div>
         </div>
       )}
