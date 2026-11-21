@@ -5,11 +5,11 @@ const HOUR = 3_600_000;
 
 /** The windows people actually use, as fasting hours. Eating window = 24 − fast. */
 export const FAST_PROTOCOLS: { hours: number; label: string; hint: string }[] = [
-  { hours: 12, label: '12:12', hint: 'Gentle start — most of it is overnight' },
-  { hours: 14, label: '14:10', hint: 'A late breakfast or an early dinner' },
-  { hours: 16, label: '16:8', hint: 'The most common window' },
-  { hours: 18, label: '18:6', hint: 'Two meals in a six-hour window' },
-  { hours: 20, label: '20:4', hint: 'One large meal and a snack' },
+  { hours: 12, label: '12:12', hint: 'Gentle start — most of it is overnight.' },
+  { hours: 14, label: '14:10', hint: 'A late breakfast or an early dinner.' },
+  { hours: 16, label: '16:8', hint: 'The most common window.' },
+  { hours: 18, label: '18:6', hint: 'Two meals in a six-hour window.' },
+  { hours: 20, label: '20:4', hint: 'One large meal and a snack.' },
 ];
 
 export const DEFAULT_FAST_HOURS = 16;

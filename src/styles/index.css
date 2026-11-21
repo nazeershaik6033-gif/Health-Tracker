@@ -80,6 +80,8 @@
   --color-ring-sleep: #0e9aa7;
   --color-ring-water: #4f7df3;
   --color-ring-calorie: #ff7a2f;
+  --color-ring-fast: #c2780a;
+  --color-ring-glucose: #d4483b;
 
   /* Macro bars */
   --color-macro-protein: #f0b429;

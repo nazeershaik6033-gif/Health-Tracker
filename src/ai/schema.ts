@@ -216,14 +216,35 @@ export const PLAN_SCHEMA = {
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['slot', 'suggestion', 'kcal'],
+              required: ['slot', 'name', 'items'],
               properties: {
                 slot: {
                   type: 'string',
                   enum: ['breakfast', 'morning_snack', 'lunch', 'evening_snack', 'dinner'],
                 },
-                suggestion: { type: 'string' },
-                kcal: { type: 'number' },
+                name: { type: 'string', description: 'The dish, e.g. "Rajma chawal with salad"' },
+                items: {
+                  type: 'array',
+                  description: 'Each component with its portion, as eaten',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['food', 'portion', 'grams', 'kcal', 'protein', 'carbs', 'fat', 'fibre'],
+                    properties: {
+                      food: {
+                        type: 'string',
+                        description: 'Exact name from the catalog list when the food is on it',
+                      },
+                      portion: { type: 'string', description: 'e.g. "2 roti", "1 katori"' },
+                      grams: { type: 'number' },
+                      kcal: { type: 'number' },
+                      protein: { type: 'number' },
+                      carbs: { type: 'number' },
+                      fat: { type: 'number' },
+                      fibre: { type: 'number' },
+                    },
+                  },
+                },
               },
             },
           },

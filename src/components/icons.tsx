@@ -329,3 +329,17 @@ export const IconLeaf = (p: P) => (
     <path d="M4.5 19.5C7 15 10.5 12 15 10" />
   </svg>
 );
+
+export const IconTimer = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="13.5" r="7.5" />
+    <path d="M12 9.5v4l2.5 2M9.5 2.5h5M12 2.5V6" />
+  </svg>
+);
+
+export const IconGlucose = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3.2c2.8 3.2 5.5 6 5.5 9.3a5.5 5.5 0 1 1-11 0c0-3.3 2.7-6.1 5.5-9.3Z" />
+    <path d="M9 13.5h1.6l1-2 1.6 4 1-2H15" />
+  </svg>
+);

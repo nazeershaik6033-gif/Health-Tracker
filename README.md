@@ -115,8 +115,47 @@ only a statement of it. Filling them in also reaches backwards: meals already
 logged from that food get the numbers they never had, because a blank was
 never something you logged. Nothing that *was* recorded is rewritten.
 
-**Trackers** — water, sleep, weight, workouts and steps, each with a goal, an
-entry flow and a trend chart.
+**Trackers** — water, sleep, weight, workouts, steps, fasting and blood sugar,
+each with a goal or reference range, an entry flow and a trend chart.
+
+**Intermittent fasting** — a live fasting clock for 12:12 through 20:4
+windows. It shows the start time, when the goal lands and a rough stage of the
+fast. Starting late? "Edit start" back-dates the fast to when you last ate.
+Finished fasts build up history, goals hit, average and longest fast, and a
+streak. Changing the schedule mid-fast moves the running fast's goal too. The
+stages are worded as approximate on purpose, and the screen says who should
+not fast without medical advice.
+
+**Blood sugar** — manual readings from a meter or sensor, in mg/dL or mmol/L
+(stored as mg/dL either way). Each reading is tagged fasting, before a meal,
+two hours after a meal, bedtime or random, and the time of day pre-selects the
+likely tag. Readings are banded against the ADA/WHO reference ranges for
+adults without diabetes. Fasting and post-meal readings are charted
+separately, since they mean different things. The screen says plainly that a
+band is not a diagnosis and that anyone managing diabetes should use their
+doctor's targets.
+
+**Diet plans** — 3- or 7-day plans built **offline** from the bundled food
+database. Pick vegan, vegetarian, eggetarian or non-veg; balanced, high-protein
+or low-carb; and foods to leave out. The planner composes each slot from about
+60 curated everyday meals (`data/mealTemplates.ts`), scales the staple to the
+slot's share of your calories, and scores the options for calories, the chosen
+focus, variety across the week and foods you already log. Countable foods stay
+whole: two eggs, three idli, never "4.5 slices". Every planned meal carries
+real catalog nutrients, so:
+
+- **Log** puts a meal straight into the day (with undo), and **Log the rest of
+  Day N** logs a whole day.
+- **Swap** replaces one meal with another that fits the same slot and isn't
+  already on that day.
+- A **grocery list** totals everything the plan uses.
+- The day you made the plan is Day 1, and the plan marks which day is "Today".
+
+With a key, **Ask Ria** builds the plan from your actual log under the same
+preferences. Her meals come back itemised, and any component that names a
+catalog food is recomputed from the catalog at her portion weight. The model
+is good at portions and unreliable at composition, so a planned katori of dal
+matches the one in your diary, micronutrients included.
 
 **Workouts** — a session per day built from a bundled catalog of ~285
 exercises, searchable by name, muscle group and equipment. Strength work logs
@@ -132,7 +171,9 @@ tracked exactly and is the more honest strength signal.
 
 **Ria, the AI coach** — reads your profile, targets, today's log and recent
 trends, and answers with your actual numbers. Also produces the daily insight
-card on the home screen, per-meal scores, and diet/workout plans.
+card on the home screen, per-meal scores, AI diet plans and workout plans.
+Ria also sees a fast in progress and the day's blood-sugar readings, so she
+won't suggest a snack two hours before your fast ends.
 
 Calorie and macro targets are computed with Mifflin-St Jeor × an activity
 factor, adjusted for your goal, and follow your weight as it changes. You can
@@ -175,13 +216,14 @@ that is the supported bring-your-own-key path.
 
 ### Everything works without a key
 
-Barcode scanning, the bundled food database, manual logging, every tracker,
-charts, streaks and export/import all run with no key and no network. The
+Barcode scanning, the bundled food database, manual logging, every tracker
+(fasting and blood sugar included), diet plans, charts, streaks and
+export/import all run with no key and no network. The
 AI-only surfaces explain what a key would add instead of silently disappearing:
 
 - The home insight card computes a real local summary from your day
 - Label scanning falls back to on-device OCR (Tesseract) with editable values
-- Snap, Voice, Coach and Plans link to Settings
+- Snap, Voice, Coach and workout plans link to Settings
 
 "Without a network" is meant literally: the Tesseract worker, its wasm core and
 the English model are vendored into `public/tesseract/` rather than fetched

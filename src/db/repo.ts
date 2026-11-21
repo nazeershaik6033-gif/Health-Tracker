@@ -951,6 +951,47 @@ export async function savePlan(plan: Omit<Plan, 'id' | 'createdAt'>): Promise<Pl
   return next;
 }
 
+export async function updatePlan(id: string, patch: Partial<Omit<Plan, 'id'>>): Promise<void> {
+  await db.plans.update(id, patch);
+}
+
+/**
+ * Logs planned meals into a day and returns how to take them back out.
+ *
+ * Items are copied, never referenced — editing or regenerating the plan must
+ * not rewrite a day already eaten. Undo restores each touched slot exactly as
+ * it was: a slot that was empty goes back to having no meal row at all, and
+ * one that already held breakfast keeps it, minus only what the plan added.
+ */
+export async function logPlannedMeals(
+  date: string,
+  meals: { slot: MealSlot; items?: MealItem[] }[],
+): Promise<() => Promise<void>> {
+  const loggable = meals.filter((m) => m.items?.length);
+  const slots = [...new Set(loggable.map((m) => m.slot))];
+  const before = await Promise.all(
+    slots.map((slot) => db.meals.where('[date+slot]').equals([date, slot]).first()),
+  );
+  for (const meal of loggable) {
+    await addMealItems(
+      date,
+      meal.slot,
+      meal.items!.map((item) => ({ ...item, nutrients: { ...item.nutrients }, micros: item.micros && { ...item.micros } })),
+    );
+  }
+  return async () => {
+    for (let i = 0; i < slots.length; i++) {
+      const prior = before[i];
+      if (prior) {
+        await db.meals.put(prior);
+      } else {
+        const added = await db.meals.where('[date+slot]').equals([date, slots[i]]).first();
+        if (added) await db.meals.delete(added.id);
+      }
+    }
+  };
+}
+
 /* -------------------------------- fasting -------------------------------- */
 
 /**

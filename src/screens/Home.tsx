@@ -20,6 +20,7 @@ import {
   IconDroplet,
   IconFlame,
   IconGallery,
+  IconGlucose,
   IconLeaf,
   IconMic,
   IconMoon,
@@ -28,9 +29,10 @@ import {
   IconScale,
   IconSearch,
   IconSteps,
+  IconTimer,
   IconWarning,
 } from '@/components/icons';
-import { formatDuration, isToday, relativeDayLabel } from '@/lib/date';
+import { addDays, formatDuration, isToday, rangeDays, relativeDayLabel } from '@/lib/date';
 import { backupOverdue, describeLastBackup } from '@/lib/backup';
 import { bmr, kgToDisplay, tdee, weightUnit } from '@/lib/nutrition';
 import { MICRO_IDS, microRows } from '@/lib/micros';
@@ -44,7 +46,9 @@ import {
   weeksToGoal,
 } from '@/lib/healthScore';
 import { HAPTIC, haptic } from '@/lib/motion';
-import { setWater } from '@/db/repo';
+import { glucoseForRange, recentFasts, setWater } from '@/db/repo';
+import { DEFAULT_FAST_HOURS, elapsedHours, fastHoursByDay } from '@/lib/fasting';
+import { BAND_LABEL, bandFor, dailyAverage, formatGlucose, toDisplay, unitLabel } from '@/lib/glucose';
 import type { MealSlot, Snap } from '@/types';
 import { useAnimateChanges } from '@/lib/useArrival';
 
@@ -270,6 +274,7 @@ export default function Home() {
             goal={workoutGoal}
             delta={deltaVsAverage(week?.map((d) => d.burned))}
           />
+          <FastingAndGlucoseCards end={selectedDate} />
         </div>
 
         <div style={next()}>
@@ -587,6 +592,72 @@ function ScoreCard({ score, isToday: today }: { score: ReturnType<typeof scoreDa
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The fasting and blood-sugar tiles. Their own component so the fasting clock
+ * can tick once a minute without re-rendering the rest of Home with it.
+ */
+function FastingAndGlucoseCards({ end }: { end: string }) {
+  const settings = useApp((s) => s.settings);
+  const days = rangeDays(end, 7);
+  const fasts = useLiveQuery(() => recentFasts(20), []);
+  const readings = useLiveQuery(() => glucoseForRange(addDays(end, -6), end), [end]);
+  const active = fasts?.[0] && fasts[0].endAt === undefined ? fasts[0] : undefined;
+
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  const target = active?.targetHours ?? settings.fastTargetHours ?? DEFAULT_FAST_HOURS;
+  const hours = active ? elapsedHours(active) : 0;
+  const fastSeries = fasts ? fastHoursByDay(fasts, days) : [];
+  const lastFast = fasts?.find((f) => f.endAt !== undefined);
+
+  const unit = settings.glucoseUnit ?? 'mgdl';
+  const latest = readings?.length ? readings[readings.length - 1] : undefined;
+  const glucoseSeries = readings ? dailyAverage(readings, days).map((v) => (v ? toDisplay(v, unit) : 0)) : [];
+
+  return (
+    <>
+      <TrackerCard
+        to="/trackers/fasting"
+        label="Fasting"
+        color="var(--color-ring-fast)"
+        tint="tint-amber"
+        icon={<IconTimer width={17} height={17} />}
+        value={active ? `${Math.floor(hours)}h ${String(Math.floor((hours % 1) * 60)).padStart(2, '0')}m` : '—'}
+        unit={`/ ${target} h`}
+        progress={Math.min(1, hours / target)}
+        series={fastSeries}
+        goal={target}
+        delta={
+          active
+            ? { text: hours >= target ? 'Goal reached' : `${Math.ceil(target - hours)} h to go`, up: hours >= target }
+            : { text: lastFast ? `Last: ${Math.round(elapsedHours(lastFast))} h` : 'Tap to start', up: false }
+        }
+      />
+      <TrackerCard
+        to="/trackers/glucose"
+        label="Blood sugar"
+        color="var(--color-ring-glucose)"
+        tint="tint-danger"
+        icon={<IconGlucose width={17} height={17} />}
+        value={latest ? formatGlucose(latest.mgdl, unit) : '—'}
+        unit={unitLabel(unit)}
+        progress={latest && bandFor(latest.mgdl, latest.context) === 'normal' ? 1 : 0}
+        series={glucoseSeries}
+        delta={
+          latest
+            ? { text: BAND_LABEL[bandFor(latest.mgdl, latest.context)], up: bandFor(latest.mgdl, latest.context) === 'normal' }
+            : { text: 'No readings this week', up: false }
+        }
+      />
+    </>
   );
 }
 

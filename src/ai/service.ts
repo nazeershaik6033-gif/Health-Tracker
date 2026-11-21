@@ -1,8 +1,9 @@
 import type { DayBundle } from '@/db/repo';
-import type { Food, MealItem, Micros, Nutrients, PlanDay, Profile, Settings, SnapAnalysis } from '@/types';
-import { MEAL_SLOT_LABEL, type MealSlot } from '@/types';
+import type { DietPrefs, Food, MealItem, Micros, Nutrients, PlanDay, Profile, Settings, SnapAnalysis } from '@/types';
+import { GLUCOSE_CONTEXT_LABEL, MEAL_SLOT_LABEL, type MealSlot } from '@/types';
 import { formatDuration } from '@/lib/date';
-import { mealNutrients, roundNutrients, sumNutrients } from '@/lib/nutrition';
+import { buildMealItemFromGrams, mealNutrients, roundNutrients, sumNutrients } from '@/lib/nutrition';
+import { toPlanMeal } from '@/lib/dietPlanner';
 import { MICRO_BY_ID, formatMicro, hasMicros, microRows, dayMicros, targetsForProfile } from '@/lib/micros';
 import { getAdapter } from './registry';
 import {
@@ -333,6 +334,19 @@ export function dayContext(bundle: DayBundle, profile: Profile | undefined): str
   );
   lines.push(`Steps: ${bundle.steps.count} of ${bundle.steps.goal}`);
   if (bundle.weight) lines.push(`Weight today: ${bundle.weight.kg.toFixed(1)} kg`);
+  if (bundle.fast) {
+    const hours = (Date.now() - bundle.fast.startAt) / 3_600_000;
+    lines.push(
+      `Fasting now: ${hours.toFixed(1)} h into a ${bundle.fast.targetHours} h fast — suggest nothing to eat before it ends unless they ask, and suggest a sensible first meal to break it.`,
+    );
+  }
+  if (bundle.glucose.length) {
+    lines.push(
+      `Blood glucose today (mg/dL): ${bundle.glucose
+        .map((g) => `${Math.round(g.mgdl)} ${GLUCOSE_CONTEXT_LABEL[g.context].toLowerCase()} at ${new Date(g.at).toTimeString().slice(0, 5)}`)
+        .join('; ')}. Self-logged; comment on patterns with food, never diagnose.`,
+    );
+  }
 
   return lines.join('\n');
 }
@@ -452,21 +466,89 @@ export async function suggestNextMeal(
 
 /* --------------------------------- plans --------------------------------- */
 
+export interface AIPlanItem {
+  food?: string;
+  portion?: string;
+  grams?: number;
+  kcal?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fibre?: number;
+}
+
+/**
+ * Turns one AI-planned component into a loggable `MealItem`.
+ *
+ * When the model named a catalog food, the catalog's own per-100 g figures are
+ * used at the model's weight — the model is good at portions and unreliable at
+ * composition, and this keeps a planned "1 katori dal" identical to the one in
+ * the diary, micronutrients included. Anything off-catalog keeps the model's
+ * estimate, as a photo-logged item does.
+ */
+export function planItemToMealItem(raw: AIPlanItem, catalog: Map<string, Food>): MealItem | undefined {
+  const name = String(raw.food ?? '').trim();
+  const grams = Math.max(0, num(raw.grams));
+  if (!name) return undefined;
+  const food = catalog.get(name.toLowerCase());
+  const portion = String(raw.portion ?? '').trim() || `${Math.round(grams)} g`;
+  if (food && grams > 0) {
+    return { ...buildMealItemFromGrams(food, grams), servingLabel: portion };
+  }
+  return {
+    name,
+    qty: 1,
+    servingLabel: portion,
+    grams,
+    nutrients: roundNutrients({
+      kcal: num(raw.kcal),
+      protein: num(raw.protein),
+      fat: num(raw.fat),
+      carbs: num(raw.carbs),
+      fibre: num(raw.fibre),
+    }),
+  };
+}
+
 export async function generateDietPlan(
   settings: Settings,
   context: string,
-  days: number,
+  prefs: DietPrefs,
+  foods: Food[],
   signal?: AbortSignal,
 ): Promise<{ title: string; summary: string; days: PlanDay[] }> {
   const adapter = getAdapter(settings);
-  const prompt = `Build a ${days}-day diet plan for this user.
+  // The catalog is offered by name so items can be matched back to it: the
+  // bundled foods plus anything the user has actually logged, not every
+  // barcode lookup ever cached.
+  const allowed = foods.filter((f) => f.source === 'seed' || f.useCount > 0).map((f) => f.name);
+  const focusLine = {
+    balanced: 'Balanced macros.',
+    high_protein: 'High protein: push protein toward the top of a healthy range, at least the stated target, from whole foods first.',
+    low_carb: 'Lower carbohydrate: keep carbs to roughly 30% of calories or less, without dropping fibre.',
+  }[prefs.focus];
+  const dietLine = {
+    vegan: 'Vegan: no meat, fish, eggs, dairy, ghee or honey.',
+    veg: 'Vegetarian: dairy is fine; no meat, fish or eggs.',
+    egg: 'Eggetarian: vegetarian plus eggs; no meat or fish.',
+    nonveg: 'Non-vegetarian: anything goes.',
+  }[prefs.diet];
 
-Each day must hit their calorie and protein targets within about 10%. Use foods they already log where you can see them in the data — a plan full of things they never eat will not be followed. Keep it realistic for home cooking, and respect Indian meal structure if their log is Indian.
+  const prompt = `Build a ${prefs.days}-day diet plan for this user.
 
-Give every meal slot a concrete suggestion with a portion, and its calories.
+Diet: ${dietLine}
+Focus: ${focusLine}
+${prefs.avoid.length ? `Never include: ${prefs.avoid.join(', ')}.` : ''}
+
+Each day must hit their calorie target within about 5% and their protein target within about 10%. Fill all five slots (breakfast, morning_snack, lunch, evening_snack, dinner); snacks are small. Use foods they already log where you can see them in the data — a plan full of things they never eat will not be followed. Keep it realistic for home cooking, respect Indian meal structure if their log is Indian, and do not repeat the same lunch or dinner on consecutive days.
+
+Give every meal its components with real portions (Indian units for Indian food) and the nutrition of each component as eaten. When a component is one of these catalog foods, use the catalog name exactly so it can be matched:
+${allowed.join('; ')}
 
 --- Their data ---
 ${context}`;
+
+  const catalog = new Map(foods.map((f) => [f.name.toLowerCase(), f]));
 
   return withRepair(
     (extra, maxTokens) =>
@@ -481,26 +563,29 @@ ${context}`;
       const parsed = parseJSON<{
         title?: string;
         summary?: string;
-        days?: { label?: string; meals?: { slot?: string; suggestion?: string; kcal?: number }[] }[];
+        days?: { label?: string; meals?: { slot?: string; name?: string; items?: AIPlanItem[] }[] }[];
       }>(raw);
+      const days = (parsed.days ?? []).map((d, i) => ({
+        label: (d.label ?? `Day ${i + 1}`).trim(),
+        meals: (d.meals ?? [])
+          .filter((m) => Boolean(m.slot && m.slot in MEAL_SLOT_LABEL))
+          .map((m) => {
+            const items = (m.items ?? [])
+              .map((it) => planItemToMealItem(it, catalog))
+              .filter((x): x is MealItem => Boolean(x));
+            return toPlanMeal(m.slot as MealSlot, String(m.name ?? 'Meal').trim(), items);
+          })
+          .filter((m) => m.items?.length),
+      }));
+      if (!days.some((d) => d.meals.length)) throw new AIError('The plan came back empty.', 'bad-response');
       return {
         title: (parsed.title ?? 'Your diet plan').trim(),
         summary: (parsed.summary ?? '').trim(),
-        days: (parsed.days ?? []).map((d, i) => ({
-          label: (d.label ?? `Day ${i + 1}`).trim(),
-          meals: (d.meals ?? [])
-            .filter((m): m is { slot: MealSlot; suggestion: string; kcal: number } =>
-              Boolean(m.slot && m.slot in MEAL_SLOT_LABEL),
-            )
-            .map((m) => ({
-              slot: m.slot,
-              suggestion: String(m.suggestion ?? '').trim(),
-              kcal: num(m.kcal),
-            })),
-        })),
+        days,
       };
     },
-    3000,
+    // Itemised meals across a week are long; a 3-day plan fits comfortably.
+    prefs.days > 3 ? 9000 : 5000,
   );
 }
 

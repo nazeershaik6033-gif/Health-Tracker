@@ -64,6 +64,10 @@ const loadWorkout = () => import('@/screens/trackers/Workout');
 const Workout = lazy(loadWorkout);
 const loadSteps = () => import('@/screens/trackers/Steps');
 const Steps = lazy(loadSteps);
+const loadFasting = () => import('@/screens/trackers/Fasting');
+const Fasting = lazy(loadFasting);
+const loadGlucose = () => import('@/screens/trackers/Glucose');
+const Glucose = lazy(loadGlucose);
 const loadExerciseDetail = () => import('@/screens/ExerciseDetail');
 const ExerciseDetail = lazy(loadExerciseDetail);
 const loadSnap = () => import('@/screens/Snap');
@@ -97,6 +101,8 @@ const LAZY_LOADERS = [
   loadWeight,
   loadWorkout,
   loadSteps,
+  loadFasting,
+  loadGlucose,
   loadExerciseDetail,
   loadSnap,
   loadSnapGallery,
@@ -258,6 +264,8 @@ export default function App() {
             <Route path="/trackers/weight" element={<Weight />} />
             <Route path="/trackers/workout" element={<Workout />} />
             <Route path="/trackers/steps" element={<Steps />} />
+            <Route path="/trackers/fasting" element={<Fasting />} />
+            <Route path="/trackers/glucose" element={<Glucose />} />
             <Route path="/exercise/:id" element={<ExerciseDetail />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

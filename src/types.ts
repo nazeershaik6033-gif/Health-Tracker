@@ -475,6 +475,8 @@ export const DEFAULT_DIET_PREFS: DietPrefs = {
  */
 export interface PlanMeal {
   slot: MealSlot;
+  /** The dish, e.g. "Rajma chawal with salad". Absent on older plans. */
+  name?: string;
   suggestion: string;
   kcal: number;
   protein?: number;
