@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { MealSlot, Profile, Settings } from '@/types';
 import { DEFAULT_SETTINGS, ensureSeeded, getProfile, getSettings, saveSettings } from '@/db/repo';
+import { db } from '@/db/schema';
 import { today } from '@/lib/date';
 
 interface ToastState {
@@ -73,14 +74,27 @@ export const useApp = create<AppState>((set, get) => ({
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-      try {
-        await ensureSeeded();
-      } catch (err) {
+      const seed = ensureSeeded().catch((err) => {
         // Seeding is best-effort. A failure here must not strand the app on
         // its loading skeleton — the bundled food list may be incomplete, but
         // everything else still works.
         console.error('Food database seeding failed:', err);
+      });
+
+      // A returning install already has its catalog, so the seed pass (which
+      // reads every bundled food and exercise back to look for new ones) runs
+      // behind the first screen instead of in front of it — it was the bulk
+      // of the wait on every launch, to add nothing on all but the first.
+      // Live queries pick up anything it does add. A first run has no
+      // settings row yet and still waits: onboarding leads straight into
+      // food search, which needs the catalog.
+      let returning = false;
+      try {
+        returning = Boolean(await db.settings.get('app'));
+      } catch {
+        // Unreadable storage is handled below; fall through and wait.
       }
+      if (!returning) await seed;
 
       try {
         const [profile, settings] = await Promise.all([getProfile(), getSettings()]);

@@ -34,6 +34,7 @@ import { PortionSheet } from '@/components/PortionSheet';
 import { Card, Chip, EmptyState, PageHeader, SectionTitle } from '@/components/ui';
 import { IconChevronDown, IconChevronUp, IconLeaf, IconTrash } from '@/components/icons';
 import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
+import { useAnimateChanges } from '@/lib/useArrival';
 
 const SORT_FIELDS: SortField[] = ['amount', 'name', 'meal'];
 
@@ -53,6 +54,7 @@ const SORT_FIELDS: SortField[] = ['amount', 'name', 'meal'];
  * last and read as "No data" rather than a confident zero.
  */
 export default function MicroBreakdown() {
+  const animate = useAnimateChanges();
   const navigate = useNavigate();
   const { id: idParam } = useParams<{ id: string }>();
   const [params] = useSearchParams();
@@ -174,7 +176,7 @@ export default function MicroBreakdown() {
           </div>
           <div className="surface-sunken h-2 w-full overflow-hidden rounded-full">
             <div
-              className="h-full rounded-full transition-[width] duration-500 ease-out"
+              className={`h-full rounded-full ${animate ? 'transition-[width] duration-500 ease-out' : ''}`}
               style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }}
             />
           </div>

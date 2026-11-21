@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { CountUp } from './CountUp';
 import { IconChevronRight } from './icons';
+import { useAnimateChanges } from '@/lib/useArrival';
 
 interface Props {
   label: string;
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function MacroBar({ label, value, target, color, unit = 'g', asPercent = true, to }: Props) {
+  const animate = useAnimateChanges();
   const pct = target > 0 ? Math.round((value / target) * 100) : 0;
   const width = Math.max(0, Math.min(100, pct));
   const over = pct > 100;
@@ -46,7 +48,7 @@ export function MacroBar({ label, value, target, color, unit = 'g', asPercent = 
       </div>
       <div className="surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full">
         <div
-          className="h-full rounded-full transition-[width] duration-500 ease-out"
+          className={`h-full rounded-full ${animate ? 'transition-[width] duration-500 ease-out' : ''}`}
           style={{ width: `${width}%`, background: over ? '#dc2626' : color }}
         />
       </div>

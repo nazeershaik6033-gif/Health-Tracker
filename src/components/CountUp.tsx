@@ -1,5 +1,5 @@
 import { createElement, useEffect, useRef, type CSSProperties } from 'react';
-import { animateNumber } from '@/lib/motion';
+import { MOUNT_SETTLE_MS, animateNumber, isBooting } from '@/lib/motion';
 
 interface Props {
   /** The target number. Changing it re-targets the animation in flight. */
@@ -49,6 +49,10 @@ export function CountUp({ value, format, className, style, as = 'span' }: Props)
   const ref = useRef<HTMLSpanElement>(null);
   const current = useRef(value);
   const initial = useRef(value);
+  // Counting up from the placeholder is a welcome on the first screen of a
+  // session, and only a delay on every revisit after it.
+  const mountedAt = useRef(0);
+  const animateArrival = useRef(isBooting());
 
   // Read through a ref so a caller passing an inline arrow — which is most of
   // them — does not restart the animation on every parent render.
@@ -58,6 +62,14 @@ export function CountUp({ value, format, className, style, as = 'span' }: Props)
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+    if (!mountedAt.current) mountedAt.current = performance.now();
+    const arriving = performance.now() - mountedAt.current < MOUNT_SETTLE_MS;
+    if (arriving && !animateArrival.current) {
+      current.current = value;
+      const fmt = formatRef.current;
+      node.textContent = fmt ? fmt(value) : String(Math.round(value));
+      return;
+    }
     return animateNumber(current.current, value, (n) => {
       current.current = n;
       const fmt = formatRef.current;

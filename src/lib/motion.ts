@@ -59,6 +59,29 @@ export const HAPTIC = {
   warn: [30, 60, 30] as number[],
 } as const;
 
+/**
+ * When the app booted. Entrance motion — rings sweeping in, numbers counting
+ * up from zero — is a welcome on the first screen of a session and a delay on
+ * every screen after it: revisiting Diet replayed a 900ms ring sweep and a
+ * half-second count from 0 each time, on data that had not changed, which
+ * read as the app being slow rather than lively.
+ */
+const BOOT_AT = typeof performance !== 'undefined' ? performance.now() : 0;
+const BOOT_WINDOW_MS = 2500;
+
+/** True while the first screen of the session is still settling in. */
+export function isBooting(): boolean {
+  return performance.now() - BOOT_AT < BOOT_WINDOW_MS;
+}
+
+/**
+ * How long after mount a change still counts as "the screen arriving" rather
+ * than the user changing something. A screen mounts with placeholder zeroes
+ * and its live query lands a few frames later; animating that gap is the
+ * replay the boot window exists to avoid.
+ */
+export const MOUNT_SETTLE_MS = 450;
+
 /** Matches `--dur-count` in styles/index.css. */
 export const COUNT_MS = 560;
 

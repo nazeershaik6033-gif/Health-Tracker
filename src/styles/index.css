@@ -278,15 +278,18 @@
                      spatial momentum to imply.
 
    Durations live here too so a change lands everywhere at once. --dur-screen
-   is the 360ms screen slide; --dur-sheet the 440ms sheet entrance.
+   is the 200ms screen slide; --dur-sheet the 320ms sheet entrance. Both were
+   longer (360 / 440) and made every tab switch feel like waiting: a screen
+   is not usable until it has stopped moving, so the slide is pure latency
+   on a phone, where it also has to repaint the whole page each frame.
 --------------------------------------------------------------------------- */
 :root {
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --dur-screen: 360ms;
-  --dur-sheet: 440ms;
+  --dur-screen: 200ms;
+  --dur-sheet: 320ms;
   --dur-scrim: 300ms;
   --dur-count: 560ms;
 }
@@ -798,7 +801,7 @@
   animation: fade-out 0.22s var(--ease-standard) forwards;
 }
 .animate-route-in {
-  animation: route-in 0.26s var(--ease-settle);
+  animation: route-in 0.18s var(--ease-settle);
 }
 .animate-route-right {
   animation: route-in-right var(--dur-screen) var(--ease-settle) both;

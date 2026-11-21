@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MICRO_STATUS_COLOR, MICRO_STATUS_LABEL, formatMicro, type MicroRow } from '@/lib/micros';
 import { IconChevronRight } from './icons';
+import { useAnimateChanges } from '@/lib/useArrival';
 
 interface Props {
   row: MicroRow;
@@ -18,6 +19,7 @@ interface Props {
  * would mean three flags and a worse version of each.
  */
 export function MicroBar({ row, to }: Props) {
+  const animate = useAnimateChanges();
   const { def, value, target, pct, status } = row;
   const color = MICRO_STATUS_COLOR[status];
   const width = Math.max(value > 0 ? 2 : 0, Math.min(100, pct));
@@ -40,7 +42,7 @@ export function MicroBar({ row, to }: Props) {
       <div className="mt-1.5 flex items-center gap-2">
         <div className="surface-sunken h-1.5 flex-1 overflow-hidden rounded-full">
           <div
-            className="h-full rounded-full transition-[width] duration-500 ease-out"
+            className={`h-full rounded-full ${animate ? 'transition-[width] duration-500 ease-out' : ''}`}
             style={{ width: `${width}%`, background: color }}
           />
         </div>

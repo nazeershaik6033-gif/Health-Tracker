@@ -214,8 +214,13 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  const current = await getSettings();
-  await db.settings.put({ ...current, ...patch, id: 'app' });
+  // One transaction, so the read and the write can't interleave with another
+  // save: the seed pass now runs behind the first screen and writes settings
+  // too, and a read-then-write race would silently drop one of the patches.
+  await db.transaction('rw', db.settings, async () => {
+    const current = await getSettings();
+    await db.settings.put({ ...current, ...patch, id: 'app' });
+  });
 }
 
 /* -------------------------------- profile -------------------------------- */

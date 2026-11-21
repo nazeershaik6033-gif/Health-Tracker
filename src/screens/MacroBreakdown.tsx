@@ -27,6 +27,7 @@ import { PortionSheet } from '@/components/PortionSheet';
 import { Card, Chip, EmptyState, PageHeader } from '@/components/ui';
 import { IconChevronDown, IconChevronUp, IconDiet, IconTrash } from '@/components/icons';
 import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Food, type MealItem, type MealSlot } from '@/types';
+import { useAnimateChanges } from '@/lib/useArrival';
 
 const SORT_FIELDS: SortField[] = ['amount', 'name', 'meal'];
 
@@ -40,6 +41,7 @@ const SORT_FIELDS: SortField[] = ['amount', 'name', 'meal'];
  * filter chips narrow to one when that *is* the question.
  */
 export default function MacroBreakdown() {
+  const animate = useAnimateChanges();
   const navigate = useNavigate();
   const { key } = useParams<{ key: string }>();
   const [params] = useSearchParams();
@@ -143,7 +145,7 @@ export default function MacroBreakdown() {
           </div>
           <div className="surface-sunken h-2 w-full overflow-hidden rounded-full">
             <div
-              className="h-full rounded-full transition-[width] duration-500 ease-out"
+              className={`h-full rounded-full ${animate ? 'transition-[width] duration-500 ease-out' : ''}`}
               style={{
                 width: `${Math.max(0, Math.min(100, pct))}%`,
                 background: over ? '#dc2626' : meta.color,

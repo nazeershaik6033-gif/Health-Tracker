@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react';
 import { IconSparkle, IconChevronLeft } from './icons';
 import { useGoBack } from '@/lib/nav';
+import { useAnimateChanges } from '@/lib/useArrival';
 
 /* --------------------------------- Button -------------------------------- */
 
@@ -256,12 +257,13 @@ export function ProgressBar({
   height?: number;
   className?: string;
 }) {
+  const animate = useAnimateChanges();
   const over = value > 1.0001;
   const pct = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100;
   return (
     <div className={`surface-sunken w-full overflow-hidden rounded-full ${className}`} style={{ height }}>
       <div
-        className="h-full rounded-full transition-[width] duration-500 ease-[var(--ease-settle)]"
+        className={`h-full rounded-full ${animate ? 'transition-[width] duration-500 ease-[var(--ease-settle)]' : ''}`}
         style={{ width: `${pct}%`, background: over ? '#dc2626' : color }}
       />
     </div>

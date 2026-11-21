@@ -46,6 +46,7 @@ import {
 import { HAPTIC, haptic } from '@/lib/motion';
 import { setWater } from '@/db/repo';
 import type { MealSlot, Snap } from '@/types';
+import { useAnimateChanges } from '@/lib/useArrival';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -389,6 +390,7 @@ function EnergyHero({
   targets: { protein: number; carbs: number; fat: number; fibre: number };
   dateLabel: string;
 }) {
+  const animate = useAnimateChanges();
   // Net of what was burned, so the ring unwinds when you train or walk —
   // the same reading the Diet screen gives.
   const net = eaten - burned;
@@ -458,7 +460,7 @@ function EnergyHero({
               </p>
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/12">
                 <div
-                  className="h-full rounded-full transition-[width] duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                  className={`h-full rounded-full ${animate ? 'transition-[width] duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)]' : ''}`}
                   style={{
                     width: `${Math.min(100, pct * 100)}%`,
                     background: pct > 1.05 ? '#f87171' : m.color,

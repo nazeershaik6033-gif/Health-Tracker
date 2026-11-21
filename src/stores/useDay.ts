@@ -145,20 +145,25 @@ export function useStreak() {
   return useLiveQuery(async () => {
     const window = rangeDays(today(), STREAK_WINDOW_DAYS).reverse(); // newest first
     const to = today();
-    const [meals, workouts, water, sleep, weight] = await Promise.all([
-      db.meals.where('date').between(from, to, true, true).toArray(),
-      db.workouts.where('date').between(from, to, true, true).toArray(),
+    // Only *which days* have a row matters here, so the meal, workout, sleep
+    // and weight tables are read as distinct index keys — no record is ever
+    // deserialised. Reading full rows meant materialising a year of meals and
+    // every item in them on each Home render and after every write, which was
+    // most of what a tab switch to Streaks cost. An emptied meal is deleted
+    // (see `updateMeal`), so a meal row on a day is itself the signal.
+    // Water is the exception: its row exists from the first visit to the
+    // tracker, at zero glasses, so it is read in full — it is tiny.
+    const [mealDays, workoutDays, water, sleepDays, weightDays] = await Promise.all([
+      db.meals.where('date').between(from, to, true, true).uniqueKeys(),
+      db.workouts.where('date').between(from, to, true, true).uniqueKeys(),
       db.water.where('date').between(from, to, true, true).toArray(),
-      db.sleep.where('date').between(from, to, true, true).toArray(),
-      db.weight.where('date').between(from, to, true, true).toArray(),
+      db.sleep.where('date').between(from, to, true, true).primaryKeys(),
+      db.weight.where('date').between(from, to, true, true).primaryKeys(),
     ]);
 
     const active = new Set<string>();
-    for (const m of meals) if (m.items.length) active.add(m.date);
-    for (const w of workouts) active.add(w.date);
+    for (const d of [...mealDays, ...workoutDays, ...sleepDays, ...weightDays]) active.add(String(d));
     for (const w of water) if (w.glasses > 0) active.add(w.date);
-    for (const s of sleep) active.add(s.date);
-    for (const w of weight) active.add(w.date);
 
     let streak = 0;
     for (const day of window) {

@@ -1,4 +1,5 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { MOUNT_SETTLE_MS, isBooting } from '@/lib/motion';
 
 interface Props {
   /** 0–1; values above 1 are drawn as a full ring plus an overflow arc. */
@@ -32,19 +33,31 @@ export function RingProgress({
   label,
 }: Props) {
   const id = useId().replace(/:/g, '');
-  const [mounted, setMounted] = useState(false);
+  // The sweep from empty plays only on the session's first screen. After that
+  // a ring arrives already drawn: replaying a 900ms sweep (repainting the SVG
+  // every frame) on each revisit was the single biggest cost of a tab switch.
+  const [sweep] = useState(isBooting);
+  const [mounted, setMounted] = useState(!sweep);
+  const mountedAt = useRef(0);
   useEffect(() => {
+    mountedAt.current = performance.now();
+    if (!sweep) return;
     const raf = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [sweep]);
 
   const shown = mounted && Number.isFinite(value) ? value : 0;
+  // Read at render, which every value change triggers anyway. A screen's
+  // live query lands a few frames after mount; that is still the screen
+  // arriving, not the user changing anything, so it snaps rather than eases.
+  const settling =
+    !sweep && (!mountedAt.current || performance.now() - mountedAt.current < MOUNT_SETTLE_MS);
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const primary = Math.max(0, Math.min(1, shown));
   const overflow = Math.max(0, Math.min(1, shown - 1));
   const track = trackColor ?? `color-mix(in srgb, ${color} 14%, var(--surface-sunken))`;
-  const transition = 'stroke-dashoffset 900ms var(--ease-settle)';
+  const transition = settling ? 'none' : `stroke-dashoffset ${sweep ? 900 : 500}ms var(--ease-settle)`;
 
   return (
     <div
@@ -73,7 +86,7 @@ export function RingProgress({
           strokeDashoffset={c * (1 - primary)}
           // A zero-length round-capped arc still draws a dot; hide it.
           opacity={primary > 0.001 ? 1 : 0}
-          style={{ transition: `${transition}, opacity 0.2s` }}
+          style={{ transition: settling ? 'none' : `${transition}, opacity 0.2s` }}
         />
         {overflow > 0 && (
           <circle
