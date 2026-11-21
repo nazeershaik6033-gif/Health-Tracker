@@ -83,7 +83,18 @@ export function createOpenRouter(apiKey: string, model?: string): ProviderAdapte
           headers: headers(),
           signal: opts.signal,
           body: build(
-            messages.map((m) => ({ role: m.role, content: m.content })),
+            messages.map((m) => ({
+              role: m.role,
+              content: m.images?.length
+                ? [
+                    ...m.images.map((img) => ({
+                      type: 'image_url' as const,
+                      image_url: { url: `data:${img.mediaType};base64,${img.base64}` },
+                    })),
+                    { type: 'text' as const, text: m.content },
+                  ]
+                : m.content,
+            })),
             opts,
             true,
           ),

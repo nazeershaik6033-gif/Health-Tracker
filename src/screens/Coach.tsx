@@ -22,8 +22,9 @@ import {
   type ResolvedGroup,
 } from '@/lib/mealText';
 import { formatPortion } from '@/lib/nutrition';
+import { blobToImagePart, prepareImage } from '@/lib/image';
 import { Button, Card, PageHeader } from '@/components/ui';
-import { IconClose, IconPlus, IconSend, IconSparkle, IconTrash, IconWarning } from '@/components/icons';
+import { IconCamera, IconClose, IconPlus, IconSend, IconSparkle, IconTrash, IconWarning } from '@/components/icons';
 import { MEAL_SLOT_LABEL, type ChatMessage } from '@/types';
 
 const SUGGESTIONS = [
@@ -41,6 +42,17 @@ const LOG_EXAMPLES = [
 
 /** Keeps the request bounded — older turns fall out rather than growing forever. */
 const HISTORY_TURNS = 12;
+
+/**
+ * How many of the most recent photos in the thread are sent with a question.
+ * Every image is re-sent on every turn (the API is stateless), so an older
+ * photo becomes a text note instead — "what about the second one?" still
+ * works, and a long photo thread doesn't multiply the cost of each reply.
+ */
+const IMAGE_TURNS = 2;
+
+/** What a photo sent without words is asking. */
+const PHOTO_ONLY_PROMPT = 'What do you make of this?';
 
 export default function Coach() {
   const navigate = useNavigate();
@@ -64,6 +76,10 @@ export default function Coach() {
   const [pendingLog, setPendingLog] = useState<ResolvedGroup[] | null>(null);
   const [logBusy, setLogBusy] = useState(false);
   const [input, setInput] = useState('');
+  /** A photo chosen but not yet sent. */
+  const [attachment, setAttachment] = useState<{ blob: Blob; url: string } | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -87,14 +103,38 @@ export default function Coach() {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // The preview URL is released when the photo is sent, removed or replaced.
+  useEffect(() => () => {
+    if (attachment) URL.revokeObjectURL(attachment.url);
+  }, [attachment]);
+
+  async function attach(file: File | undefined) {
+    if (!file) return;
+    setAttaching(true);
+    setError('');
+    try {
+      // Same downscale Snap uses: a 12 MP photo is several MB of base64 per
+      // turn and the model reads a 1024 px one just as well.
+      const { full } = await prepareImage(file);
+      setAttachment({ blob: full, url: URL.createObjectURL(full) });
+      inputRef.current?.focus();
+    } catch {
+      setError("That photo couldn't be opened. Try another.");
+    } finally {
+      setAttaching(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
   async function send(text: string) {
-    const trimmed = text.trim();
+    const photo = attachment?.blob;
+    const trimmed = text.trim() || (photo ? PHOTO_ONLY_PROMPT : '');
     if (!trimmed || busy) return;
 
     // Decided in code, not by the model: a slot word followed by a colon is a
     // log, anything else is a question. That keeps "I had 2 idlis, is that
     // enough protein?" a question, and it costs no round trip to work out.
-    const parsed = parseMealText(trimmed);
+    const parsed = photo ? null : parseMealText(trimmed);
     if (parsed && foods) {
       setInput('');
       setError('');
@@ -105,15 +145,25 @@ export default function Coach() {
     }
 
     if (!keyed) {
-      setError('Ria needs an AI key to answer questions. Typed meal logs work without one.');
+      setError(
+        photo
+          ? 'Ria needs an AI key to look at photos. Snap can log a meal photo once a key is set.'
+          : 'Ria needs an AI key to answer questions. Typed meal logs work without one.',
+      );
       return;
     }
 
     setInput('');
     setError('');
     setBusy(true);
+    setAttachment(null);
 
-    const userMsg = await addChat({ role: 'user', content: trimmed, createdAt: Date.now() });
+    const userMsg = await addChat({
+      role: 'user',
+      content: trimmed,
+      createdAt: Date.now(),
+      ...(photo ? { image: photo } : {}),
+    });
     const assistantMsg = await addChat({
       role: 'assistant',
       content: '',
@@ -128,10 +178,20 @@ export default function Coach() {
     try {
       const bundle = await dayBundle(selectedDate, profile);
       const context = dayContext(bundle, profile);
-      const turns: ChatTurn[] = [...messages, userMsg]
-        .filter((m) => m.content.trim())
-        .slice(-HISTORY_TURNS)
-        .map((m) => ({ role: m.role, content: m.content }));
+      const recent = [...messages, userMsg].filter((m) => m.content.trim()).slice(-HISTORY_TURNS);
+      const withImages = new Set(
+        recent
+          .filter((m) => m.image)
+          .slice(-IMAGE_TURNS)
+          .map((m) => m.id),
+      );
+      const turns: ChatTurn[] = await Promise.all(
+        recent.map(async (m) => {
+          if (!m.image) return { role: m.role, content: m.content };
+          if (!withImages.has(m.id)) return { role: m.role, content: `[Shared a photo earlier] ${m.content}` };
+          return { role: m.role, content: m.content, images: [await blobToImagePart(m.image)] };
+        }),
+      );
 
       let acc = '';
       for await (const chunk of coachReply(settings, turns, context, controller.signal)) {
@@ -353,7 +413,45 @@ export default function Coach() {
       </div>
 
       <div className="border-t border-[var(--surface-border)] bg-[var(--surface-card)] px-3 pt-2.5 pb-safe">
+        {attachment && (
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <div className="relative">
+              <img
+                src={attachment.url}
+                alt="Photo to send"
+                className="h-16 w-16 rounded-xl object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                aria-label="Remove photo"
+                className="absolute -top-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white"
+              >
+                <IconClose width={13} height={13} />
+              </button>
+            </div>
+            <p className="text-[12px] text-secondary">
+              Ask about it, or just send — Ria will tell you what she sees.
+            </p>
+          </div>
+        )}
         <div className="flex items-end gap-2">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy || attaching}
+            aria-label="Add a photo"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-secondary hover:surface-sunken disabled:opacity-40"
+          >
+            <IconCamera width={20} height={20} />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void attach(e.target.files?.[0])}
+          />
           <textarea
             ref={inputRef}
             value={input}
@@ -370,7 +468,7 @@ export default function Coach() {
               }
             }}
             rows={1}
-            placeholder="Ask a question, or log “breakfast: idly 2”"
+            placeholder={attachment ? 'Ask about this photo…' : 'Ask, or log “breakfast: idly 2”'}
             className="hairline max-h-30 flex-1 resize-none rounded-2xl border bg-transparent px-3.5 py-2.5 text-[15px] outline-none focus:border-brand-500"
           />
           {busy ? (
@@ -386,7 +484,7 @@ export default function Coach() {
             <button
               type="button"
               onClick={() => void send(input)}
-              disabled={!input.trim()}
+              disabled={!input.trim() && !attachment}
               aria-label="Send"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-500 text-white disabled:opacity-40"
             >
@@ -501,7 +599,8 @@ function Bubble({ message }: { message: ChatMessage }) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1.5">
+        {message.image && <ChatPhoto blob={message.image} />}
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-brand-500 px-3.5 py-2.5 text-[14px] leading-relaxed text-white">
           {message.content}
         </div>
@@ -599,4 +698,16 @@ function inline(text: string) {
     }
     return part;
   });
+}
+
+/** A photo in the thread. Its object URL lives exactly as long as the bubble. */
+function ChatPhoto({ blob }: { blob: Blob }) {
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    const next = URL.createObjectURL(blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [blob]);
+  if (!url) return <div className="h-44 w-44 rounded-2xl surface-sunken" />;
+  return <img src={url} alt="Shared photo" className="max-h-60 max-w-[70%] rounded-2xl object-cover" />;
 }

@@ -58,7 +58,12 @@ export function createGemini(apiKey: string, model?: string): ProviderAdapter {
         // Gemini names the assistant role "model".
         ...history.map((m) => ({
           role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
+          parts: [
+            ...(m.images ?? []).map((img) => ({
+              inlineData: { mimeType: img.mediaType, data: img.base64 },
+            })),
+            { text: m.content },
+          ],
         })),
         ...(parts.length ? [{ role: 'user', parts }] : []),
       ],

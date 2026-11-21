@@ -3,6 +3,8 @@ import type { ProviderId } from '@/types';
 export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
+  /** Photos sent with this turn, ahead of its text. User turns only. */
+  images?: ImagePart[];
 }
 
 export interface ImagePart {

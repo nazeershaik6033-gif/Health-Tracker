@@ -66,7 +66,23 @@ export function createAnthropic(apiKey: string, model?: string): ProviderAdapter
           method: 'POST',
           headers: headers(),
           signal: opts.signal,
-          body: body(opts, { stream: true, messages }),
+          body: body(opts, {
+            stream: true,
+            messages: messages.map((m) =>
+              m.images?.length
+                ? {
+                    role: m.role,
+                    content: [
+                      ...m.images.map((img) => ({
+                        type: 'image' as const,
+                        source: { type: 'base64' as const, media_type: img.mediaType, data: img.base64 },
+                      })),
+                      { type: 'text' as const, text: m.content },
+                    ],
+                  }
+                : { role: m.role, content: m.content },
+            ),
+          }),
         });
       } catch (e) {
         if (e instanceof AIError) throw e;

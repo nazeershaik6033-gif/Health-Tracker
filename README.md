@@ -65,7 +65,7 @@ a browser bug, not a deployment one.
 | How | What happens |
 |---|---|
 | **Snap** | Photograph a plate; a vision model identifies each item, estimates portions and macros, scores the meal 0–10 and writes a short take |
-| **Barcode** | Scan a packaged product; looked up in [Open Food Facts](https://world.openfoodfacts.org) (free, ~3M products, no key), trying each valid form of the code. Known by name but with no panel → the AI estimate works from the product name, not the digits |
+| **Barcode** | Scan a packaged product; looked up in [Open Food Facts](https://world.openfoodfacts.org) (free, ~3M products, no key), trying each valid form of the code. Known by name but with no panel → the AI estimate works from the product name, not the digits. Slightly blurry frames are sharpened and retried; if the live view still can't read it, **Take a photo** lets the phone's camera app focus up close (it switches to macro where the browser stream can't) and decodes the full-resolution still. A photo or screenshot from the gallery works too, with no camera permission needed |
 | **Label** | Point at a nutrition panel; read by AI vision, or on-device OCR when no key is set. Cancellable while it works, and it gives up on its own rather than spinning forever |
 | **Voice** | "Two rotis, a katori of dal and a glass of milk" → structured entries |
 | **Search** | ~165 bundled foods, Indian-first with native units (roti, katori, glass, idli, dosa), plus anything you've saved. Fuzzy matched, works offline |
@@ -170,7 +170,12 @@ it shows the number, and every estimate can be overridden. Volume moved is
 tracked exactly and is the more honest strength signal.
 
 **Ria, the AI coach** — reads your profile, targets, today's log and recent
-trends, and answers with your actual numbers. Also produces the daily insight
+trends, and answers with your actual numbers. Attach a photo (a plate, a
+packet, a menu, a label) and ask about it: she says what she sees, estimates
+the portion against what you have left today, and reads printed numbers rather
+than guessing them. The two most recent photos go with each question; older
+ones become a note, so a long thread doesn't multiply the cost of every reply.
+Chat photos stay on the device and are left out of exports. Also produces the daily insight
 card on the home screen, per-meal scores, AI diet plans and workout plans.
 Ria also sees a fast in progress and the day's blood-sugar readings, so she
 won't suggest a snack two hours before your fast ends.

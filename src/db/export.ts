@@ -127,7 +127,9 @@ export async function exportData(includePhotos: boolean): Promise<ExportBundle> 
       weight,
       steps,
       workouts,
-      chats,
+      // Chat photos stay on the device: a backup is a JSON file, and a Blob
+      // serialises to `{}`, which would come back as a broken image.
+      chats: chats.map(({ image: _image, ...rest }) => rest),
       insights,
       plans,
       exercises,

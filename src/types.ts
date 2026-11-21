@@ -415,6 +415,12 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+  /**
+   * A photo the user attached, downscaled to the same 1024 px JPEG Snap sends.
+   * Kept so the thread still shows it, and so a follow-up question about it
+   * can be answered. Not included in data exports.
+   */
+  image?: Blob;
   /** Set while a streaming reply is still being written. */
   streaming?: boolean;
   error?: boolean;
