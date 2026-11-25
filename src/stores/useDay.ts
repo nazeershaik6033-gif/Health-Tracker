@@ -4,12 +4,13 @@ import { db } from '@/db/schema';
 import { useApp } from './useApp';
 import { addDays, rangeDays, today } from '@/lib/date';
 import { estimateWorkoutKcal, stepKcal, totalNutrients } from '@/lib/nutrition';
-import { dayMicros, targetsForProfile } from '@/lib/micros';
+import { MICRO_IDS, dayMicros, targetsForProfile } from '@/lib/micros';
 import {
   MEAL_SLOTS,
   ZERO_NUTRIENTS,
   type Meal,
   type MealSlot,
+  type MicroId,
   type WorkoutEntry,
 } from '@/types';
 
@@ -17,6 +18,7 @@ import {
 // every render while the day's query is still in flight.
 const EMPTY_MEALS: Meal[] = [];
 const EMPTY_WORKOUTS: WorkoutEntry[] = [];
+const NO_HIDDEN: MicroId[] = [];
 
 /**
  * Live view of one day. Everything that renders the day's numbers reads this,
@@ -26,6 +28,8 @@ export function useDay(dateOverride?: string) {
   const selectedDate = useApp((s) => s.selectedDate);
   const profile = useApp((s) => s.profile);
   const countStepKcal = useApp((s) => s.settings.countStepKcal !== false);
+  const eatBack = useApp((s) => eatBackFraction(s.settings.eatBackPct));
+  const hiddenMicros = useApp((s) => s.settings.hiddenMicros ?? NO_HIDDEN);
   const date = dateOverride ?? selectedDate;
 
   const data = useLiveQuery(async () => {
@@ -99,6 +103,11 @@ export function useDay(dateOverride?: string) {
     stepsKcal,
     /** Everything burned today: deliberate exercise plus walking. */
     burnedKcal: workoutKcal + stepsKcal,
+    /**
+     * The part of `burnedKcal` added back to the day's budget — all of it by
+     * default, less when Settings → Eat back exercise calories says so.
+     */
+    creditedKcal: Math.round((workoutKcal + stepsKcal) * eatBack),
     bodyWeightKg,
     water: data?.water,
     sleep: data?.sleep,
@@ -110,11 +119,21 @@ export function useDay(dateOverride?: string) {
     microCoverage: micros.coverage,
     microUnknown: micros.unknown,
     microTargets,
+    /** Nutrients the user switched off; pass to `microRows`. */
+    hiddenMicros,
+    /** How many nutrients are being tracked, after hiding. */
+    microCount: MICRO_IDS.length - hiddenMicros.filter((id) => MICRO_IDS.includes(id)).length,
     waterGoal: data?.water?.goalGlasses ?? profile?.waterGoalGlasses ?? 9,
     glasses: data?.water?.glasses ?? 0,
     stepGoal: data?.steps?.goal ?? profile?.stepGoal ?? 8000,
     stepCount,
   };
+}
+
+/** Settings' eat-back percentage as a 0–1 fraction. Absent means all of it. */
+export function eatBackFraction(pct: number | undefined): number {
+  if (typeof pct !== 'number' || !Number.isFinite(pct)) return 1;
+  return Math.min(100, Math.max(0, pct)) / 100;
 }
 
 /** Live weight history for the trend chart and the "kg lost" readout. */

@@ -373,7 +373,7 @@ export default function MicroBreakdown() {
           }
           initialQty={editing.item.qty}
           initialServingLabel={editing.item.servingLabel}
-          confirmLabel={(kcal) => `Save ${kcal} Cal`}
+          confirmLabel={(energy) => `Save ${energy}`}
           onEditFood={editing.food ? () => navigate(`/food/${editing.food!.id}/edit`) : undefined}
           onClose={() => setEditing(null)}
           onConfirm={saveEdit}

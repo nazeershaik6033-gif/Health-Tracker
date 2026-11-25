@@ -8,7 +8,8 @@ import { hasKey } from '@/ai/registry';
 import { describeError } from '@/ai/types';
 import { AIBadge, Skeleton } from './ui';
 import { IconChevronRight, IconRefresh, IconSparkle } from './icons';
-import { MEAL_SLOTS, MEAL_SLOT_LABEL, type Meal, type MealSlot } from '@/types';
+import { MEAL_SLOTS, MEAL_SLOT_LABEL, type EnergyUnit, type Meal, type MealSlot } from '@/types';
+import { formatEnergy, useEnergy } from '@/lib/energy';
 
 /**
  * Which meal to suggest for.
@@ -49,6 +50,7 @@ export function NextMealCard({ date }: { date: string }) {
   const navigate = useNavigate();
   const { profile, settings, setPendingSlot } = useApp();
   const day = useDay(date);
+  const energy = useEnergy();
 
   const [suggestion, setSuggestion] = useState<MealSuggestion | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,14 +106,14 @@ export function NextMealCard({ date }: { date: string }) {
         <p className="accent-title text-[14px] font-bold">Every meal is logged</p>
         <p className="accent-body mt-1 text-[12.5px] leading-relaxed">
           {remaining.kcal >= 0
-            ? `${Math.round(remaining.kcal).toLocaleString()} Cal still spare if you want something more.`
-            : `You're ${Math.abs(Math.round(remaining.kcal)).toLocaleString()} Cal over — worth a walk this evening.`}
+            ? `${energy.fmt(remaining.kcal)} still spare if you want something more.`
+            : `You're ${energy.fmt(Math.abs(remaining.kcal))} over — worth a walk this evening.`}
         </p>
       </div>
     );
   }
 
-  const localLine = describeGap(remaining, day.meals.length > 0);
+  const localLine = describeGap(remaining, day.meals.length > 0, energy.unit);
 
   return (
     <div className="accent-card mb-3 p-4">
@@ -165,7 +167,7 @@ export function NextMealCard({ date }: { date: string }) {
                   </span>
                 </span>
                 <span className="tabular shrink-0 text-right text-[11.5px] font-semibold">
-                  <span className="block">{option.kcal} Cal</span>
+                  <span className="block">{energy.fmt(option.kcal)}</span>
                   <span className="block opacity-80">{option.protein} g P</span>
                 </span>
                 <IconChevronRight width={14} height={14} className="shrink-0 opacity-70" />
@@ -217,15 +219,16 @@ export function NextMealCard({ date }: { date: string }) {
 function describeGap(
   remaining: { kcal: number; protein: number; fibre: number },
   logged: boolean,
+  unit: EnergyUnit,
 ): string {
   if (!logged) {
-    return `Nothing logged yet — the whole ${Math.round(remaining.kcal).toLocaleString()} Cal is still yours to spend.`;
+    return `Nothing logged yet — the whole ${formatEnergy(remaining.kcal, unit)} is still yours to spend.`;
   }
   if (remaining.kcal < 0) {
-    return `You're ${Math.abs(Math.round(remaining.kcal)).toLocaleString()} Cal over target. Keep this one small.`;
+    return `You're ${formatEnergy(Math.abs(remaining.kcal), unit)} over target. Keep this one small.`;
   }
 
-  const cal = `${Math.round(remaining.kcal).toLocaleString()} Cal left`;
+  const cal = `${formatEnergy(remaining.kcal, unit)} left`;
   if (remaining.protein > 15) return `${cal}, and ${Math.round(remaining.protein)} g of protein still to find.`;
   if (remaining.fibre > 8) return `${cal}, and ${Math.round(remaining.fibre)} g of fibre still to go.`;
   return `${cal}. Macros are close to where they should be.`;

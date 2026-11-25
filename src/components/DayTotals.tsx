@@ -6,6 +6,7 @@ import { Card } from './ui';
 import { IconChevronRight, IconLeaf } from './icons';
 import type { MacroKey } from '@/lib/macroBreakdown';
 import type { Nutrients } from '@/types';
+import { useEnergy } from '@/lib/energy';
 
 /**
  * A day in one card: calories against target, and all four macros.
@@ -19,6 +20,7 @@ export function DayTotals({
   totals,
   targets,
   burned = 0,
+  credited,
   compact = false,
   macroHref,
   micros,
@@ -27,6 +29,11 @@ export function DayTotals({
   targets: Nutrients;
   /** Workout calories, shown as the second half of the net calculation. */
   burned?: number;
+  /**
+   * How much of `burned` goes back into the budget. Defaults to all of it;
+   * Settings → Eat back exercise calories can make it less.
+   */
+  credited?: number;
   /** Slightly tighter ring, for screens where this is not the hero element. */
   compact?: boolean;
   /**
@@ -42,7 +49,9 @@ export function DayTotals({
    */
   micros?: { onTrack: number; total: number; href: string };
 }) {
-  const net = totals.kcal - burned;
+  const energy = useEnergy();
+  const credit = credited ?? burned;
+  const net = totals.kcal - credit;
   const left = Math.max(0, targets.kcal - net);
 
   // Built once and wrapped below rather than rendered by an inline component:
@@ -55,29 +64,31 @@ export function DayTotals({
         size={compact ? 52 : 56}
         stroke={compact ? 4 : 4.5}
         color="var(--color-ring-calorie)"
-        label={macroHref ? undefined : `${Math.round(net)} of ${targets.kcal} calories`}
+        label={macroHref ? undefined : `${energy.num(net)} of ${energy.fmt(targets.kcal)}`}
       >
         <div className="text-center leading-none">
           <p className="tabular text-[13px] font-extrabold">
-            <CountUp value={net} />
+            <CountUp value={energy.value(net)} />
           </p>
-          <p className="text-[8px] text-muted">kcal</p>
+          <p className="text-[8px] text-muted">{energy.label}</p>
         </div>
       </RingProgress>
 
       <div className="flex-1">
         <p className="tabular text-[15px] font-bold">
-          <CountUp value={left} format={(n) => Math.round(n).toLocaleString()} /> Cal left
+          <CountUp value={energy.value(left)} format={(n) => Math.round(n).toLocaleString()} />{' '}
+          {energy.unit === 'kj' ? 'kJ' : 'Cal'} left
         </p>
         <p className="tabular text-[12.5px] text-secondary">
-          <CountUp value={totals.kcal} format={(n) => Math.round(n).toLocaleString()} /> eaten
-          {burned > 0 && ` · ${Math.round(burned)} burned`}
+          <CountUp value={energy.value(totals.kcal)} format={(n) => Math.round(n).toLocaleString()} /> eaten
+          {burned > 0 && ` · ${energy.num(burned)} burned`}
+          {burned > 0 && credit !== burned && ` (${energy.num(credit)} counted)`}
         </p>
       </div>
 
       {net > targets.kcal && (
         <span className="tint-soft tint-danger shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold">
-          +{Math.round(net - targets.kcal)}
+          +{energy.num(net - targets.kcal)}
         </span>
       )}
     </>
@@ -88,7 +99,7 @@ export function DayTotals({
       {macroHref ? (
         <Link
           to={macroHref('kcal')}
-          aria-label={`${Math.round(net)} of ${targets.kcal} calories. See what contributed.`}
+          aria-label={`${energy.num(net)} of ${energy.fmt(targets.kcal)}. See what contributed.`}
           className="flex items-center gap-3 rounded-xl transition-transform active:scale-[0.99]"
         >
           {calorieRow}

@@ -4,6 +4,11 @@ import { useApp } from '@/stores/useApp';
 import { useTheme } from '@/lib/theme';
 import { useTypography } from '@/lib/typography';
 import { useDayRollover } from '@/lib/dayRollover';
+import { useAppBadge } from '@/lib/badge';
+import { requestPersistence } from '@/lib/storage';
+import { adaptiveDue, measureMaintenance } from '@/lib/adaptive';
+import { saveProfile } from '@/db/repo';
+import { formatEnergy } from '@/lib/energy';
 import { routeDirection } from '@/lib/motion';
 import { depthDirection, historyIdx, prefetchWhenIdle, recordEntry } from '@/lib/nav';
 import { BottomNav, NAV_ORDER } from '@/components/BottomNav';
@@ -80,6 +85,12 @@ const loadVoice = () => import('@/screens/Voice');
 const Voice = lazy(loadVoice);
 const loadLabel = () => import('@/screens/Label');
 const Label = lazy(loadLabel);
+const loadQuickAdd = () => import('@/screens/QuickAdd');
+const QuickAdd = lazy(loadQuickAdd);
+const loadNutrientGoals = () => import('@/screens/NutrientGoals');
+const NutrientGoals = lazy(loadNutrientGoals);
+const loadSources = () => import('@/screens/Sources');
+const Sources = lazy(loadSources);
 
 /** Every lazy screen, warmed in the background once the app is up. */
 const LAZY_LOADERS = [
@@ -109,6 +120,9 @@ const LAZY_LOADERS = [
   loadScan,
   loadVoice,
   loadLabel,
+  loadQuickAdd,
+  loadNutrientGoals,
+  loadSources,
 ];
 
 /** Routes that own the full viewport — no bottom nav, no page padding. */
@@ -122,6 +136,9 @@ const FULLSCREEN = [
   '/log',
   '/search',
   '/find',
+  '/quick',
+  // Sticky Save bar of its own, like the food editor.
+  '/settings/nutrients',
   // Has its own sticky action bar; the bottom nav would sit on top of it and
   // swallow the taps on Save. Prefix, so it covers /food/new and
   // /food/:id/edit alike — the matcher appends the slash itself.
@@ -134,6 +151,33 @@ export default function App() {
   useTheme(settings.theme);
   useTypography(settings.fontFamily, settings.fontSize);
   useDayRollover();
+  useAppBadge();
+
+  // Ask for persistent storage once there is something worth keeping. Silent
+  // in Chrome and Safari; Firefox asks once and remembers. See lib/storage.ts.
+  const onboardedNow = ready && Boolean(profile) && settings.onboardingDone;
+  useEffect(() => {
+    if (onboardedNow) void requestPersistence();
+  }, [onboardedNow]);
+
+  // Weekly adaptive re-measure, when switched on. Skips quietly when the data
+  // is thin or the figure looks off — Settings shows why.
+  useEffect(() => {
+    if (!onboardedNow) return;
+    const { profile: p, settings: s } = useApp.getState();
+    if (!adaptiveDue(p, s) || !p) return;
+    void (async () => {
+      const result = await measureMaintenance(p, s);
+      if (!result.ok || result.unusual) return;
+      const next = await saveProfile({ adaptiveTdee: result.tdee, adaptiveAt: Date.now() });
+      await useApp.getState().refreshProfile();
+      if (next.targets.kcal !== p.targets.kcal) {
+        useApp.getState().showToast({
+          message: `Calorie target updated to ${formatEnergy(next.targets.kcal, s.energyUnit ?? 'kcal')} from your last 4 weeks`,
+        });
+      }
+    })();
+  }, [onboardedNow]);
 
   useEffect(() => {
     void init();
@@ -259,6 +303,9 @@ export default function App() {
             <Route path="/plans" element={<Plans />} />
             <Route path="/streaks" element={<Streaks />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/nutrients" element={<NutrientGoals />} />
+            <Route path="/sources" element={<Sources />} />
+            <Route path="/quick" element={<QuickAdd />} />
             <Route path="/trackers/water" element={<Water />} />
             <Route path="/trackers/sleep" element={<Sleep />} />
             <Route path="/trackers/weight" element={<Weight />} />

@@ -1,10 +1,14 @@
 import { memo, useCallback, useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/db/schema';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay } from '@/stores/useDay';
 import {
   addFavourite,
+  copyMealItems,
   deleteMeal,
+  removeMealItems,
   getFood,
   moveMealItems,
   removeFavourite,
@@ -27,10 +31,12 @@ import {
 import { addDays, relativeDayLabel, today } from '@/lib/date';
 import { DayTotals } from '@/components/DayTotals';
 import { PeriodMacros } from '@/components/PeriodMacros';
-import { MICRO_IDS, microRows } from '@/lib/micros';
+import { microRows } from '@/lib/micros';
 import { Card, ScoreCircle } from '@/components/ui';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
+import { CopySheet } from '@/components/CopySheet';
+import { useEnergy } from '@/lib/energy';
 import { MacroStrip } from '@/components/MacroStrip';
 import { NextMealCard } from '@/components/NextMealCard';
 import type { MacroKey } from '@/lib/macroBreakdown';
@@ -39,6 +45,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconChevronUp,
+  IconCopy,
   IconMove,
   IconPlus,
   IconSparkle,
@@ -85,6 +92,9 @@ interface SlotActions {
   pin: (slot: MealSlot, meal: Meal) => void;
   clearMeal: (slot: MealSlot, meal: Meal) => void;
   moveMeal: (slot: MealSlot, meal: Meal) => void;
+  copyMeal: (slot: MealSlot, meal: Meal) => void;
+  /** Logs the previous day's meal for this slot again, as it was. */
+  repeat: (slot: MealSlot, from: Meal) => void;
 }
 
 export default function Diet() {
@@ -113,6 +123,24 @@ export default function Diet() {
     indices: number[];
     label: string;
   } | null>(null);
+  const [copying, setCopying] = useState<{
+    items: MealItem[];
+    slot: MealSlot;
+    label: string;
+  } | null>(null);
+  // The day before's meals, for the one-tap "repeat yesterday's breakfast" on
+  // an empty slot — the commonest copy there is.
+  const previousDay = addDays(selectedDate, -1);
+  const previousMeals = useLiveQuery(
+    () => db.meals.where('date').equals(previousDay).toArray(),
+    [previousDay],
+  );
+  const previousBySlot = useMemo(() => {
+    const map: Partial<Record<MealSlot, Meal>> = {};
+    for (const m of previousMeals ?? []) if (m.items.length) map[m.slot] = m;
+    return map;
+  }, [previousMeals]);
+
   // Which rows are showing their macros. Purely a view concern, so it lives in
   // state rather than on the meal, and resets when the screen does.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -154,7 +182,7 @@ export default function Diet() {
     [day.meals, profile],
   );
 
-  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+  const microsOnTrack = microRows(day.micros, day.microTargets, day.hiddenMicros).filter(
     (r) => r.status === 'good',
   ).length;
 
@@ -290,8 +318,18 @@ export default function Diet() {
           indices: meal.items.map((_, i) => i),
           label: MEAL_SLOT_LABEL[slot],
         }),
+      copyMeal: (slot, meal) =>
+        setCopying({ items: meal.items, slot, label: MEAL_SLOT_LABEL[slot] }),
+      repeat: async (slot, from) => {
+        const result = await copyMealItems(from.items, selectedDate, slot);
+        showToast({
+          message: `${MEAL_SLOT_LABEL[slot]} repeated from ${relativeDayLabel(from.date).toLowerCase()}`,
+          actionLabel: 'Undo',
+          onAction: () => removeMealItems(result.mealId, result.indices),
+        });
+      },
     }),
-    [navigate, setPendingSlot, showToast, showConfirm],
+    [navigate, setPendingSlot, showToast, showConfirm, selectedDate],
   );
 
   const macroLink = useCallback(
@@ -345,10 +383,11 @@ export default function Diet() {
           totals={day.totals}
           targets={day.targets}
           burned={day.burnedKcal}
+          credited={day.creditedKcal}
           macroHref={macroLink}
           micros={{
             onTrack: microsOnTrack,
-            total: MICRO_IDS.length,
+            total: day.microCount,
             href: `/micros?date=${selectedDate}`,
           }}
         />
@@ -382,6 +421,7 @@ export default function Diet() {
               slot={slot}
               meal={day.bySlot[slot]}
               target={slotTarget(profile, slot)}
+              previous={previousBySlot[slot]}
               expanded={expanded}
               actions={slotActions}
               rowActions={rowActions}
@@ -411,7 +451,7 @@ export default function Diet() {
           initialQty={editing.item.qty}
           initialServingLabel={editing.item.servingLabel}
           initialGrams={editing.item.grams}
-          confirmLabel={(kcal) => `Save ${kcal} Cal`}
+          confirmLabel={(energy) => `Save ${energy}`}
           onEditFood={
             editing.food ? () => navigate(`/food/${editing.food!.id}/edit`) : undefined
           }
@@ -433,6 +473,10 @@ export default function Diet() {
           // Moves the row as it is logged, not the portion currently dialled in
           // the sheet — an unsaved quantity change is a separate decision, and
           // silently committing it on the way out would be a surprise.
+          onCopy={() => {
+            setCopying({ items: [editing.item], slot: editing.slot, label: editing.item.name });
+            setEditing(null);
+          }}
           onMove={() => {
             rowActions.moveItem(
               editing.mealId,
@@ -451,6 +495,15 @@ export default function Diet() {
           }
         />
       )}
+
+      <CopySheet
+        open={Boolean(copying)}
+        onClose={() => setCopying(null)}
+        items={copying?.items ?? []}
+        fromDate={selectedDate}
+        fromSlot={copying?.slot ?? 'breakfast'}
+        label={copying?.label ?? ''}
+      />
 
       {moving && (
         <MealPickerSheet
@@ -479,6 +532,7 @@ const SlotCard = memo(function SlotCard({
   slot,
   meal,
   target,
+  previous,
   expanded,
   actions,
   rowActions,
@@ -490,6 +544,8 @@ const SlotCard = memo(function SlotCard({
   slot: MealSlot;
   meal: Meal | undefined;
   target: number;
+  /** The same slot the day before, when it has anything in it. */
+  previous?: Meal;
   expanded: ReadonlySet<string>;
   actions: SlotActions;
   rowActions: RowActions;
@@ -499,6 +555,7 @@ const SlotCard = memo(function SlotCard({
   periodMacros?: PeriodMacroData;
   onTogglePeriod: (period: DayPeriod) => void;
 }) {
+  const energy = useEnergy();
   const eaten = meal ? Math.round(mealNutrients(meal).kcal) : 0;
   const filled = Boolean(meal && meal.items.length > 0);
 
@@ -541,7 +598,7 @@ const SlotCard = memo(function SlotCard({
             target > 0 && eaten > target * 1.25 ? 'font-semibold text-red-500' : 'text-secondary'
           }`}
         >
-          {eaten}/{target}
+          {energy.num(eaten)}/{energy.num(target)}
         </span>
         {/* Moves the whole slot at once — a meal logged under the wrong heading
             is the usual reason to want this. */}
@@ -553,6 +610,16 @@ const SlotCard = memo(function SlotCard({
             className="shrink-0 rounded-lg p-1 text-muted"
           >
             <IconMove width={14} height={14} />
+          </button>
+        )}
+        {filled && (
+          <button
+            type="button"
+            onClick={() => actions.copyMeal(slot, meal!)}
+            aria-label={`Copy ${MEAL_SLOT_LABEL[slot]} to another day or meal`}
+            className="shrink-0 rounded-lg p-1 text-muted"
+          >
+            <IconCopy width={14} height={14} />
           </button>
         )}
         {filled && (
@@ -629,13 +696,30 @@ const SlotCard = memo(function SlotCard({
           )}
         </ul>
       ) : (
-        <button
-          type="button"
-          onClick={() => actions.add(slot)}
-          className="mt-1 w-full rounded-lg px-1 py-2 text-left text-[13px] text-muted"
-        >
-          Nothing logged — tap to add
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() => actions.add(slot)}
+            className="mt-1 w-full rounded-lg px-1 py-2 text-left text-[13px] text-muted"
+          >
+            Nothing logged — tap to add
+          </button>
+          {previous && (
+            <button
+              type="button"
+              onClick={() => actions.repeat(slot, previous)}
+              className="tint-soft tint-brand mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px] font-semibold"
+            >
+              <IconCopy width={13} height={13} className="shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                Repeat {relativeDayLabel(previous.date).toLowerCase()}&apos;s{' '}
+                {MEAL_SLOT_LABEL[slot].toLowerCase()} ·{' '}
+                {previous.items.map((i) => i.name).join(', ')}
+              </span>
+              <span className="tabular shrink-0">{energy.num(mealNutrients(previous).kcal)}</span>
+            </button>
+          )}
+        </>
       )}
     </Card>
   );
@@ -664,6 +748,7 @@ const ItemRow = memo(function ItemRow({
   expanded: boolean;
   actions: RowActions;
 }) {
+  const energy = useEnergy();
   return (
     <li className="border-t border-[var(--surface-border)] px-1 py-2.5">
       <div className="flex items-center gap-1.5">
@@ -709,7 +794,7 @@ const ItemRow = memo(function ItemRow({
           onClick={() => actions.edit(mealId, slot, index, item)}
           className="tabular shrink-0 text-[13px] font-semibold"
         >
-          {Math.round(item.nutrients.kcal)}
+          {energy.num(item.nutrients.kcal)}
         </button>
         {/* Moving one item used to live only inside the portion sheet, two taps
             deep, where nobody found it. It is the same action as the one on the

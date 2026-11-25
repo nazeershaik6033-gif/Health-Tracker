@@ -40,8 +40,8 @@ export default function Micros() {
   const day = useDay(date);
 
   const rows = useMemo(
-    () => microRows(day.micros, day.microTargets),
-    [day.micros, day.microTargets],
+    () => microRows(day.micros, day.microTargets, day.hiddenMicros),
+    [day.micros, day.microTargets, day.hiddenMicros],
   );
   const gaps = useMemo(() => biggestGaps(rows), [rows]);
   const onTrack = rows.filter((r) => r.status === 'good').length;

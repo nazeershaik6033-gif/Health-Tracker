@@ -12,7 +12,7 @@ import type {
   Sex,
   WorkoutIntensity,
 } from '@/types';
-import { DAY_PERIOD_SHARE, DAY_PERIOD_SLOTS, MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
+import { DAY_PERIODS, DAY_PERIOD_SLOTS, MEAL_PRESETS, MEAL_SLOTS, MEAL_SLOT_SHARE, ZERO_NUTRIENTS } from '@/types';
 import { hasMicros, roundMicros, scaleMicros } from './micros';
 
 export const ACTIVITY_FACTOR: Record<ActivityLevel, number> = {
@@ -77,6 +77,23 @@ export function macroTargets(kcal: number, weightKg: number, goal: Goal): Nutrie
   return { kcal, protein, fat, carbs, fibre };
 }
 
+/** Kilograms over which `taperNearGoal` eases the deficit or surplus off. */
+export const TAPER_KG = 3;
+
+/**
+ * How much of the goal's deficit or surplus still applies, 0–1.
+ *
+ * Linear over the last `TAPER_KG`: a full deficit until then, half of it 1.5 kg
+ * out, maintenance at the target — and maintenance past it, so a target that
+ * has been reached stops pushing further. Returns 1 when there is no target.
+ */
+export function taperFactor(goal: Goal, currentKg: number, targetKg: number | undefined): number {
+  if (goal === 'maintain' || !targetKg || targetKg <= 0) return 1;
+  const remaining = goal === 'lose' ? currentKg - targetKg : targetKg - currentKg;
+  if (remaining <= 0) return 0;
+  return Math.min(1, remaining / TAPER_KG);
+}
+
 export function computeTargets(p: {
   sex: Sex;
   birthYear: number;
@@ -84,27 +101,87 @@ export function computeTargets(p: {
   weightKg: number;
   goal: Goal;
   activity: ActivityLevel;
+  /** Measured maintenance calories; replaces the formula estimate when set. */
+  tdeeOverride?: number;
+  /** Set to taper the goal's adjustment off near this weight. */
+  taperToKg?: number;
 }): Nutrients {
   const age = Math.max(13, new Date().getFullYear() - p.birthYear);
-  const kcal = calorieTarget(tdee(bmr(p.sex, p.weightKg, p.heightCm, age), p.activity), p.goal, p.sex);
+  const maintenance =
+    p.tdeeOverride && p.tdeeOverride > 0
+      ? p.tdeeOverride
+      : tdee(bmr(p.sex, p.weightKg, p.heightCm, age), p.activity);
+  const full = calorieTarget(maintenance, p.goal, p.sex);
+  const factor = p.taperToKg ? taperFactor(p.goal, p.weightKg, p.taperToKg) : 1;
+  // Blend between maintenance and the goal's target, keeping the safety floor
+  // `calorieTarget` applied — a taper never takes the number below it.
+  const kcal = Math.round(maintenance + (full - maintenance) * factor);
   return macroTargets(kcal, p.weightKg, p.goal);
+}
+
+/** Targets for a profile at a given weight, honouring its adaptive and taper settings. */
+export function targetsFor(profile: Profile, weightKg: number): Nutrients {
+  return computeTargets({
+    sex: profile.sex,
+    birthYear: profile.birthYear,
+    heightCm: profile.heightCm,
+    weightKg,
+    goal: profile.goal,
+    activity: profile.activity,
+    tdeeOverride: profile.adaptiveTdee,
+    taperToKg: profile.taperNearGoal ? profile.targetWeightKg : undefined,
+  });
+}
+
+/* ------------------------------ meal shares ------------------------------- */
+
+function validShares(shares: Record<MealSlot, number> | undefined): shares is Record<MealSlot, number> {
+  if (!shares) return false;
+  let total = 0;
+  for (const slot of MEAL_SLOTS) {
+    const v = shares[slot];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return false;
+    total += v;
+  }
+  return Math.abs(total - 1) < 0.011;
+}
+
+/** The profile's per-slot split of the day's calories. Always sums to 1. */
+export function mealShares(profile: Profile | undefined): Record<MealSlot, number> {
+  const preset = profile?.mealPreset ?? 'standard';
+  if (preset === 'custom') {
+    return validShares(profile?.mealShares) ? profile!.mealShares! : MEAL_SLOT_SHARE;
+  }
+  return MEAL_PRESETS.find((p) => p.id === preset)?.shares ?? MEAL_SLOT_SHARE;
 }
 
 export function slotTarget(profile: Profile | undefined, slot: MealSlot): number {
   if (!profile) return 0;
-  return Math.round(profile.targets.kcal * MEAL_SLOT_SHARE[slot]);
+  return Math.round(profile.targets.kcal * mealShares(profile)[slot]);
+}
+
+/** Period shares implied by the meal split — the default for `periodShare`. */
+export function defaultPeriodShares(profile: Profile | undefined): Record<DayPeriod, number> {
+  const shares = mealShares(profile);
+  return DAY_PERIODS.reduce(
+    (acc, period) => {
+      acc[period] = DAY_PERIOD_SLOTS[period].reduce((sum, slot) => sum + shares[slot], 0);
+      return acc;
+    },
+    {} as Record<DayPeriod, number>,
+  );
 }
 
 /**
  * Fraction of the day a period is allotted. The profile's own split wins when
  * it is set; a share that is missing or not a usable number falls back to the
- * default rather than silently zeroing the period's targets.
+ * one the meal split implies rather than silently zeroing the period's targets.
  */
 export function periodShare(profile: Profile | undefined, period: DayPeriod): number {
   const override = profile?.periodShares?.[period];
   return typeof override === 'number' && Number.isFinite(override) && override >= 0
     ? override
-    : DAY_PERIOD_SHARE[period];
+    : defaultPeriodShares(profile)[period];
 }
 
 /** The day's macro targets scaled down to one period. */

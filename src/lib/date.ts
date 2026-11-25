@@ -16,7 +16,28 @@ export function fromISODate(iso: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-export const today = (): string => toISODate();
+/**
+ * Hour the diary day starts at (0–5). Set from Settings at startup and on
+ * change, and read by `today()` — so every screen, query and new log agrees on
+ * which day it is without each of them having to know about the setting.
+ */
+let dayStartHour = 0;
+
+export function setDayStartHour(hour: number | undefined): void {
+  const h = Math.round(Number(hour) || 0);
+  dayStartHour = Math.min(5, Math.max(0, h));
+}
+
+export function getDayStartHour(): number {
+  return dayStartHour;
+}
+
+/**
+ * The diary day it is right now. With a day start of 3, 1:30 am still reads as
+ * yesterday — the late snack belongs to the evening it was eaten in.
+ */
+export const today = (): string =>
+  toISODate(dayStartHour ? new Date(Date.now() - dayStartHour * 3_600_000) : new Date());
 
 export function addDays(iso: string, delta: number): string {
   const d = fromISODate(iso);

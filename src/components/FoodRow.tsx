@@ -1,6 +1,7 @@
 import { IconCheck, IconPlus } from './icons';
 import type { Food } from '@/types';
 import { scaleNutrients } from '@/lib/nutrition';
+import { useEnergy } from '@/lib/energy';
 
 /**
  * One row in the search / frequently-tracked list: name, default serving,
@@ -19,7 +20,8 @@ export function FoodRow({
   onOpen?: () => void;
 }) {
   const serving = food.servings[0] ?? { label: '100 g', grams: 100 };
-  const kcal = Math.round(scaleNutrients(food.per100g, serving.grams / 100).kcal);
+  const energy = useEnergy();
+  const kcal = scaleNutrients(food.per100g, serving.grams / 100).kcal;
 
   return (
     <div className="flex items-center gap-3 border-b border-[var(--surface-border)] py-3 last:border-0">
@@ -31,7 +33,7 @@ export function FoodRow({
         </p>
       </button>
 
-      <span className="tabular shrink-0 text-[13px] font-medium text-secondary">{kcal} Cal</span>
+      <span className="tabular shrink-0 text-[13px] font-medium text-secondary">{energy.num(kcal)} {energy.unit === 'kj' ? 'kJ' : 'Cal'}</span>
 
       <button
         type="button"

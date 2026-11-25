@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
 import { useDay, useHistory } from '@/stores/useDay';
-import { saveProfile, setWater } from '@/db/repo';
+import { getWater, saveProfile, setWater } from '@/db/repo';
+import { today } from '@/lib/date';
 import { RingProgress } from '@/components/RingProgress';
 import { TrendChart } from '@/components/TrendChart';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
@@ -17,6 +19,29 @@ export default function Water() {
   const glasses = day.glasses;
   const goal = day.waterGoal;
   const glassMl = day.water?.glassMl ?? 250;
+
+  // `?add=1` is the "Log a glass of water" home-screen shortcut: one tap on the
+  // app icon's menu adds a glass to today and shows the ring. The param is
+  // stripped straight away so a reload or Back does not add another.
+  const [params, setParams] = useSearchParams();
+  const showToast = useApp((s) => s.showToast);
+  const added = useRef(false);
+  useEffect(() => {
+    if (params.get('add') !== '1' || added.current || !profile) return;
+    added.current = true;
+    setParams({}, { replace: true });
+    void (async () => {
+      const date = today();
+      const goalGlasses = profile.waterGoalGlasses;
+      const current = await getWater(date, goalGlasses);
+      await setWater(date, { glasses: current.glasses + 1 }, goalGlasses);
+      showToast({
+        message: `Glass added · ${current.glasses + 1} today`,
+        actionLabel: 'Undo',
+        onAction: () => setWater(date, { glasses: current.glasses }, goalGlasses),
+      });
+    })();
+  }, [params, setParams, profile, showToast]);
 
   const change = (delta: number) =>
     setWater(selectedDate, { glasses: Math.max(0, glasses + delta) }, goal);

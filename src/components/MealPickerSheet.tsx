@@ -5,6 +5,7 @@ import { BottomSheet } from './BottomSheet';
 import { IconChevronRight, IconPlus } from './icons';
 import { MEAL_SLOTS, MEAL_SLOT_LABEL, type MealSlot } from '@/types';
 import { mealNutrients, slotTarget } from '@/lib/nutrition';
+import { useEnergy } from '@/lib/energy';
 
 const DEFAULT_TITLE: Record<'track' | 'move', string> = {
   track: 'Select a Meal You Would Like to Track',
@@ -42,6 +43,7 @@ export function MealPickerSheet({
   currentSlot?: MealSlot;
 }) {
   const profile = useApp((s) => s.profile);
+  const energy = useEnergy();
   const meals = useLiveQuery(
     async () => (open ? db.meals.where('date').equals(date).toArray() : []),
     [date, open],
@@ -65,7 +67,7 @@ export function MealPickerSheet({
               >
                 <span className="flex-1 text-[15px] font-semibold">{MEAL_SLOT_LABEL[slot]}</span>
                 <span className="tabular text-[13px] text-secondary">
-                  {eaten}/{target} Cal
+                  {energy.num(eaten)}/{energy.num(target)} {energy.unit === 'kj' ? 'kJ' : 'Cal'}
                 </span>
                 {isCurrent ? (
                   <span className="text-[12px] font-semibold text-muted">Current</span>

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/stores/useApp';
 import { useWeightHistory } from '@/stores/useDay';
 import { saveProfile, setWeight } from '@/db/repo';
 import { displayToKg, kgToDisplay, weightUnit } from '@/lib/nutrition';
 import { relativeDayLabel } from '@/lib/date';
 import { TrendChart } from '@/components/TrendChart';
+import { trendRatePerWeek, weightTrend } from '@/lib/weightTrend';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
 import { IconScale } from '@/components/icons';
 
@@ -23,6 +24,12 @@ export default function Weight() {
     target ? String(Math.round(kgToDisplay(target, units) * 10) / 10) : '',
   );
   const [editingTarget, setEditingTarget] = useState(false);
+
+  // The smoothed trend, not the last reading, is what "to go" and the rate
+  // follow — a salty dinner is not a kilo of progress lost.
+  const trend = useMemo(() => weightTrend(history ?? []), [history]);
+  const trendKg = trend.length ? trend[trend.length - 1].trend : undefined;
+  const rate = useMemo(() => trendRatePerWeek(trend), [trend]);
 
   const changeKg = latest ? latest.kg - start : 0;
 
@@ -67,9 +74,18 @@ export default function Weight() {
                   } since you started`}
             </p>
           )}
+          {trendKg !== undefined && trend.length > 1 && (
+            <p className="tabular mt-1 text-[12.5px] text-secondary">
+              Trend {kgToDisplay(trendKg, units).toFixed(1)} {unit}
+              {rate !== undefined &&
+                Math.abs(rate) >= 0.05 &&
+                ` · ${rate < 0 ? '▼' : '▲'} ${Math.abs(kgToDisplay(rate, units)).toFixed(2)} ${unit}/week`}
+              {rate !== undefined && Math.abs(rate) < 0.05 && ' · holding steady'}
+            </p>
+          )}
           {target && latest && (
             <p className="tabular mt-1 text-[12.5px] text-secondary">
-              {Math.abs(kgToDisplay(latest.kg - target, units)).toFixed(1)} {unit} to go
+              {Math.abs(kgToDisplay((trendKg ?? latest.kg) - target, units)).toFixed(1)} {unit} to go
             </p>
           )}
         </Card>
@@ -123,7 +139,9 @@ export default function Weight() {
           ) : (
             <p className="text-[13px] text-secondary">
               {target
-                ? `${kgToDisplay(target, units).toFixed(1)} ${unit}. Your calorie target follows your current weight automatically.`
+                ? `${kgToDisplay(target, units).toFixed(1)} ${unit}. Your calorie target follows your current weight automatically${
+                    profile?.taperNearGoal ? ', and eases to maintenance over the last 3 kg' : ''
+                  }.`
                 : 'No target set. Setting one shows progress on the home screen.'}
             </p>
           )}
@@ -131,12 +149,13 @@ export default function Weight() {
 
         <Card>
           <SectionTitle>Trend</SectionTitle>
-          {history && history.length > 1 ? (
+          {trend.length > 1 ? (
             <TrendChart
-              data={history.map((w) => ({
+              data={trend.map((w) => ({
                 date: w.date,
                 value: Math.round(kgToDisplay(w.kg, units) * 10) / 10,
               }))}
+              trend={trend.map((w) => kgToDisplay(w.trend, units))}
               color="var(--color-ring-weight)"
               kind="area"
               goal={target ? Math.round(kgToDisplay(target, units) * 10) / 10 : undefined}
@@ -154,7 +173,8 @@ export default function Weight() {
           <IconScale width={14} height={14} className="mt-0.5 shrink-0" />
           <p>
             Weigh yourself at the same time of day, ideally first thing. Day-to-day swings of a
-            kilo are water, not fat — the trend line is what matters.
+            kilo are water, not fat — the trend line is what matters. It is a 10% moving
+            average (The Hacker&apos;s Diet method), so one heavy morning barely moves it.
           </p>
         </div>
       </div>

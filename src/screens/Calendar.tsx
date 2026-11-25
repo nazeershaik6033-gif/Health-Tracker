@@ -33,9 +33,10 @@ import {
   totalNutrients,
 } from '@/lib/nutrition';
 import { RingProgress } from '@/components/RingProgress';
-import { useDay } from '@/stores/useDay';
+import { eatBackFraction, useDay } from '@/stores/useDay';
+import { useEnergy } from '@/lib/energy';
 import { DayTotals } from '@/components/DayTotals';
-import { MICRO_IDS, microRows } from '@/lib/micros';
+import { microRows } from '@/lib/micros';
 import type { MacroKey } from '@/lib/macroBreakdown';
 import { PortionSheet } from '@/components/PortionSheet';
 import { MealPickerSheet } from '@/components/MealPickerSheet';
@@ -74,6 +75,8 @@ export default function CalendarScreen() {
   const { profile, settings, selectedDate, setSelectedDate, showToast, showConfirm } =
     useApp();
   const countStepKcal = settings.countStepKcal !== false;
+  const eatBackPct = settings.eatBackPct;
+  const energy = useEnergy();
 
   const [cursor, setCursor] = useState(() => {
     const d = fromISODate(selectedDate);
@@ -126,7 +129,7 @@ export default function CalendarScreen() {
   // Scrolling back to a day should answer "how did this day go" completely,
   // and half that answer is which vitamins and minerals it actually delivered.
   const day = useDay(selectedDate);
-  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+  const microsOnTrack = microRows(day.micros, day.microTargets, day.hiddenMicros).filter(
     (r) => r.status === 'good',
   ).length;
 
@@ -348,7 +351,7 @@ export default function CalendarScreen() {
             {relativeDayLabel(selectedDate)}
           </h2>
           <span className="tabular text-[13px] font-semibold text-secondary">
-            {Math.round(dayTotals.kcal)} / {kcalTarget} Cal
+            {energy.num(dayTotals.kcal)} / {energy.fmt(kcalTarget)}
           </span>
         </div>
 
@@ -360,11 +363,12 @@ export default function CalendarScreen() {
               totals={dayTotals}
               targets={targets}
               burned={dayBurned}
+              credited={Math.round(dayBurned * eatBackFraction(eatBackPct))}
               compact
               macroHref={macroLink}
               micros={{
                 onTrack: microsOnTrack,
-                total: MICRO_IDS.length,
+                total: day.microCount,
                 href: `/micros?date=${selectedDate}`,
               }}
             />
@@ -630,7 +634,7 @@ export default function CalendarScreen() {
           initialQty={editing.item.qty}
           initialServingLabel={editing.item.servingLabel}
           initialGrams={editing.item.grams}
-          confirmLabel={(kcal) => `Save ${kcal} Cal`}
+          confirmLabel={(energy) => `Save ${energy}`}
           onEditFood={
             editing.food ? () => navigate(`/food/${editing.food!.id}/edit`) : undefined
           }

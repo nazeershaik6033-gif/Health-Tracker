@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/stores/useApp';
-import { hasKey } from '@/ai/registry';
+import { aiVisible, hasKey } from '@/ai/registry';
 import { PageHeader } from '@/components/ui';
 import {
   IconBarcode,
+  IconBolt,
   IconCamera,
   IconChevronRight,
   IconDumbbell,
@@ -23,8 +24,9 @@ export default function LogSheet() {
   const navigate = useNavigate();
   const settings = useApp((s) => s.settings);
   const keyed = hasKey(settings);
+  const showAi = aiVisible(settings);
 
-  const options = [
+  const allOptions = [
     {
       to: '/snap',
       icon: <IconCamera width={21} height={21} />,
@@ -58,6 +60,16 @@ export default function LogSheet() {
       tint: 'tint-soft tint-purple',
     },
     {
+      // For the meal you already know the number for — a restaurant bill, a
+      // label read elsewhere — where searching would be pure friction.
+      to: '/quick',
+      icon: <IconBolt width={21} height={21} />,
+      title: 'Quick add',
+      body: 'Just a name and the calories, macros optional',
+      ai: false,
+      tint: 'tint-soft tint-brand',
+    },
+    {
       to: '/search',
       icon: <IconSearch width={21} height={21} />,
       title: 'Search foods',
@@ -87,6 +99,9 @@ export default function LogSheet() {
       tint: 'surface-sunken text-secondary',
     },
   ];
+  // Hidden outright rather than shown as blocked: someone who switched AI off
+  // asked not to be offered it.
+  const options = showAi ? allOptions : allOptions.filter((o) => !o.ai);
 
   return (
     <div className="min-h-dvh">

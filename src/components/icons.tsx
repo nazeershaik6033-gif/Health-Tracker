@@ -214,6 +214,27 @@ export const IconTrash = (p: P) => (
 );
 
 /** Two arrows swapping — "move this to another meal". */
+export const IconCopy = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="8.5" y="8.5" width="12" height="12" rx="2.5" />
+    <path d="M15.5 8.5V6a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5" />
+  </svg>
+);
+
+export const IconBolt = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M13 2.5 4.5 13.5H12l-1 8 8.5-11H12l1-8Z" />
+  </svg>
+);
+
+export const IconBook = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z" />
+    <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" />
+    <path d="M8.5 7.5h7M8.5 11h5" />
+  </svg>
+);
+
 export const IconMove = (p: P) => (
   <svg {...base(p)}>
     <path d="M4 8.5h13.5" />

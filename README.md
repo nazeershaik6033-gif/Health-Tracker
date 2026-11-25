@@ -193,6 +193,56 @@ while there are still meals left to fix it, rather than only at midnight. The
 split defaults to 37.5 / 37.5 / 25 — the member slots' calorie shares — and is
 editable under Settings → Meal period split.
 
+**Calories per meal** — the day's calories are shared across meals by a preset:
+Standard (three meals and two snacks), Three meals, Two meals, One meal or Five
+small, or a custom split that has to add up to 100%. Every meal's target on the
+Diet screen follows it, and so does the period split above unless you set that
+yourself.
+
+**Quick add** — a name and the energy, macros optional, straight into a meal.
+For the number you already know: a restaurant menu, last night's leftovers.
+Nothing is saved as a food, and it carries no micronutrients, so it lowers the
+day's micro coverage rather than counting as zero.
+
+**Copy and repeat** — copy a whole meal, or one item from its edit sheet, to
+any day and meal. An empty meal offers "Repeat yesterday's breakfast" in one
+tap when yesterday had one. Copies are new entries with their own undo.
+
+**Weight trend** — weigh-ins are smoothed with a 10%-per-day exponential moving
+average (The Hacker's Diet), adjusted for gaps between weigh-ins. The Weight
+screen shows the trend weight, the weekly rate and the trend line over the raw
+readings, and "to go" counts from the trend rather than from one salty morning.
+
+**Adaptive target** — Settings → Adaptive target measures your actual
+maintenance calories from the last four weeks: average net intake, corrected
+by the weight trend at 7,700 kcal per kg. It needs 14 fully logged days and four
+weigh-ins spread over two weeks, says what is missing until then, and flags a
+figure far from the formula rather than applying it. Apply it by hand, or let
+it re-measure weekly. **Ease off near goal weight** shrinks the deficit or
+surplus over the last 3 kg so you land on maintenance.
+
+**Eat back exercise calories** — how much of what you burn (workouts, and steps
+if they count) goes back into the day's budget: 0, 25, 50, 75 or 100%. The
+burn is always shown; the setting only changes how much of it is credited.
+
+**kcal or kJ** — one display setting. Everything is stored in kcal, so
+switching never changes a logged number; CSV exports always use kcal.
+
+**Day starts at** — midnight by default, or up to 5 am, so a 1 am snack belongs
+to the evening it was eaten in.
+
+**Nutrient goals** — Settings → Nutrient goals replaces any micronutrient's
+reference intake with your own figure, and hides the ones you don't track from
+the Micronutrients screen and the on-track counts (they are still recorded).
+
+**Show AI features** — switch it off and Snap, Voice and the coach disappear,
+and nothing is sent to a model even with a key saved (`getAdapter` refuses).
+Home swaps Snap and Voice for Quick add and Label.
+
+**Sources & references** — Settings → Sources & references lists the studies
+and tables behind every number: Mifflin-St Jeor, ICMR-NIN 2020, WHO, IFCT 2017,
+USDA FoodData Central, the Compendium of Physical Activities and the rest.
+
 ---
 
 ## Bring your own AI key
@@ -481,9 +531,27 @@ node scripts/gen-icons.mjs
 - API keys are stored locally and sent only to your chosen provider
 - Exports never include your API key or FatSecret credentials
 - Clearing site data erases everything — **export first** (Settings → Backup)
+- The app asks the browser for **persistent storage** on launch, so it is not
+  evicted under storage pressure. Chrome and Safari decide silently (an
+  installed app is usually granted it), Firefox asks once. Settings → Storage
+  on this device shows whether it was granted and how much space is used
 
 Photos in an export are base64-encoded and make the file much larger, so
 export-with-photos is a separate button.
+
+**Export CSV** produces two spreadsheet files — a food log with one row per
+item (macros plus every micronutrient, blank where unknown) and a daily summary
+of intake, burn, water, sleep, steps and weight. CSV is one-way; restoring uses
+the JSON backup.
+
+### Home-screen shortcuts and badge
+
+Long-press the installed app's icon for **Quick add**, **Log a glass of water**
+(adds one glass to today and offers Undo), **Scan barcode**, **Snap a meal** and
+**Ask Ria**. Where the browser supports the Badging API, the icon shows how
+many of breakfast, lunch and dinner are still unlogged once their time has
+passed. A web app cannot run in the background, so the badge updates while the
+app is open; it can be switched off under Settings → Storage on this device.
 
 Because a downloaded JSON file is easy to lose on a phone, export hands the
 file to the OS share sheet where one exists (Drive, Files, a chat) and falls

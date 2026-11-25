@@ -2,7 +2,8 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { scaleNutrients } from "@/lib/nutrition";
 import { BottomSheet } from "./BottomSheet";
 import { Button, Field } from "./ui";
-import { IconMove, IconStar, IconTrash } from "./icons";
+import { IconCopy, IconMove, IconStar, IconTrash } from "./icons";
+import { useEnergy } from "@/lib/energy";
 import type { Food, Serving } from "@/types";
 
 /**
@@ -32,7 +33,8 @@ export interface PortionSheetProps {
    * of quietly substituting another one.
    */
   initialGrams?: number;
-  confirmLabel?: (kcal: number) => string;
+  /** Receives the portion's energy already formatted in the user's unit, e.g. "320 kcal". */
+  confirmLabel?: (energy: string) => string;
   onClose: () => void;
   /** `grams` is set only when the user typed an exact weight. */
   onConfirm: (qty: number, servingLabel: string, grams?: number) => void;
@@ -57,6 +59,8 @@ export interface PortionSheetProps {
    * meaningful for something already logged, so it is absent while adding.
    */
   onMove?: () => void;
+  /** Offers "Copy" — log this item again on another day or meal. */
+  onCopy?: () => void;
 }
 
 /** A label this sheet itself writes for a weight-mode entry, e.g. "225 g". */
@@ -86,6 +90,7 @@ export function PortionSheet({
   favouriteSlotLabel,
   favourited = false,
   onMove,
+  onCopy,
 }: PortionSheetProps) {
   // The serving that was logged is not always one the food still lists — an AI
   // portion, a weight typed by hand, a food edited since. Without this the
@@ -133,6 +138,7 @@ export function PortionSheet({
   const grams = mode === "grams" ? typedGrams : serving.grams * quantity;
   const n = scaleNutrients(per100g, grams / 100);
   const kcal = Math.round(n.kcal);
+  const energy = useEnergy();
 
   const canConfirm = grams > 0;
   const confirm = () => {
@@ -197,16 +203,26 @@ export function PortionSheet({
             </Button>
           )}
           <Button size="lg" full disabled={!canConfirm} onClick={confirm}>
-            {confirmLabel ? confirmLabel(kcal) : `Add ${kcal} Cal`}
+            {confirmLabel ? confirmLabel(energy.fmt(kcal)) : `Add ${energy.fmt(kcal)}`}
           </Button>
         </div>
       }
     >
       <div className="space-y-4 pb-2">
-        {(brand || onMove || onEditFood) && (
+        {(brand || onMove || onCopy || onEditFood) && (
           <div className="flex items-center gap-3">
             {brand && <p className="min-w-0 truncate text-[13px] text-secondary">{brand}</p>}
             <div className="ml-auto flex shrink-0 items-center gap-3">
+              {onCopy && (
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  className="flex items-center gap-1 text-[12.5px] font-semibold text-brand-600"
+                >
+                  <IconCopy width={14} height={14} />
+                  Copy
+                </button>
+              )}
               {onMove && (
                 <button
                   type="button"
@@ -348,7 +364,7 @@ export function PortionSheet({
         )}
 
         <div className="surface-sunken grid grid-cols-5 gap-1 rounded-xl p-3 text-center">
-          <Stat label="Cal" value={kcal} />
+          <Stat label={energy.unit === 'kj' ? 'kJ' : 'Cal'} value={Math.round(energy.value(kcal))} />
           <Stat label="Protein" value={`${Math.round(n.protein)}g`} />
           <Stat label="Fat" value={`${Math.round(n.fat)}g`} />
           <Stat label="Carbs" value={`${Math.round(n.carbs)}g`} />

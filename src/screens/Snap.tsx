@@ -685,7 +685,7 @@ export default function Snap() {
           ]}
           initialQty={analysis.items[editIndex].qty}
           initialServingLabel={analysis.items[editIndex].servingLabel}
-          confirmLabel={(kcal) => `Set to ${kcal} Cal`}
+          confirmLabel={(energy) => `Set to ${energy}`}
           onClose={() => setEditIndex(null)}
           onConfirm={(qty, label, grams) => {
             const current = analysis.items[editIndex];

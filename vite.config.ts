@@ -112,9 +112,14 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
+        // Long-press menu on the app icon. Android shows the first four, so
+        // the no-AI, no-camera logs lead: they are the ones used several
+        // times a day, and the ones that work with no key and no network.
         shortcuts: [
-          { name: 'Snap a meal', url: 'snap', description: 'Track calories from a photo' },
+          { name: 'Quick add', url: 'quick', description: 'Log calories you already know' },
+          { name: 'Log a glass of water', short_name: '+1 water', url: 'trackers/water?add=1', description: 'Add one glass to today' },
           { name: 'Scan barcode', url: 'scan', description: 'Scan a packaged food' },
+          { name: 'Snap a meal', url: 'snap', description: 'Track calories from a photo' },
           { name: 'Ask Ria', url: 'coach', description: 'Chat with your AI coach' },
         ],
         // Share-to-track: the web-native stand-in for gallery auto-detect.

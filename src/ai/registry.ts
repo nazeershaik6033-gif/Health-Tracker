@@ -6,7 +6,21 @@ import { createGemini } from './gemini';
 import { createOpenRouter } from './openrouter';
 
 /** Whether the user has configured a usable key for the selected provider. */
+/**
+ * Whether AI features are shown at all. Settings → Show AI features turns them
+ * off for anyone who wants the app fully offline and model-free.
+ */
+export function aiVisible(settings: Settings): boolean {
+  return settings.showAi !== false;
+}
+
+/**
+ * Whether a usable key is configured. False while AI features are hidden, even
+ * with a key saved — every AI call site checks this first, so hiding the
+ * features also guarantees nothing is sent to a model.
+ */
 export function hasKey(settings: Settings, provider?: ProviderId): boolean {
+  if (!aiVisible(settings)) return false;
   const id = provider ?? settings.provider;
   return Boolean(settings.apiKeys[id]?.trim());
 }
@@ -23,6 +37,9 @@ export function modelFor(settings: Settings, provider?: ProviderId): string {
  */
 export function getAdapter(settings: Settings): ProviderAdapter {
   const id = settings.provider;
+  // The backstop for Settings → Show AI features: even a call site that forgot
+  // to check `hasKey` cannot reach a model while AI is switched off.
+  if (!aiVisible(settings)) throw new AIError('AI features are turned off in Settings', 'no-key');
   const key = settings.apiKeys[id]?.trim() ?? '';
   if (!key) throw new AIError(`No ${PROVIDER_META[id].label} key set`, 'no-key');
 

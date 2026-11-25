@@ -9,14 +9,26 @@ import {
   shareBundle,
   type BundlePreview,
 } from '@/db/export';
-import { PROVIDER_META, hasKey, modelFor, testKey } from '@/ai/registry';
+import { PROVIDER_META, modelFor, testKey } from '@/ai/registry';
 import { keyShapeWarning } from '@/ai/types';
 import { clearFatSecretToken, fatSecretReady, testFatSecret } from '@/lib/fatsecret';
 import { buildLabel, checkForUpdate, describeStage, forceReload } from '@/lib/appUpdate';
-import { computeTargets, macroTargets, periodShare } from '@/lib/nutrition';
+import { macroTargets, periodShare } from '@/lib/nutrition';
 import { formatBytes } from '@/lib/image';
 import { describeLastBackup } from '@/lib/backup';
 import { BottomSheet } from '@/components/BottomSheet';
+import {
+  AdaptiveCard,
+  AiVisibilityCard,
+  CsvExportButton,
+  DayStartCard,
+  EatBackCard,
+  EnergyUnitCard,
+  MealSplitCard,
+  NutrientGoalsLink,
+  SourcesLink,
+  StorageCard,
+} from './SettingsExtras';
 import { Button, Card, Field, PageHeader, SectionTitle } from '@/components/ui';
 import {
   IconCheck,
@@ -275,15 +287,9 @@ export default function Settings() {
 
   async function recalcTargets() {
     if (!profile) return;
-    const targets = computeTargets({
-      sex: profile.sex,
-      birthYear: profile.birthYear,
-      heightCm: profile.heightCm,
-      weightKg: profile.startWeightKg,
-      goal: profile.goal,
-      activity: profile.activity,
-    });
-    await saveProfile({ targets, targetsManual: false });
+    // saveProfile recomputes from the latest weigh-in, honouring the adaptive
+    // and taper settings — the same path a new weigh-in takes.
+    const { targets } = await saveProfile({ targetsManual: false });
     await refreshProfile();
     setTargetDraft({
       kcal: String(targets.kcal),
@@ -369,7 +375,7 @@ export default function Settings() {
                 }`}
               >
                 {id === 'anthropic' ? 'Claude' : id === 'gemini' ? 'Gemini' : 'OpenRouter'}
-                {hasKey(settings, id) && <span className="ml-1 text-brand-500">•</span>}
+                {Boolean(settings.apiKeys[id]?.trim()) && <span className="ml-1 text-brand-500">•</span>}
               </button>
             ))}
           </div>
@@ -514,6 +520,8 @@ export default function Settings() {
           </div>
         </Card>
 
+        <AiVisibilityCard />
+
         {/* ------------------------- Food database ---------------------- */}
         <FatSecretCard />
 
@@ -594,6 +602,10 @@ export default function Settings() {
           )}
         </Card>
 
+        <AdaptiveCard />
+
+        <EatBackCard />
+
         {/* ------------------------ Calories burned --------------------- */}
         <Card className="space-y-3">
           <SectionTitle
@@ -628,6 +640,8 @@ export default function Settings() {
             from the steps that same walk produced, and would count it twice.
           </p>
         </Card>
+
+        <MealSplitCard />
 
         {/* ----------------------- Meal period split --------------------- */}
         <Card className="space-y-3">
@@ -694,6 +708,12 @@ export default function Settings() {
             </>
           )}
         </Card>
+
+        <NutrientGoalsLink />
+
+        <EnergyUnitCard />
+
+        <DayStartCard />
 
         {/* -------------------------- Appearance ------------------------ */}
         <Card className="space-y-3">
@@ -890,6 +910,7 @@ export default function Settings() {
               <IconUpload width={15} height={15} />
               Import
             </Button>
+            <CsvExportButton disabled={busy !== null} />
           </div>
           <input
             ref={fileRef}
@@ -906,7 +927,8 @@ export default function Settings() {
           <p className="text-[12px] text-secondary">{describeLastBackup(settings.lastBackupAt)}</p>
 
           <p className="text-[11.5px] text-muted">
-            Exports never include your API key. Photos make the file much larger — a few hundred
+            CSV is for spreadsheets — a food log and a daily summary — and cannot be imported
+            back; use Export data for a backup. Exports never include your API key. Photos make the file much larger — a few hundred
             snaps can run to tens of megabytes.
           </p>
           {message && <p className="text-[12.5px] text-brand-700">{message}</p>}
@@ -957,6 +979,8 @@ export default function Settings() {
           )}
         </BottomSheet>
 
+        <StorageCard />
+
         {/* --------------------------- Profile -------------------------- */}
         <Card>
           <SectionTitle>Profile</SectionTitle>
@@ -968,6 +992,8 @@ export default function Settings() {
             Edit your details and goal →
           </button>
         </Card>
+
+        <SourcesLink />
 
         {/* --------------------------- Version -------------------------- */}
         <Card className="space-y-2.5">

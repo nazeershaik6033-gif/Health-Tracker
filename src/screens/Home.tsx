@@ -13,6 +13,7 @@ import { ProgressBar } from '@/components/ui';
 import { CountUp } from '@/components/CountUp';
 import {
   IconBarcode,
+  IconBolt,
   IconCamera,
   IconChat,
   IconChevronRight,
@@ -34,8 +35,10 @@ import {
 } from '@/components/icons';
 import { addDays, formatDuration, isToday, rangeDays, relativeDayLabel } from '@/lib/date';
 import { backupOverdue, describeLastBackup } from '@/lib/backup';
+import { useEnergy } from '@/lib/energy';
+import { aiVisible } from '@/ai/registry';
 import { bmr, kgToDisplay, tdee, weightUnit } from '@/lib/nutrition';
-import { MICRO_IDS, microRows } from '@/lib/micros';
+import { microRows } from '@/lib/micros';
 import {
   age,
   bmi,
@@ -56,6 +59,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { profile, settings, selectedDate, setPendingSlot, showToast } = useApp();
   const day = useDay();
+  const showAi = aiVisible(settings);
   const streak = useStreak();
   const week = useHistory(7, selectedDate);
   const weights = useWeightHistory(90);
@@ -74,7 +78,7 @@ export default function Home() {
   const units = profile?.units ?? 'metric';
   // Macros answer "how much"; this answers "of what". Summarised to one line
   // here — the full breakdown lives on its own screen.
-  const microsOnTrack = microRows(day.micros, day.microTargets).filter(
+  const microsOnTrack = microRows(day.micros, day.microTargets, day.hiddenMicros).filter(
     (r) => r.status === 'good',
   ).length;
   const workoutGoal = profile?.workoutKcalGoal || 300;
@@ -152,6 +156,7 @@ export default function Home() {
             target={day.targets.kcal}
             // Workouts plus steps, so moving changes the number people look at most.
             burned={day.burnedKcal}
+            credited={day.creditedKcal}
             totals={day.totals}
             targets={day.targets}
             dateLabel={relativeDayLabel(selectedDate)}
@@ -160,9 +165,19 @@ export default function Home() {
 
         {/* ------------------------- Quick log ------------------------- */}
         <div style={next()} className="grid grid-cols-4 gap-2.5">
-          <QuickAction to="/snap" label="Snap" tint="tint-warm" icon={<IconCamera width={21} height={21} />} />
+          {/* With AI hidden, Snap and Voice give way to the two fastest
+              no-AI logs rather than leaving dead tiles behind. */}
+          {showAi ? (
+            <QuickAction to="/snap" label="Snap" tint="tint-warm" icon={<IconCamera width={21} height={21} />} />
+          ) : (
+            <QuickAction to="/quick" label="Quick add" tint="tint-warm" icon={<IconBolt width={21} height={21} />} />
+          )}
           <QuickAction to="/scan" label="Barcode" tint="tint-blue" icon={<IconBarcode width={21} height={21} />} />
-          <QuickAction to="/voice" label="Voice" tint="tint-purple" icon={<IconMic width={21} height={21} />} />
+          {showAi ? (
+            <QuickAction to="/voice" label="Voice" tint="tint-purple" icon={<IconMic width={21} height={21} />} />
+          ) : (
+            <QuickAction to="/label" label="Label" tint="tint-purple" icon={<IconGallery width={21} height={21} />} />
+          )}
           <QuickAction
             onClick={() => setPickerOpen(true)}
             label="Search"
@@ -183,8 +198,8 @@ export default function Home() {
             <span className="block text-[14px] font-semibold">Micronutrients</span>
             <span className="block truncate text-[12px] text-secondary">
               {day.meals.length === 0
-                ? `${MICRO_IDS.length} micronutrients to hit today`
-                : `${microsOnTrack} of ${MICRO_IDS.length} on track${
+                ? `${day.microCount} micronutrients to hit today`
+                : `${microsOnTrack} of ${day.microCount} on track${
                     day.microCoverage < 0.95
                       ? ` · ${Math.round(day.microCoverage * 100)}% of the day counted`
                       : ''
@@ -307,7 +322,8 @@ export default function Home() {
         )}
 
         {/* ------------------------ AI coach / plan --------------------- */}
-        <div style={next()} className="grid grid-cols-2 gap-3 pt-1">
+        <div style={next()} className={`grid gap-3 pt-1 ${showAi ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {showAi && (
           <Link to="/coach" className="surface-card flex flex-col gap-3 p-4">
             <span className="tint-brand flex h-10 w-10 items-center justify-center rounded-2xl">
               <IconChat width={19} height={19} />
@@ -319,6 +335,7 @@ export default function Home() {
               </span>
             </span>
           </Link>
+          )}
           <Link to="/plans" className="surface-card flex flex-col gap-3 p-4">
             <span className="tint-warm flex h-10 w-10 items-center justify-center rounded-2xl">
               <IconPlans width={19} height={19} />
@@ -384,6 +401,7 @@ function EnergyHero({
   eaten,
   target,
   burned,
+  credited,
   totals,
   targets,
   dateLabel,
@@ -391,6 +409,8 @@ function EnergyHero({
   eaten: number;
   target: number;
   burned: number;
+  /** The part of `burned` added back to the budget (Settings → eat back). */
+  credited: number;
   totals: { protein: number; carbs: number; fat: number; fibre: number };
   targets: { protein: number; carbs: number; fat: number; fibre: number };
   dateLabel: string;
@@ -398,7 +418,8 @@ function EnergyHero({
   const animate = useAnimateChanges();
   // Net of what was burned, so the ring unwinds when you train or walk —
   // the same reading the Diet screen gives.
-  const net = eaten - burned;
+  const energy = useEnergy();
+  const net = eaten - credited;
   const left = Math.round(target - net);
   const over = left < 0;
   const macros = [
@@ -432,24 +453,28 @@ function EnergyHero({
           stroke={11}
           color="#ff8a3d"
           trackColor="rgb(255 255 255 / 0.1)"
-          label={`${Math.round(net)} net of ${target} calories: ${Math.round(eaten)} eaten, ${Math.round(burned)} burned`}
+          label={`${energy.num(net)} net of ${energy.fmt(target)}: ${energy.num(eaten)} eaten, ${energy.num(burned)} burned`}
         >
           <div className="text-center">
             <CountUp
-              value={Math.abs(left)}
+              value={energy.value(Math.abs(left))}
               format={(n) => Math.round(n).toLocaleString()}
               className="block text-[30px] leading-none font-bold tracking-tight"
             />
             <span className="mt-1 block text-[11px] font-semibold text-white/65">
-              {over ? 'kcal over' : 'kcal left'}
+              {energy.label} {over ? 'over' : 'left'}
             </span>
           </div>
         </RingProgress>
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <HeroStat label="Eaten" value={eaten} dot="#ff8a3d" />
-          <HeroStat label="Burned" value={burned} dot="#f472b6" />
-          <HeroStat label="Target" value={target} dot="rgb(255 255 255 / 0.5)" />
+          <HeroStat label="Eaten" value={energy.value(eaten)} dot="#ff8a3d" />
+          <HeroStat
+            label={credited !== burned && burned > 0 ? `Burned · ${energy.num(credited)} counted` : 'Burned'}
+            value={energy.value(burned)}
+            dot="#f472b6"
+          />
+          <HeroStat label="Target" value={energy.value(target)} dot="rgb(255 255 255 / 0.5)" />
         </div>
       </div>
 

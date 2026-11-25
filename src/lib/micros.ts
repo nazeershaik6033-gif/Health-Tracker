@@ -366,7 +366,23 @@ export function microTargets(sex: Sex, age: number): Record<MicroId, number> {
 export function targetsForProfile(profile: Profile | undefined): Record<MicroId, number> {
   if (!profile) return microTargets('other', 30);
   const age = Math.max(13, new Date().getFullYear() - profile.birthYear);
-  return microTargets(profile.sex, age);
+  const base = microTargets(profile.sex, age);
+  // Goals set by hand (Settings → Nutrient goals) win over the reference
+  // intake; anything left blank keeps following age and sex.
+  const own = profile.microGoals;
+  if (!own) return base;
+  const out = { ...base };
+  for (const id of MICRO_IDS) {
+    const v = own[id];
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[id] = v;
+  }
+  return out;
+}
+
+/** The reference intake alone, ignoring any goal set by hand. */
+export function referenceTargets(profile: Profile | undefined): Record<MicroId, number> {
+  if (!profile) return microTargets('other', 30);
+  return microTargets(profile.sex, Math.max(13, new Date().getFullYear() - profile.birthYear));
 }
 
 /* ---------------------------------- maths --------------------------------- */
@@ -504,8 +520,14 @@ export interface MicroRow {
   status: MicroStatus;
 }
 
-export function microRows(totals: Micros, targets: Record<MicroId, number>): MicroRow[] {
-  return MICROS.map((def) => {
+export function microRows(
+  totals: Micros,
+  targets: Record<MicroId, number>,
+  /** Nutrients switched off in Settings → Nutrient goals. */
+  hidden?: readonly MicroId[],
+): MicroRow[] {
+  const defs = hidden?.length ? MICROS.filter((d) => !hidden.includes(d.id)) : MICROS;
+  return defs.map((def) => {
     const value = totals[def.id] ?? 0;
     const target = targets[def.id];
     return { def, value, target, pct: microPct(value, target), status: microStatus(def.id, value, target) };

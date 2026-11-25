@@ -3,7 +3,7 @@ import { db, uid } from './schema';
 import { seedFoods } from '@/data/foods.seed';
 import { seedExercises } from '@/data/exercises.seed';
 import { today, toISODate } from '@/lib/date';
-import { computeTargets, portionMicros } from '@/lib/nutrition';
+import { portionMicros, targetsFor } from '@/lib/nutrition';
 import { hasMicros } from '@/lib/micros';
 import { DEFAULT_FATSECRET } from '@/types';
 import type {
@@ -258,14 +258,7 @@ export async function saveProfile(patch: Partial<Profile>): Promise<Profile> {
   // Recompute targets whenever an input changes, unless the user pinned them.
   if (!next.targetsManual) {
     const latest = await getLatestWeight();
-    next.targets = computeTargets({
-      sex: next.sex,
-      birthYear: next.birthYear,
-      heightCm: next.heightCm,
-      weightKg: latest?.kg ?? next.startWeightKg,
-      goal: next.goal,
-      activity: next.activity,
-    });
+    next.targets = targetsFor(next, latest?.kg ?? next.startWeightKg);
   }
 
   await db.profile.put(next);
@@ -348,6 +341,39 @@ export async function addMealItems(
   await db.meals.put(meal);
   await markFoodsUsed(items.map((i) => i.foodId).filter((x): x is string => Boolean(x)));
   return meal;
+}
+
+/**
+ * Copies logged items onto another day and slot — "same breakfast as
+ * yesterday", or one item into tomorrow's lunch.
+ *
+ * Copies are fresh logs, not links: the macros are frozen as they were, and the
+ * AI score and note are dropped because they described the original meal as a
+ * whole, not this new one. Returns the meal they landed in plus where, so the
+ * copy can be undone exactly.
+ */
+export async function copyMealItems(
+  items: MealItem[],
+  date: string,
+  slot: MealSlot,
+): Promise<{ mealId: string; indices: number[] }> {
+  const clones = items.map(({ score: _score, note: _note, ...item }) => ({
+    ...item,
+    nutrients: { ...item.nutrients },
+    micros: item.micros ? { ...item.micros } : undefined,
+  }));
+  const before = await db.meals.where('[date+slot]').equals([date, slot]).first();
+  const start = before?.items.length ?? 0;
+  const meal = await addMealItems(date, slot, clones);
+  return { mealId: meal.id, indices: clones.map((_, i) => start + i) };
+}
+
+/** Removes the items at these positions — the undo for `copyMealItems`. */
+export async function removeMealItems(mealId: string, indices: number[]): Promise<void> {
+  const meal = await db.meals.get(mealId);
+  if (!meal) return;
+  const drop = new Set(indices);
+  await updateMeal(mealId, { items: meal.items.filter((_, i) => !drop.has(i)) });
 }
 
 export async function updateMeal(id: string, patch: Partial<Meal>): Promise<void> {

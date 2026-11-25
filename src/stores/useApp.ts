@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { MealSlot, Profile, Settings } from '@/types';
 import { DEFAULT_SETTINGS, ensureSeeded, getProfile, getSettings, saveSettings } from '@/db/repo';
 import { db } from '@/db/schema';
-import { today } from '@/lib/date';
+import { setDayStartHour, today } from '@/lib/date';
 
 interface ToastState {
   id: number;
@@ -98,7 +98,11 @@ export const useApp = create<AppState>((set, get) => ({
 
       try {
         const [profile, settings] = await Promise.all([getProfile(), getSettings()]);
-        set({ profile, settings, ready: true });
+        // Before anything reads the date: the store was created with a
+        // midnight-based today, which is wrong for a 1 am launch with a 3 am
+        // day start. Re-pin both, since nothing has been chosen yet.
+        setDayStartHour(settings.dayStartHour);
+        set({ profile, settings, ready: true, selectedDate: today(), todayDate: today() });
       } catch (err) {
         // IndexedDB can be unavailable outright (private browsing in some
         // browsers, storage disabled). Come up with defaults rather than
@@ -122,6 +126,11 @@ export const useApp = create<AppState>((set, get) => ({
   async setSettings(patch) {
     await saveSettings(patch);
     set({ settings: { ...get().settings, ...patch } });
+    if ('dayStartHour' in patch) {
+      setDayStartHour(patch.dayStartHour);
+      // Moving the boundary can change which day "today" is right now.
+      get().syncToToday();
+    }
   },
 
   setSelectedDate(date) {

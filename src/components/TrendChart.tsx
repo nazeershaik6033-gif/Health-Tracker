@@ -28,6 +28,13 @@ interface Props {
   height?: number;
   /** Weight charts read better zoomed to the data than anchored at zero. */
   domainFromData?: boolean;
+  /**
+   * A smoothed series drawn over the data, one value per point. The raw
+   * points fade back so the line reads as the signal and the dots as noise.
+   */
+  trend?: number[];
+  /** Tooltip name for the trend value. */
+  trendLabel?: string;
 }
 
 const PAD = { top: 10, right: 10, bottom: 20, left: 36 };
@@ -128,6 +135,8 @@ export function TrendChart({
   unit = '',
   height = 180,
   domainFromData = false,
+  trend,
+  trendLabel = 'trend',
 }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [active, setActive] = useState<number | null>(null);
@@ -179,6 +188,14 @@ export function TrendChart({
     const index = Math.floor((clientX - rect.left - PAD.left) / band);
     setActive(index >= 0 && index < data.length ? index : null);
   }
+
+  const trendPath = useMemo(
+    () =>
+      trend && trend.length === data.length
+        ? monotonePath(trend.map((v, i) => ({ x: x(i), y: y(v) })))
+        : '',
+    [trend, data.length, x, y],
+  );
 
   const gradientId = `trend-${color.replace(/[^a-z0-9]/gi, '')}-${kind}`;
   const linePath = kind === 'bar' ? '' : monotonePath(points);
@@ -282,10 +299,32 @@ export function TrendChart({
                   fill={`url(#${gradientId})`}
                 />
               )}
-              <path d={linePath} fill="none" stroke={color} strokeWidth={2.25} />
+              <path
+                d={linePath}
+                fill="none"
+                stroke={color}
+                strokeWidth={trendPath ? 1.25 : 2.25}
+                strokeOpacity={trendPath ? 0.35 : 1}
+              />
               {points.map((p, i) => (
-                <circle key={data[i].date} cx={p.x} cy={p.y} r={2.5} fill={color} />
+                <circle
+                  key={data[i].date}
+                  cx={p.x}
+                  cy={p.y}
+                  r={trendPath ? 2.75 : 2.5}
+                  fill={color}
+                  fillOpacity={trendPath ? 0.5 : 1}
+                />
               ))}
+              {trendPath && (
+                <path
+                  d={trendPath}
+                  fill="none"
+                  stroke="var(--text-primary)"
+                  strokeWidth={2.25}
+                  strokeLinecap="round"
+                />
+              )}
             </>
           )}
 
@@ -325,6 +364,12 @@ export function TrendChart({
             {Math.round(data[active].value * 10) / 10}
             {unit}
           </p>
+          {trend?.[active] !== undefined && (
+            <p className="tabular text-muted">
+              {trendLabel} {Math.round(trend[active] * 10) / 10}
+              {unit}
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -27,6 +27,50 @@ export const MEAL_SLOT_SHARE: Record<MealSlot, number> = {
   dinner: 0.25,
 };
 
+/** Energy display unit. */
+export type EnergyUnit = 'kcal' | 'kj';
+
+/** Named ways of spreading the day's calories across the five slots. */
+export type MealPresetId = 'standard' | 'three' | 'two' | 'omad' | 'five' | 'custom';
+
+export const MEAL_PRESETS: {
+  id: Exclude<MealPresetId, 'custom'>;
+  label: string;
+  body: string;
+  shares: Record<MealSlot, number>;
+}[] = [
+  {
+    id: 'standard',
+    label: 'Standard',
+    body: 'Three meals and two snacks',
+    shares: MEAL_SLOT_SHARE,
+  },
+  {
+    id: 'three',
+    label: 'Three meals',
+    body: 'No snacks',
+    shares: { breakfast: 0.3, morning_snack: 0, lunch: 0.35, evening_snack: 0, dinner: 0.35 },
+  },
+  {
+    id: 'two',
+    label: 'Two meals',
+    body: 'A late first meal and dinner',
+    shares: { breakfast: 0, morning_snack: 0, lunch: 0.5, evening_snack: 0, dinner: 0.5 },
+  },
+  {
+    id: 'omad',
+    label: 'One meal',
+    body: 'Everything at dinner',
+    shares: { breakfast: 0, morning_snack: 0, lunch: 0, evening_snack: 0, dinner: 1 },
+  },
+  {
+    id: 'five',
+    label: 'Five small',
+    body: 'Even across all five',
+    shares: { breakfast: 0.2, morning_snack: 0.2, lunch: 0.2, evening_snack: 0.2, dinner: 0.2 },
+  },
+];
+
 /**
  * Parts of the day. Slots roll up into these so macros can be tracked against
  * a stretch of the day, not only the day as a whole.
@@ -567,6 +611,31 @@ export interface Profile {
    * add up to 1. Absent means the DAY_PERIOD_SHARE defaults.
    */
   periodShares?: Record<DayPeriod, number>;
+  /**
+   * How the day's calories are spread across meal slots. Absent means the
+   * `standard` preset — the split the app has always used.
+   */
+  mealPreset?: MealPresetId;
+  /** Per-slot shares (decimals summing to 1), only read when the preset is `custom`. */
+  mealShares?: Record<MealSlot, number>;
+  /**
+   * Micronutrient targets set by hand, in each nutrient's own unit. A missing
+   * key falls back to the age- and sex-adjusted reference intake.
+   */
+  microGoals?: Micros;
+  /**
+   * Maintenance calories measured from this person's own intake and weight
+   * trend, replacing the Mifflin-St Jeor × activity estimate when set. See
+   * `lib/adaptive.ts`.
+   */
+  adaptiveTdee?: number;
+  /** When it was measured, so the UI can say how current it is. */
+  adaptiveAt?: number;
+  /**
+   * Ease the deficit (or surplus) off over the last few kilograms before the
+   * target weight, landing on maintenance rather than overshooting.
+   */
+  taperNearGoal?: boolean;
   units: UnitSystem;
   waterGoalGlasses: number;
   sleepGoalMin: number;
@@ -690,4 +759,27 @@ export interface Settings {
   /** Default fasting window in hours (16 for 16:8). */
   fastTargetHours?: number;
   glucoseUnit?: 'mgdl' | 'mmol';
+  /** Display unit for energy. Everything is stored in kcal regardless. */
+  energyUnit?: EnergyUnit;
+  /**
+   * Share of calories burned (workouts + counted steps) added back to the
+   * day's budget, 0–100. Absent means 100, the behaviour before it existed.
+   */
+  eatBackPct?: number;
+  /**
+   * Hour (0–5) the diary day starts at. A snack at 1 am with this set to 3
+   * still belongs to the evening before. Absent means midnight.
+   */
+  dayStartHour?: number;
+  /** Re-measure maintenance calories weekly and apply it automatically. */
+  adaptiveAuto?: boolean;
+  /**
+   * Show AI-only features. Off hides Snap, Voice and the coach, and stops
+   * every request to a model even when a key is saved.
+   */
+  showAi?: boolean;
+  /** Micronutrients left off the Micronutrients screen and the on-track counts. */
+  hiddenMicros?: MicroId[];
+  /** Badge the installed app's icon with main meals still to log today. */
+  appBadge?: boolean;
 }
