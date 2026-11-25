@@ -766,6 +766,15 @@
    translate3d rather than translateX: it promotes the element to its own
    compositor layer, so the whole screen animates off the main thread and the
    slide holds its frame rate while React is still hydrating a lazy route. */
+/* The slides run with `fill-mode: backwards`, not `both`. With `both` the end
+   frame stayed applied after the slide, and Chrome holds even `transform:
+   none` there as an identity transform — which still makes the screen a
+   stacking context and the containing block for its fixed children. Every
+   bottom sheet inside it then stacked under the bottom nav (z-50 inside the
+   screen loses to z-30 outside it), so a sheet opened after switching tabs
+   had its footer button hidden behind the nav and could not be confirmed.
+   `backwards` keeps the first frame applied before the slide starts, which is
+   all `both` was needed for. */
 @keyframes route-in-right {
   from {
     opacity: 0;
@@ -773,7 +782,7 @@
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: none;
   }
 }
 @keyframes route-in-left {
@@ -783,7 +792,7 @@
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: none;
   }
 }
 
@@ -806,10 +815,10 @@
   animation: route-in 0.18s var(--ease-settle);
 }
 .animate-route-right {
-  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+  animation: route-in-right var(--dur-screen) var(--ease-settle) backwards;
 }
 .animate-route-left {
-  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
+  animation: route-in-left var(--dur-screen) var(--ease-settle) backwards;
 }
 .animate-rise-in {
   animation: rise-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
@@ -917,10 +926,10 @@
    stack actually moved, so the browser back button and the iOS edge swipe
    animate the right way round too. Same keyframes as the tab slide. */
 .animate-route-push {
-  animation: route-in-right var(--dur-screen) var(--ease-settle) both;
+  animation: route-in-right var(--dur-screen) var(--ease-settle) backwards;
 }
 .animate-route-pop {
-  animation: route-in-left var(--dur-screen) var(--ease-settle) both;
+  animation: route-in-left var(--dur-screen) var(--ease-settle) backwards;
 }
 
 /* ---------------------------------------------------------- micro-charts */
